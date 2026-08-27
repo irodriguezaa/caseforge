@@ -17,6 +17,21 @@ def test_health_returns_backend_status() -> None:
     assert response.json() == {"status": "ok", "service": "backend"}
 
 
+def test_database_health_returns_connected_status(monkeypatch) -> None:
+    database_check = Mock()
+    monkeypatch.setattr(health, "check_database_connection", database_check)
+
+    response = client.get("/health/db")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "ok",
+        "service": "database",
+        "connection": "connected",
+    }
+    database_check.assert_called_once_with()
+
+
 def test_database_health_returns_consistent_error_when_database_is_unavailable(monkeypatch) -> None:
     database_check = Mock(side_effect=OperationalError("connection refused"))
     monkeypatch.setattr(health, "check_database_connection", database_check)

@@ -16,7 +16,7 @@ def health() -> dict[str, str]:
 
 
 @router.get("/db")
-def database_health() -> dict[str, str] | JSONResponse:
+def database_health() -> JSONResponse:
     """Report whether PostgreSQL can be reached by the backend."""
     try:
         check_database_connection()
@@ -31,4 +31,7 @@ def database_health() -> dict[str, str] | JSONResponse:
             },
         )
 
-    return {"status": "ok", "service": "database", "connection": "connected"}
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content={"status": "ok", "service": "database", "connection": "connected"},
+    )
