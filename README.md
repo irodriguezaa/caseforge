@@ -2,6 +2,8 @@
 
 Esqueleto técnico del Sprint 1 para comprobar el flujo `Browser → Frontend → Backend → PostgreSQL`.
 
+QC - Estimación, generación y seguimiento Casos de Prueba.
+
 ## Requisitos
 
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/) con Docker Compose v2.
