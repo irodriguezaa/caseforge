@@ -1,0 +1,17 @@
+# Environment files
+.env
+.env.local
+
+# JavaScript / Next.js
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+
+# Python
+backend/.venv/
+backend/__pycache__/
+backend/**/*.py[cod]
+backend/.pytest_cache/
+
+# Local tooling
+.DS_Store
