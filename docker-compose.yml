@@ -22,6 +22,9 @@ services:
       DATABASE_NAME: ${DATABASE_NAME:?Set DATABASE_NAME in .env}
       DATABASE_USER: ${DATABASE_USER:?Set DATABASE_USER in .env}
       DATABASE_PASSWORD: ${DATABASE_PASSWORD:?Set DATABASE_PASSWORD in .env}
+      JIRA_BASE_URL: ${JIRA_BASE_URL:-}
+      JIRA_EMAIL: ${JIRA_EMAIL:-}
+      JIRA_API_TOKEN: ${JIRA_API_TOKEN:-}
     ports:
       - "127.0.0.1:8000:8000"
     depends_on:
@@ -32,6 +35,25 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
+  # Test image (see backend/Dockerfile's `test` stage): only built/run when explicitly requested
+  # via the `test` profile. Never starts with a plain `docker compose up`, so it cannot affect
+  # the already-validated Sprint 1 flow. Usage:
+  #   docker compose --profile test run --rm backend-test
+  backend-test:
+    build:
+      context: ./backend
+      target: test
+    profiles: ["test"]
+    environment:
+      DATABASE_HOST: ${DATABASE_HOST:?Set DATABASE_HOST in .env}
+      DATABASE_PORT: ${DATABASE_PORT:?Set DATABASE_PORT in .env}
+      DATABASE_NAME: ${DATABASE_NAME:?Set DATABASE_NAME in .env}
+      DATABASE_USER: ${DATABASE_USER:?Set DATABASE_USER in .env}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD:?Set DATABASE_PASSWORD in .env}
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   frontend:
     build:
