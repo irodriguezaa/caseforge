@@ -43,6 +43,13 @@ class ActivityItem(BaseModel):
     percent_cobertura: float
     risk_level: str  # "LOW" | "MEDIUM" | "HIGH"
     risk_reasons: list[str] = Field(default_factory=list)
+    # Deliverable context (Entregable/Versiones/Revalidaciones) -- None when this Release has no
+    # Deliverable, so old data and the rest of the row render exactly as before this addition.
+    deliverable_name: str | None = None
+    release_type: str | None = None  # "EVOLUTIVO" | "REVALIDACION"
+    deliverable_release_ordinal: int | None = None  # this release's position: v1, v2, v3...
+    deliverable_total_versions: int | None = None
+    deliverable_total_revalidaciones: int | None = None
 
 
 class QcDashboardSummary(BaseModel):

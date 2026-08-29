@@ -213,3 +213,45 @@ def test_qc_summary_active_items_exposes_window_dates_and_blocker_defects(client
     assert item["window_start_date"] == "2026-08-25"
     assert item["window_end_date"] == "2026-08-28"
     assert item["defects_blocker_count"] == 1  # only the BLOCKER-severity one counts
+
+
+def test_qc_summary_active_items_exposes_deliverable_context(client) -> None:
+    v1 = client.post(
+        "/api/v1/releases",
+        json={
+            "name": "CV WEB", "version": "1.0.0", "platform": "WEB",
+            "deliverable_name": "WEB - Funcionalidad X", "release_type": "EVOLUTIVO",
+        },
+    ).json()
+    v2 = client.post(
+        "/api/v1/releases",
+        json={
+            "name": "CV WEB", "version": "1.0.1", "platform": "WEB",
+            "deliverable_name": "WEB - Funcionalidad X", "release_type": "REVALIDACION",
+            "parent_release_id": v1["id"],
+        },
+    ).json()
+    client.patch(f"/api/v1/releases/{v2['id']}", json={"status": "IN_PROGRESS"})
+
+    body = client.get("/api/v1/dashboard/qc-summary").json()
+    item = next(i for i in body["active_items"] if i["release_id"] == v2["id"])
+
+    assert item["deliverable_name"] == "WEB - Funcionalidad X"
+    assert item["release_type"] == "REVALIDACION"
+    assert item["deliverable_release_ordinal"] == 2  # v2 (v1 came first)
+    assert item["deliverable_total_versions"] == 2  # v1 + v2, regardless of v1's own status
+    assert item["deliverable_total_revalidaciones"] == 1
+
+
+def test_qc_summary_active_items_deliverable_fields_are_none_without_deliverable(client) -> None:
+    release = _create_release(client)  # no deliverable_name passed
+    client.patch(f"/api/v1/releases/{release['id']}", json={"status": "IN_PROGRESS"})
+
+    body = client.get("/api/v1/dashboard/qc-summary").json()
+    item = next(i for i in body["active_items"] if i["release_id"] == release["id"])
+
+    assert item["deliverable_name"] is None
+    assert item["release_type"] is None
+    assert item["deliverable_release_ordinal"] is None
+    assert item["deliverable_total_versions"] is None
+    assert item["deliverable_total_revalidaciones"] is None

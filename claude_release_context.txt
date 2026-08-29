@@ -1,0 +1,712 @@
+===== 1. backend/app/models/release.py =====
+"""Release ORM model."""
+
+import enum
+from datetime import date, datetime
+from typing import TYPE_CHECKING
+
+from sqlalchemy import Date, DateTime, Enum, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.db import Base
+
+if TYPE_CHECKING:
+    from app.models.release_analysis import ReleaseAnalysis
+    from app.models.test_case import TestCase
+
+
+class ReleaseStatus(str, enum.Enum):
+    """Lifecycle of a QC release.
+
+    DRAFT is the only status that allows hard deletion (see routers/releases.py). Every other
+    status must transition to CANCELLED instead of being deleted, since it may already have
+    associated QC activity.
+    """
+
+    DRAFT = "DRAFT"
+    IN_PROGRESS = "IN_PROGRESS"
+    COMPLETED = "COMPLETED"
+    CANCELLED = "CANCELLED"
+
+
+class Release(Base):
+    """A QC release/testing cycle. Owns many TestCase rows and optional ReleaseAnalysis artifacts."""
+
+    __tablename__ = "releases"
+    __table_args__ = (
+        UniqueConstraint("name", "version", "platform", name="uq_release_name_version_platform"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    version: Mapped[str] = mapped_column(String(50), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    platform: Mapped[str] = mapped_column(String(50), nullable=False)
+    cluster: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    status: Mapped[ReleaseStatus] = mapped_column(
+        Enum(ReleaseStatus, name="release_status", native_enum=True, validate_strings=True),
+        nullable=False,
+        default=ReleaseStatus.DRAFT,
+        server_default=ReleaseStatus.DRAFT.value,
+    )
+    start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    qc_resources: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    execution_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    validation_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    jira_issue_filter: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    test_cases: Mapped[list["TestCase"]] = relationship(
+        back_populates="release",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="TestCase.test_case_id",
+    )
+    analyses: Mapped[list["ReleaseAnalysis"]] = relationship(
+        back_populates="release",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="ReleaseAnalysis.created_at.desc()",
+    )
+
+===== 2. backend/alembic/versions/0006_release_notes_and_qc_setup.py =====
+"""Add release operational QC setup fields and release_analyses table
+
+Revision ID: 0006
+Revises: 0005
+Create Date: 2026-08-28
+
+"""
+
+from typing import Sequence, Union
+
+import sqlalchemy as sa
+from alembic import op
+
+revision: str = "0006"
+down_revision: Union[str, None] = "0005"
+branch_labels: Union[str, Sequence[str], None] = None
+depends_on: Union[str, Sequence[str], None] = None
+
+
+def upgrade() -> None:
+    # Add QC setup fields to releases table
+    op.add_column("releases", sa.Column("start_date", sa.Date(), nullable=True))
+    op.add_column("releases", sa.Column("end_date", sa.Date(), nullable=True))
+    op.add_column("releases", sa.Column("qc_resources", sa.Integer(), nullable=True))
+    op.add_column("releases", sa.Column("execution_days", sa.Integer(), nullable=True))
+    op.add_column("releases", sa.Column("validation_type", sa.String(length=50), nullable=True))
+    op.add_column("releases", sa.Column("jira_issue_filter", sa.Text(), nullable=True))
+
+    # Create release_analyses table
+    op.create_table(
+        "release_analyses",
+        sa.Column("id", sa.Integer(), nullable=False),
+        sa.Column("release_id", sa.Integer(), nullable=True),
+        sa.Column("pdf_filename", sa.String(length=255), nullable=False),
+        sa.Column("pdf_file_path", sa.String(length=500), nullable=True),
+        sa.Column("detected_name", sa.String(length=200), nullable=True),
+        sa.Column("detected_version", sa.String(length=50), nullable=True),
+        sa.Column("detected_platform", sa.String(length=50), nullable=True),
+        sa.Column("detected_description", sa.Text(), nullable=True),
+        sa.Column("features_count", sa.Integer(), server_default="0", nullable=False),
+        sa.Column("qa_qc_issues_count", sa.Integer(), server_default="0", nullable=False),
+        sa.Column("nco_issues_count", sa.Integer(), server_default="0", nullable=False),
+        sa.Column("detected_devices", sa.String(length=255), nullable=True),
+        sa.Column("proposed_coverage", sa.Integer(), nullable=True),
+        sa.Column("estimation_text", sa.String(length=200), nullable=True),
+        sa.Column("observations", sa.JSON(), nullable=False),
+        sa.Column("raw_analysis", sa.JSON(), nullable=False),
+        sa.Column("qc_engine_version", sa.String(length=50), server_default="v0.1", nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False
+        ),
+        sa.ForeignKeyConstraint(["release_id"], ["releases.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id"),
+    )
+    op.create_index("idx_release_analyses_release_id", "release_analyses", ["release_id"])
+
+
+def downgrade() -> None:
+    op.drop_index("idx_release_analyses_release_id", table_name="release_analyses")
+    op.drop_table("release_analyses")
+
+    op.drop_column("releases", "jira_issue_filter")
+    op.drop_column("releases", "validation_type")
+    op.drop_column("releases", "execution_days")
+    op.drop_column("releases", "qc_resources")
+    op.drop_column("releases", "end_date")
+    op.drop_column("releases", "start_date")
+
+===== 3. backend/app/services/release_note_analyzer.py =====
+"""Release Note PDF extraction and structured preparation service.
+
+Strictly deterministic rule-based extraction for Phase 1.
+NO intenta reemplazar ni anticipar la lógica del motor QC que se integrará posteriormente
+desde el archivo .md (QC Engine). No inventa casos de prueba, estimaciones ni coberturas.
+"""
+
+import io
+import re
+from datetime import date, timedelta
+from typing import Any
+
+from pypdf import PdfReader
+
+from app.schemas.release import ReleaseAnalysisBase
+
+
+def calculate_business_days(start_date: date | None, end_date: date | None) -> int:
+    """Calculates business days (Monday through Friday only) between start_date and end_date (inclusive)."""
+    if not start_date or not end_date or start_date > end_date:
+        return 0
+    current = start_date
+    business_days = 0
+    while current <= end_date:
+        if current.weekday() < 5:  # 0=Monday, 4=Friday
+            business_days += 1
+        current += timedelta(days=1)
+    return business_days
+
+
+# Canonical 17 device options
+KNOWN_DEVICES = [
+    "WEB",
+    "ADR",
+    "ADT",
+    "FireTv",
+    "AAF Evolutivo",
+    "AAF Legacy",
+    "STB IPTV",
+    "STV Tata Samsung",
+    "STV Tata Hisense",
+    "STV Tata LG",
+    "STV Tata ADT",
+    "WIN/XBOX",
+    "Coship9085",
+    "iOS",
+    "tvOS",
+    "Kepler",
+    "IPTV AOSP",
+]
+
+
+class RuleBasedPdfAnalyzer:
+    """Deterministic extractor for Release Note PDF documents."""
+
+    def extract_text(self, pdf_bytes: bytes) -> str:
+        try:
+            reader = PdfReader(io.BytesIO(pdf_bytes))
+            pages_text: list[str] = []
+            for page in reader.pages:
+                text = page.extract_text()
+                if text:
+                    pages_text.append(text)
+            return "\n".join(pages_text)
+        except Exception:
+            return ""
+
+    def analyze(self, filename: str, pdf_bytes: bytes) -> ReleaseAnalysisBase:
+        text = self.extract_text(pdf_bytes)
+        observations: list[str] = []
+
+        # 1. Detect Version
+        detected_version = None
+        version_match = re.search(
+            r"(?:versi[oó]n|ver\.?|v\.?)\s*[:\-]?\s*([0-9]+\.[0-9]+(?:\.[0-9]+)?)",
+            text,
+            re.IGNORECASE,
+        )
+        if version_match:
+            detected_version = version_match.group(1).strip()
+        else:
+            # Try to extract version from filename (e.g. RN_CV_7.8.1.pdf)
+            fn_version_match = re.search(r"v?([0-9]+\.[0-9]+(?:\.[0-9]+)?)", filename)
+            if fn_version_match:
+                detected_version = fn_version_match.group(1).strip()
+
+        # 2. Detect Name / Project
+        detected_name = None
+        name_match = re.search(
+            r"(?:nombre|release|proyecto|aplicaci[oó]n)\s*[:\-]\s*([^\n\r]+)",
+            text,
+            re.IGNORECASE,
+        )
+        if name_match:
+            candidate = name_match.group(1).strip()
+            if len(candidate) > 2 and len(candidate) < 100:
+                detected_name = candidate
+
+        if not detected_name and "CV" in text.upper():
+            # Check for standard Claro Video pattern (e.g. CV - WINDOWS/XBOX)
+            cv_match = re.search(r"(CV\s*[-–]\s*[A-Za-z0-9 /_\-]+)", text, re.IGNORECASE)
+            if cv_match:
+                detected_name = cv_match.group(1).strip()
+
+        if not detected_name:
+            # Fallback based on filename without extension
+            clean_fn = re.sub(r"\.pdf$", "", filename, flags=re.IGNORECASE)
+            detected_name = clean_fn.replace("_", " ").replace("-", " ").strip()
+
+        # 3. Detect Platform / Device
+        detected_platform = None
+        text_upper = text.upper()
+        detected_dev_list: list[str] = []
+        for dev in KNOWN_DEVICES:
+            dev_upper = dev.upper()
+            if dev_upper in text_upper:
+                detected_dev_list.append(dev)
+
+        if "WIN" in text_upper or "XBOX" in text_upper:
+            detected_platform = "WIN/XBOX"
+        elif "IOS" in text_upper:
+            detected_platform = "iOS"
+        elif "TVOS" in text_upper:
+            detected_platform = "tvOS"
+        elif "ADR" in text_upper or "ANDROID" in text_upper:
+            detected_platform = "ADR"
+        elif "WEB" in text_upper:
+            detected_platform = "WEB"
+        elif detected_dev_list:
+            detected_platform = detected_dev_list[0]
+
+        detected_devices_str = " / ".join(detected_dev_list) if detected_dev_list else detected_platform
+
+        # 4. Count Sections / Items deterministically
+        features_count = 0
+        qa_qc_count = 0
+        nco_count = 0
+
+        # Look for bullet points or lists in text
+        # Count explicit occurrences in text or section headers
+        feature_sections = re.findall(
+            r"(?:funcionalidades|features|alcance|nuevos desarrollos)[\s\S]*?(?=(?:incidencias|bugs|nco|control|notas|\Z))",
+            text,
+            re.IGNORECASE,
+        )
+        if feature_sections:
+            for sec in feature_sections:
+                bullets = re.findall(r"(?:^|\n)\s*(?:[\*\-•]|\d+\.)\s*([^\n]+)", sec)
+                features_count += len(bullets)
+
+        qa_sections = re.findall(
+            r"(?:incidencias qa|incidencias qc|bugs qa|bugs qc|qa/qc)[\s\S]*?(?=(?:nco|funcionalidades|features|notas|\Z))",
+            text,
+            re.IGNORECASE,
+        )
+        if qa_sections:
+            for sec in qa_sections:
+                bullets = re.findall(r"(?:^|\n)\s*(?:[\*\-•]|\d+\.)\s*([^\n]+)", sec)
+                qa_qc_count += len(bullets)
+
+        nco_sections = re.findall(
+            r"(?:incidencias nco|nco|no conformidades)[\s\S]*?(?=(?:funcionalidades|features|qa|notas|\Z))",
+            text,
+            re.IGNORECASE,
+        )
+        if nco_sections:
+            for sec in nco_sections:
+                bullets = re.findall(r"(?:^|\n)\s*(?:[\*\-•]|\d+\.)\s*([^\n]+)", sec)
+                nco_count += len(bullets)
+
+        # 5. Extract Description
+        detected_description = None
+        desc_match = re.search(
+            r"(?:descripci[oó]n|objetivo|resumen)\s*[:\-]\s*([^\n\r]+(?:\n[^\n\r]+)?)",
+            text,
+            re.IGNORECASE,
+        )
+        if desc_match:
+            detected_description = desc_match.group(1).strip()
+
+        # 6. Build observations
+        if not text:
+            observations.append("El archivo PDF no contiene texto extraíble (puede ser un documento escaneado o protegido).")
+        else:
+            if not detected_platform:
+                observations.append("No se detectó un dispositivo explícito en el texto del PDF; verifique la selección manual.")
+            if not detected_version:
+                observations.append("No se detectó el número de versión en el documento; ingréselo manualmente.")
+            if features_count > 0:
+                observations.append(f"Se detectaron {features_count} elemento(s) en la sección de funcionalidades.")
+            if qa_qc_count > 0:
+                observations.append(f"Se identificaron {qa_qc_count} incidencia(s) QA/QC reportadas en el Release Note.")
+            if nco_count > 0:
+                observations.append(f"Se identificaron {nco_count} incidencia(s) NCO reportadas.")
+
+        raw_analysis = {
+            "text_length": len(text),
+            "pages_analyzed": len(text.split("\n\n")),
+            "detected_keywords": detected_dev_list,
+            "filename": filename,
+        }
+
+        return ReleaseAnalysisBase(
+            pdf_filename=filename,
+            detected_name=detected_name,
+            detected_version=detected_version,
+            detected_platform=detected_platform,
+            detected_description=detected_description,
+            features_count=features_count,
+            qa_qc_issues_count=qa_qc_count,
+            nco_issues_count=nco_count,
+            detected_devices=detected_devices_str,
+            proposed_coverage=None,  # Será responsabilidad del QC Engine (.md) futuro
+            estimation_text=None,    # Será responsabilidad del QC Engine (.md) futuro
+            observations=observations,
+            raw_analysis=raw_analysis,
+            qc_engine_version="v0.1",
+        )
+
+===== 4. backend/app/schemas/release.py =====
+from datetime import date, datetime
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from app.models.release import ReleaseStatus
+
+
+class ReleaseAnalysisBase(BaseModel):
+    pdf_filename: str
+    pdf_file_path: str | None = None
+    detected_name: str | None = None
+    detected_version: str | None = None
+    detected_platform: str | None = None
+    detected_description: str | None = None
+    features_count: int = 0
+    qa_qc_issues_count: int = 0
+    nco_issues_count: int = 0
+    detected_devices: str | None = None
+    proposed_coverage: int | None = None
+    estimation_text: str | None = None
+    observations: list[str] = Field(default_factory=list)
+    raw_analysis: dict[str, Any] = Field(default_factory=dict)
+    qc_engine_version: str = "v0.1"
+
+
+class ReleaseAnalysisCreate(ReleaseAnalysisBase):
+    release_id: int | None = None
+
+
+class ReleaseAnalysisRead(ReleaseAnalysisBase):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    release_id: int | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class ReleaseNoteAnalyzeResponse(BaseModel):
+    analysis: ReleaseAnalysisBase
+    calculated_business_days: int = 0
+
+
+class ReleaseBase(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    version: str = Field(min_length=1, max_length=50)
+    description: str | None = None
+    platform: str = Field(min_length=1, max_length=50)
+    cluster: str | None = Field(default=None, max_length=50)
+    start_date: date | None = None
+    end_date: date | None = None
+    qc_resources: int | None = None
+    execution_days: int | None = None
+    validation_type: str | None = None
+    jira_issue_filter: str | None = None
+
+
+class ReleaseCreate(ReleaseBase):
+    status: ReleaseStatus = ReleaseStatus.DRAFT
+    analysis_data: ReleaseAnalysisBase | None = None
+
+
+class ReleaseUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    version: str | None = Field(default=None, min_length=1, max_length=50)
+    description: str | None = None
+    platform: str | None = Field(default=None, min_length=1, max_length=50)
+    cluster: str | None = Field(default=None, max_length=50)
+    status: ReleaseStatus | None = None
+    start_date: date | None = None
+    end_date: date | None = None
+    qc_resources: int | None = None
+    execution_days: int | None = None
+    validation_type: str | None = None
+    jira_issue_filter: str | None = None
+
+
+class ReleaseRead(ReleaseBase):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    status: ReleaseStatus
+    created_at: datetime
+    updated_at: datetime
+
+
+class ReleaseWithCounts(ReleaseRead):
+    test_case_count: int = 0
+    latest_analysis: ReleaseAnalysisRead | None = None
+
+===== 5. backend/app/routers/releases.py =====
+"""Release CRUD endpoints.
+
+Deletion rule (per product decision): a Release can only be hard-deleted while it is still
+DRAFT (cascading to its test cases/steps is safe at that point because nothing else can
+reference them yet). Any release that has moved past DRAFT is considered to have activity and
+must be moved to CANCELLED via PATCH instead of being deleted. This cascade behavior should be
+re-reviewed before Sprint 3 once executions/evidence exist.
+"""
+
+from typing import Any
+
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+
+from app.db import get_db
+from app.models.release import Release, ReleaseStatus
+from app.models.release_analysis import ReleaseAnalysis
+from app.models.test_case import TestCase
+from app.routers.common import get_release_or_404
+from app.schemas.release import (
+    ReleaseAnalysisRead,
+    ReleaseCreate,
+    ReleaseNoteAnalyzeResponse,
+    ReleaseRead,
+    ReleaseUpdate,
+    ReleaseWithCounts,
+)
+from app.services.release_note_analyzer import (
+    RuleBasedPdfAnalyzer,
+    calculate_business_days,
+)
+
+router = APIRouter(prefix="/api/v1/releases", tags=["releases"])
+
+# Allowed forward transitions. DRAFT can also be removed entirely via DELETE (see below).
+_VALID_TRANSITIONS: dict[ReleaseStatus, set[ReleaseStatus]] = {
+    ReleaseStatus.DRAFT: {ReleaseStatus.IN_PROGRESS, ReleaseStatus.CANCELLED},
+    ReleaseStatus.IN_PROGRESS: {ReleaseStatus.COMPLETED, ReleaseStatus.CANCELLED},
+    ReleaseStatus.COMPLETED: set(),
+    ReleaseStatus.CANCELLED: set(),
+}
+
+
+@router.post("/analyze-rn", response_model=ReleaseNoteAnalyzeResponse)
+async def analyze_release_note(
+    file: UploadFile = File(...),
+) -> ReleaseNoteAnalyzeResponse:
+    """Parses a Release Note PDF deterministically, extracting metadata and section counts.
+
+    Does not hallucinate or predict test cases (strictly adheres to Phase 1 separation of
+    concerns prior to .md QC engine integration).
+    """
+    if not file.filename or not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail="Solo se aceptan archivos PDF para el análisis de Release Note.",
+        )
+
+    content = await file.read()
+    if not content:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="El archivo PDF está vacío.")
+
+    analyzer = RuleBasedPdfAnalyzer()
+    extracted = analyzer.analyze(file.filename, content)
+
+    return ReleaseNoteAnalyzeResponse(
+        analysis=extracted,
+        calculated_business_days=0,
+    )
+
+
+@router.get("", response_model=list[ReleaseWithCounts])
+def list_releases(
+    status_filter: ReleaseStatus | None = Query(default=None, alias="status"),
+    platform: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+) -> list[ReleaseWithCounts]:
+    stmt = (
+        select(Release, func.count(TestCase.id))
+        .outerjoin(TestCase, TestCase.release_id == Release.id)
+        .group_by(Release.id)
+        .order_by(Release.created_at.desc())
+    )
+    if status_filter is not None:
+        stmt = stmt.where(Release.status == status_filter)
+    if platform is not None:
+        stmt = stmt.where(Release.platform == platform)
+
+    rows = db.execute(stmt).all()
+    results: list[ReleaseWithCounts] = []
+    for release, count in rows:
+        latest_analysis = (
+            db.execute(
+                select(ReleaseAnalysis)
+                .where(ReleaseAnalysis.release_id == release.id)
+                .order_by(ReleaseAnalysis.created_at.desc())
+            )
+            .scalars()
+            .first()
+        )
+        release_read = ReleaseRead.model_validate(release).model_dump()
+        results.append(
+            ReleaseWithCounts(
+                **release_read,
+                test_case_count=count,
+                latest_analysis=(
+                    ReleaseAnalysisRead.model_validate(latest_analysis)
+                    if latest_analysis
+                    else None
+                ),
+            )
+        )
+    return results
+
+
+@router.post("", response_model=ReleaseRead, status_code=status.HTTP_201_CREATED)
+def create_release(payload: ReleaseCreate, db: Session = Depends(get_db)) -> Release:
+    release_dict = payload.model_dump(exclude={"analysis_data"})
+    if release_dict.get("execution_days") is None and release_dict.get("start_date") and release_dict.get("end_date"):
+        release_dict["execution_days"] = calculate_business_days(
+            release_dict["start_date"], release_dict["end_date"]
+        )
+
+    release = Release(**release_dict)
+    db.add(release)
+    try:
+        db.flush()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail="A release with this name, version and platform already exists.",
+        ) from exc
+
+    if payload.analysis_data is not None:
+        analysis_dict = payload.analysis_data.model_dump()
+        analysis_row = ReleaseAnalysis(release_id=release.id, **analysis_dict)
+        db.add(analysis_row)
+
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail="A release with this name, version and platform already exists.",
+        ) from exc
+
+    db.refresh(release)
+    return release
+
+
+@router.get("/{release_id}", response_model=ReleaseRead)
+def get_release(release_id: int, db: Session = Depends(get_db)) -> Release:
+    return get_release_or_404(release_id, db)
+
+
+@router.patch("/{release_id}", response_model=ReleaseRead)
+def update_release(
+    release_id: int, payload: ReleaseUpdate, db: Session = Depends(get_db)
+) -> Release:
+    release = get_release_or_404(release_id, db)
+    updates = payload.model_dump(exclude_unset=True)
+
+    new_status = updates.get("status")
+    if new_status is not None and new_status != release.status:
+        allowed = _VALID_TRANSITIONS.get(release.status, set())
+        if new_status not in allowed:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Cannot transition release from {release.status.value} "
+                    f"to {new_status.value}."
+                ),
+            )
+
+    for field, value in updates.items():
+        setattr(release, field, value)
+
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail="A release with this name, version and platform already exists.",
+        ) from exc
+    db.refresh(release)
+    return release
+
+
+@router.delete("/{release_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_release(release_id: int, db: Session = Depends(get_db)) -> None:
+    release = get_release_or_404(release_id, db)
+    if release.status != ReleaseStatus.DRAFT:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail=(
+                "Only DRAFT releases can be deleted. Releases with activity must be moved to "
+                "CANCELLED instead of being deleted."
+            ),
+        )
+    db.delete(release)
+    db.commit()
+
+
+@router.get("/{release_id}/analysis", response_model=ReleaseAnalysisRead)
+def get_release_analysis(release_id: int, db: Session = Depends(get_db)) -> ReleaseAnalysis:
+    get_release_or_404(release_id, db)
+    analysis = (
+        db.execute(
+            select(ReleaseAnalysis)
+            .where(ReleaseAnalysis.release_id == release_id)
+            .order_by(ReleaseAnalysis.created_at.desc())
+        )
+        .scalars()
+        .first()
+    )
+    if not analysis:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND,
+            detail="No se encontró ningún análisis de Release Note para esta release.",
+        )
+    return analysis
+
+
+@router.post("/{release_id}/generate-cases")
+def generate_cases_from_rn(release_id: int, db: Session = Depends(get_db)) -> dict[str, Any]:
+    """Stub endpoint prepared for the future .md-based QC Engine."""
+    release = get_release_or_404(release_id, db)
+    analysis = (
+        db.execute(
+            select(ReleaseAnalysis)
+            .where(ReleaseAnalysis.release_id == release_id)
+            .order_by(ReleaseAnalysis.created_at.desc())
+        )
+        .scalars()
+        .first()
+    )
+    return {
+        "status": "READY",
+        "message": "Flujo de generación preparado. El motor QC v0.1 se conectará en la siguiente fase.",
+        "release_id": release.id,
+        "release_name": release.name,
+        "validation_type": release.validation_type or "Smoke",
+        "has_analysis": analysis is not None,
+    }

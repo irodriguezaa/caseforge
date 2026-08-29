@@ -1,0 +1,81 @@
+diff --git a/frontend/app/page.tsx b/frontend/app/page.tsx
+--- a/frontend/app/page.tsx
++++ b/frontend/app/page.tsx
+@@ -191,33 +191,39 @@
+           </div>
+ 
+           <div className="panel">
+-            <div className="panel-header"><h2>Ejecución</h2></div>
++            <div className="panel-header"><h2>Ejecución por Release</h2></div>
+             <div className="panel-body">
+-              <div className="exec-numbers">
+-                <div className="exec-item"><div className="exec-label">Planned</div><div className="exec-value">{summary.test_cases_planned}</div></div>
+-                <div className="exec-item"><div className="exec-label">Executed</div><div className="exec-value">{summary.test_cases_executed}</div></div>
+-                <div className="exec-item pass"><div className="exec-label">Pass</div><div className="exec-value">{summary.pass_count}</div></div>
+-                <div className="exec-item fail"><div className="exec-label">Fail</div><div className="exec-value">{summary.fail_count}</div></div>
+-                <div className="exec-item blocked"><div className="exec-label">Blocked</div><div className="exec-value">{summary.blocked_count}</div></div>
+-                <div className="exec-item"><div className="exec-label">Unexecuted</div><div className="exec-value">{summary.unexecuted_count}</div></div>
+-              </div>
+-              <div className="exec-bar wide">
+-                {(() => {
+-                  const total = summary.pass_count + summary.fail_count + summary.blocked_count + summary.unexecuted_count;
+-                  const pct = (n: number) => (total ? (n / total) * 100 : 0);
+-                  return (
+-                    <>
+-                      <div className="seg-pass" style={{ width: `${pct(summary.pass_count)}%` }} />
+-                      <div className="seg-fail" style={{ width: `${pct(summary.fail_count)}%` }} />
+-                      <div className="seg-blocked" style={{ width: `${pct(summary.blocked_count)}%` }} />
+-                      <div className="seg-unexecuted" style={{ width: `${pct(summary.unexecuted_count)}%` }} />
+-                    </>
+-                  );
+-                })()}
+-              </div>
++              {activeItems.map((item) => {
++                const total = item.pass_count + item.fail_count + item.blocked_count + item.unexecuted_count;
++                const pct = (n: number) => (total ? (n / total) * 100 : 0);
++                return (
++                  <div className="exec-release-block" key={item.release_id}>
++                    <div className="exec-release-title">
++                      {item.release_name} v{item.release_version}
++                      <span className="exec-release-pct">{item.percent_avance.toFixed(0)}% ejecutado</span>
++                    </div>
++                    <div className="exec-numbers">
++                      <div className="exec-item"><div className="exec-label">Planned</div><div className="exec-value">{item.planned}</div></div>
++                      <div className="exec-item"><div className="exec-label">Executed</div><div className="exec-value">{item.executed}</div></div>
++                      <div className="exec-item pass"><div className="exec-label">Pass</div><div className="exec-value">{item.pass_count}</div></div>
++                      <div className="exec-item fail"><div className="exec-label">Fail</div><div className="exec-value">{item.fail_count}</div></div>
++                      <div className="exec-item blocked"><div className="exec-label">Blocked</div><div className="exec-value">{item.blocked_count}</div></div>
++                      <div className="exec-item"><div className="exec-label">Unexecuted</div><div className="exec-value">{item.unexecuted_count}</div></div>
++                    </div>
++                    <div className="exec-bar wide">
++                      <div className="seg-pass" style={{ width: `${pct(item.pass_count)}%` }} />
++                      <div className="seg-fail" style={{ width: `${pct(item.fail_count)}%` }} />
++                      <div className="seg-blocked" style={{ width: `${pct(item.blocked_count)}%` }} />
++                      <div className="seg-unexecuted" style={{ width: `${pct(item.unexecuted_count)}%` }} />
++                    </div>
++                  </div>
++                );
++              })}
++              {activeItems.length === 0 && <p className="muted">No hay actividad para este filtro.</p>}
+             </div>
+           </div>
+         </>
++
+       )}
+ 
+       <div className="system-health-line">
+diff --git a/frontend/app/styles.css b/frontend/app/styles.css
+--- a/frontend/app/styles.css
++++ b/frontend/app/styles.css
+@@ -112,6 +112,11 @@
+ .danger-text { color: var(--danger); font-weight: 600; }
+ table.activity tr.selected { background: var(--accent-dim); }
+ 
++.exec-release-block { padding: 12px 0; border-top: 1px solid var(--border); }
++.exec-release-block:first-child { padding-top: 0; border-top: 0; }
++.exec-release-title { display: flex; align-items: baseline; justify-content: space-between; font-size: 13px; font-weight: 600; margin-bottom: 8px; }
++.exec-release-pct { font-size: 12px; font-weight: 600; color: var(--accent); }
++
+ /* Risk list: left border color instead of a dot */
+ .risk-list { display: flex; flex-direction: column; gap: 9px; }
+ .risk-list-item { font-size: 12px; padding-left: 9px; border-left: 2px solid var(--border-strong); line-height: 1.5; }

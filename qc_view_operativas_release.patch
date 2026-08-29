@@ -1,0 +1,1143 @@
+diff --git a/backend/app/models/qc_ticket.py b/backend/app/models/qc_ticket.py
+--- a/backend/app/models/qc_ticket.py
++++ b/backend/app/models/qc_ticket.py
+@@ -23,6 +23,14 @@
+     OTHER = "OTHER"
+ 
+ 
++class QcTicketView(str, enum.Enum):
++    """The two dashboard views this ticket belongs to -- orthogonal to source (QC_DETECTED vs
++    LEAKED). Together they map 1:1 to the 4 real Jira filters (112929/113062/113261/113784)."""
++
++    OPERATIVAS = "OPERATIVAS"
++    RELEASE = "RELEASE"
++
++
+ class QcTicketSource(str, enum.Enum):
+     """Set by which upload the ticket came from (or which Jira filter, once that exists) --
+     not a column in the Jira export itself."""
+@@ -45,16 +53,29 @@
+     )
+     status_raw: Mapped[str] = mapped_column(String(100), nullable=False)
+     is_open: Mapped[bool] = mapped_column(Boolean, nullable=False)
++    view: Mapped[QcTicketView] = mapped_column(
++        Enum(QcTicketView, name="qc_ticket_view", native_enum=True, validate_strings=True),
++        nullable=False,
++    )
+     source: Mapped[QcTicketSource] = mapped_column(
+         Enum(QcTicketSource, name="qc_ticket_source", native_enum=True, validate_strings=True),
+         nullable=False,
+     )
+     # Normalized to the same 5-value vocabulary Release.cluster uses (AUP/Andina/CENAM/
+     # Dominicana/Global); "Mexico" and similar are folded into Global at import time.
++    # Only meaningful for view=OPERATIVAS -- Jira's Cluster field isn't used for Release.
+     cluster: Mapped[str | None] = mapped_column(String(50), nullable=True)
+-    # Raw "Campo personalizado (Programa Afectado)" -- device/SWF derivation needs a business
+-    # mapping table we don't have yet, so it's intentionally not computed here.
++    # Raw "Campo personalizado (Programa Afectado)" (Operativas only).
+     affected_program: Mapped[str | None] = mapped_column(String(150), nullable=True)
++    # Computed device/SWF classification -- Operativas via affected_program + created_date
++    # (PRE/POST cutoff), Release via project_key prefix. See services/qc_ticket_imports.py for
++    # the exact mapping tables, extracted verbatim from the QC team's reference tool.
++    device: Mapped[str | None] = mapped_column(String(50), nullable=True)
++    swf: Mapped[str | None] = mapped_column(String(50), nullable=True)
++    # Release + LEAKED only: whether this leaked ticket already had a QC/QA Bug linked (via any
++    # Jira link type) before it derived into a production issue -- if so, it's NOT a genuine
++    # leak (QA/QC had already caught it). Null for anything that isn't Release+LEAKED.
++    is_attributed: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+     created_date: Mapped[date] = mapped_column(Date, nullable=False)
+     resolved_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+diff --git a/backend/app/models/__init__.py b/backend/app/models/__init__.py
+--- a/backend/app/models/__init__.py
++++ b/backend/app/models/__init__.py
+@@ -1,7 +1,7 @@
+ """Domain ORM models. Imported eagerly so Base.metadata is complete for Alembic and create_all."""
+ 
+ from app.models.defect import Defect, DefectStatus
+-from app.models.qc_ticket import QcTicket, QcTicketPriority, QcTicketSource
++from app.models.qc_ticket import QcTicket, QcTicketPriority, QcTicketSource, QcTicketView
+ from app.models.release import Release, ReleaseStatus
+ from app.models.test_case import TestCase, TestCasePriority, TestCaseStatus, TestCaseType
+ from app.models.test_step import TestStep
+@@ -13,6 +13,7 @@
+     "QcTicket",
+     "QcTicketPriority",
+     "QcTicketSource",
++    "QcTicketView",
+     "Release",
+     "ReleaseStatus",
+     "TestCase",
+diff --git a/backend/alembic/versions/0005_qc_ticket_view_swf.py b/backend/alembic/versions/0005_qc_ticket_view_swf.py
+new file mode 100644
+--- /dev/null
++++ b/backend/alembic/versions/0005_qc_ticket_view_swf.py
+@@ -0,0 +1,47 @@
++"""Add view, device, swf, is_attributed to qc_tickets
++
++Revision ID: 0005
++Revises: 0004
++Create Date: 2026-08-28
++
++"""
++
++from typing import Sequence, Union
++
++import sqlalchemy as sa
++from alembic import op
++from sqlalchemy.dialects import postgresql
++
++revision: str = "0005"
++down_revision: Union[str, None] = "0004"
++branch_labels: Union[str, Sequence[str], None] = None
++depends_on: Union[str, Sequence[str], None] = None
++
++qc_ticket_view = postgresql.ENUM("OPERATIVAS", "RELEASE", name="qc_ticket_view", create_type=False)
++
++
++def upgrade() -> None:
++    bind = op.get_bind()
++    qc_ticket_view.create(bind, checkfirst=True)
++
++    # No default: every existing row (if any) must be explicitly reclassified since "view" is a
++    # new required dimension. In practice this table has no production data yet.
++    op.add_column("qc_tickets", sa.Column("view", qc_ticket_view, nullable=True))
++    op.execute("DELETE FROM qc_tickets")  # pre-view rows have no valid view; safe to clear (no prod data yet)
++    op.alter_column("qc_tickets", "view", nullable=False)
++
++    op.add_column("qc_tickets", sa.Column("device", sa.String(length=50), nullable=True))
++    op.add_column("qc_tickets", sa.Column("swf", sa.String(length=50), nullable=True))
++    op.add_column("qc_tickets", sa.Column("is_attributed", sa.Boolean(), nullable=True))
++    op.create_index("idx_qc_tickets_view", "qc_tickets", ["view"])
++
++
++def downgrade() -> None:
++    op.drop_index("idx_qc_tickets_view", table_name="qc_tickets")
++    op.drop_column("qc_tickets", "is_attributed")
++    op.drop_column("qc_tickets", "swf")
++    op.drop_column("qc_tickets", "device")
++    op.drop_column("qc_tickets", "view")
++
++    bind = op.get_bind()
++    qc_ticket_view.drop(bind, checkfirst=True)
+diff --git a/backend/app/schemas/qc_tickets.py b/backend/app/schemas/qc_tickets.py
+--- a/backend/app/schemas/qc_tickets.py
++++ b/backend/app/schemas/qc_tickets.py
+@@ -5,7 +5,7 @@
+ 
+ from pydantic import BaseModel, ConfigDict, Field
+ 
+-from app.models.qc_ticket import QcTicketPriority, QcTicketSource
++from app.models.qc_ticket import QcTicketPriority, QcTicketSource, QcTicketView
+ 
+ 
+ class QcTicketBase(BaseModel):
+@@ -17,12 +17,16 @@
+     is_open: bool
+     cluster: str | None = None
+     affected_program: str | None = None
++    device: str | None = None
++    swf: str | None = None
++    is_attributed: bool | None = None
+     created_date: date
+     resolved_date: date | None = None
+     summary: str | None = None
+ 
+ 
+ class QcTicketCreate(QcTicketBase):
++    view: QcTicketView
+     source: QcTicketSource
+ 
+ 
+@@ -30,6 +34,7 @@
+     model_config = ConfigDict(from_attributes=True)
+ 
+     id: int
++    view: QcTicketView
+     source: QcTicketSource
+     imported_at: datetime
+ 
+@@ -45,6 +50,7 @@
+     errors: list[QcTicketImportRowError]
+     warnings: list[QcTicketImportRowError] = Field(default_factory=list)
+     total_rows: int
++    excluded_cancelled_count: int = 0
+     valid_count: int
+     error_count: int
+ 
+@@ -60,7 +66,8 @@
+ 
+ 
+ class QcTicketStats(BaseModel):
+-    """Backs the KPIs -> Radar de Defectos screen."""
++    """Backs the KPIs -> Radar de Defectos screen. Split by view (Operativas/Release), since
++    they use different backlog-closed rules and different SWF derivations."""
+ 
+     total: int
+     blocker_count: int
+@@ -70,5 +77,7 @@
+     qc_detected_count: int
+     leaked_count: int
+     leak_rate_percent: float  # leaked / (leaked + qc_detected) * 100
++    genuine_leak_count: int | None = None  # Release only: leaked AND NOT is_attributed
+     by_cluster: dict[str, int] = Field(default_factory=dict)
++    by_swf: dict[str, int] = Field(default_factory=dict)
+     by_month: dict[str, int] = Field(default_factory=dict)  # "YYYY-MM" -> count
+diff --git a/backend/app/services/qc_ticket_imports.py b/backend/app/services/qc_ticket_imports.py
+--- a/backend/app/services/qc_ticket_imports.py
++++ b/backend/app/services/qc_ticket_imports.py
+@@ -1,29 +1,22 @@
+ """Parsing and validation for the QcTicket bulk-import pipeline.
+ 
+-Reads the actual columns Jira's export produces (verified against a real export sample):
+-Clave de incidencia, Tipo de Incidencia, Clave del proyecto, Prioridad, Estado, Creada,
+-Resuelta, Resumen, "Campo personalizado (Cluster)". Dates use Jira's default Spanish-locale
+-format: DD/MMM/YY HH:MM AM|PM (e.g. "25/ago/26 03:45 PM").
+-
+-Device/SWF are intentionally NOT derived here: the reference tool computed them via a
+-business-maintained Program-to-Device lookup table we don't have visibility into. Only
+-"Campo personalizado (Programa Afectado)" (the raw affected-program field) is imported;
+-deriving Device/SWF from it is a follow-up once that mapping is provided.
+-
+-Cluster values are normalized to the same 5-value vocabulary Release.cluster uses. Any raw
+-value outside that list is not silently dropped -- it surfaces as a warning if aliased, or a
+-warning (imported without cluster) if completely unrecognized.
++All mapping tables below (QCO_MAP, PRE_POST_BASE, OPE_SWF_MAP, REL_OPERATIVO_FINAL,
++REL_SWF_MAP2) were extracted VERBATIM from the QC team's reference dashboard_qco.html --
++not re-derived or approximated. Column matching is by exact normalized header text (never
++substring), specifically to avoid Jira's decoy fields ("Contador Programa Afectado" is numeric
++and NOT the same as "Campo personalizado (Programa Afectado)"; same caution applies if a
++"Nuevo Cluster" field is ever populated).
+ """
+ 
+ import csv
+ import io
+ import re
+-from dataclasses import dataclass
++from dataclasses import dataclass, field
+ from datetime import date as date_cls
+ 
+ import openpyxl
+ 
+-from app.models.qc_ticket import QcTicketPriority, QcTicketSource
++from app.models.qc_ticket import QcTicketPriority, QcTicketSource, QcTicketView
+ from app.schemas.qc_tickets import QcTicketCreate, QcTicketImportRowError
+ from app.services.cluster_resolution import resolve_cluster
+ 
+@@ -39,17 +32,70 @@
+     "resuelta": "resolved_date",
+     "resumen": "summary",
+     "campo personalizado (cluster)": "cluster_raw",
++    # Exact match only -- "Campo personalizado (Contador Programa Afectado)" is a DIFFERENT,
++    # numeric field that must never be picked up here (see module docstring).
+     "campo personalizado (programa afectado)": "affected_program",
+ }
+ 
+-# Canonical Cluster vocabulary and Andina/Dominicana-splitting logic now live in
+-# services/cluster_resolution.py, shared with the Jira sync client.
++# --- Operativas: Programa Afectado -> Program Base -> SWF ------------------------------------
++# Extracted verbatim from QCO_MAP / PRE_POST_BASE / OPE_CUTOFF / OPE_SWF_MAP in the reference tool.
++QCO_MAP = {
++    "Gestion Cambios Operativos": "GCO", "Editorial": "GCO",
++    "Buscadores y Recomendadores": "BE (HITSS)", "Usuarios y Sociabilizacion": "BE (HITSS)",
++    "Akamai": "BE (HITSS)", "Player": "BE (HITSS)", "Pagos": "BE (HITSS)",
++    "Tecnología": "BE (HITSS)", "Arquitectura": "BE (HITSS)", "Buscador": "BE (HITSS)",
++    "Arquitectura BE": "BE (HITSS)", "CMS": "BE (HITSS)", "Gestores": "BE (HITSS)", "GPS": "BE (HITSS)",
++    "Content Platform": "BE (HITSS)", "Business Support System": "BE (HITSS)",
++    "Electronic Program Guide": "BE (HITSS)",
++    "Claro Video Web": "WEBCL", "Claro Musica Web": "WEBCL",
++    "Claro Video Windows": "WINCL", "XBox One": "WINCL",
++    "Claro Video AndroidTV": "ADTCL",
++    "AAF": "STVCL", "AAF IPTV": "STVCL", "STB AAF": "STVCL", "Kaon": "STVCL",
++    "AAF Legacy": "STVCL", "MID": "STVCL",
++    "Android TV STB": "ATSCL",
++    "Claro Argentina": "LCDN", "LCDN Colombia": "LCDN",
++}
++PRE_POST_BASE = {
++    "TVOS": "TVOS", "Claro Video Apple TV": "TVOS",
++    "Claro Video iOS": "IOS",
++    "Claro video Android": "ADR", "Claro Video Android": "ADR",
++    "Coship": "C9085",
++    "CVRKS": "ROKU",
++}
++OPE_CUTOFF = date_cls(2026, 4, 20)
++OPE_SWF_MAP = {
++    "BE (HITSS)": "HITSS", "GCO": "HITSS", "WEBCL": "HITSS", "WINCL": "HITSS", "ADTCL": "HITSS",
++    "STVCL": "HITSS", "ATSCL": "TATA", "LCDN": "OPERACION",
++    "TVOSCL": "HITSS", "TVOSPR": "NEORIS", "IOSCL": "HITSS", "IOSPR": "NEORIS",
++    "ADRCL": "HITSS", "ADRPR": "NEORIS", "C9085CL": "HITSS", "C9085PR": "NEORIS",
++    "ROKUCL": "HITSS", "ROKUPR": "NEORIS",
++}
++
++# --- Release: Clave del proyecto -> Operativo Final -> SWF ------------------------------------
++REL_OPERATIVO_FINAL = {
++    "CLAUP": "BE (HITSS)", "CLGLO": "BE (HITSS)", "CENAM": "BE (HITSS)", "CANRD": "BE (HITSS)",
++    "CLBRA": "BE (HITSS)", "AKMCL": "BE (HITSS)", "ARQCL": "BE (HITSS)", "BSSCL": "BE (HITSS)",
++    "CONCL": "BE (HITSS)", "PLYCL": "BE (HITSS)", "PRGCL": "BE (HITSS)",
++    "IMDCL": "BE (Nubiral)", "RECCL": "BE (Nubiral)", "APIMCL": "BE (Nubiral)",
++    "DPLCL": "BE (Nubiral)", "CLGES": "BE (Nubiral)", "DATCL": "BE (Nubiral)",
++    "APISPR": "BE (NEORIS)", "DISPT": "EXCLUIR",
++}
++REL_SWF_MAP2 = {
++    "BE (Nubiral)": "NUBIRAL", "ADRPR": "NEORIS", "WINCL": "HITSS", "AAFCL": "HITSS",
++    "STVCL": "HITSS", "IOSPR": "NEORIS", "ROKUPR": "NEORIS", "IOSCL": "HITSS",
++    "AOSPCL": "HITSS", "ADRCL": "HITSS", "KPLCL": "HITSS", "TVOSCL": "HITSS",
++    "GCECL": "HITSS", "BE (HITSS)": "HITSS", "ATSCL": "TATA", "WEBCL": "HITSS",
++    "SCTCL": "TATA", "TVOSPR": "NEORIS", "ADTCL": "HITSS", "C9085PR": "NEORIS",
++    "C9085CL": "HITSS", "BE (NEORIS)": "NEORIS", "ROKUCL": "HITSS", "LCDN": "OPERACION",
++    "CIACL": "OPERACION", "GCO": "HITSS",
++}
+ 
+-# Statuses observed in a real export. Unrecognized statuses default to OPEN (safer for
+-# visibility than silently hiding a ticket from the backlog) and are flagged as a warning.
+-_CLOSED_STATUSES = {"FINALIZADA", "CERRADA", "DONE", "RESUELTA", "CANCELADA", "CANCELLED"}
+-_KNOWN_OPEN_STATUSES = {
+-    "TO DEVELOP", "IN PROGRAM REVIEW", "PENDING EXTERNAL DATA", "PENDING BUSINESS OWNER",
++_CLOSED_STATUSES_OPERATIVAS = {"FINALIZADA"}
++_CLOSED_STATUSES_RELEASE = {"FINALIZADA", "ROLL OUT"}
++_KNOWN_STATUSES = {
++    "FINALIZADA", "ROLL OUT", "TO DEVELOP", "IN PROGRAM REVIEW", "PENDING EXTERNAL DATA",
++    "PENDING BUSINESS OWNER", "ANALYSIS", "DEVELOPMENT", "INTEGRATION", "TAREAS POR HACER",
++    "PENDING RESOLUTION", "PENDING BUSINESS ANALYST", "VALIDATE QC", "QA VALIDATION", "VALIDATION",
+ }
+ 
+ _MONTHS_ES = {
+@@ -68,7 +114,8 @@
+ @dataclass
+ class _RawRow:
+     row_number: int
+-    values: dict[str, str]
++    values: dict[str, str] = field(default_factory=dict)
++    linked_issue_keys: list[str] = field(default_factory=list)
+ 
+ 
+ def _clean(value: object) -> str:
+@@ -79,6 +126,12 @@
+     return _HEADER_ALIASES.get(raw.strip().lower())
+ 
+ 
++def _is_link_header(raw: str) -> bool:
++    """'Enlace a la incidencia (...)' columns: matched by PREFIX deliberately, unlike the exact
++    matching used elsewhere -- Jira emits one such column per link type/slot, unpredictably."""
++    return raw.strip().lower().startswith("enlace")
++
++
+ def _parse_jira_date(raw: str) -> date_cls | None:
+     match = _DATE_RE.match(raw.strip())
+     if not match:
+@@ -114,12 +167,16 @@
+ 
+     header_row = grid[0]
+     canonical_by_index: dict[int, str] = {}
++    link_indexes: list[int] = []
+     for index, raw_header in enumerate(header_row):
+         if raw_header is None:
+             continue
+-        canonical = _normalize_header(str(raw_header))
++        raw_header_str = str(raw_header)
++        canonical = _normalize_header(raw_header_str)
+         if canonical is not None:
+             canonical_by_index[index] = canonical
++        elif _is_link_header(raw_header_str):
++            link_indexes.append(index)
+ 
+     found = set(canonical_by_index.values())
+     missing = [f for f in _REQUIRED_HEADERS if f not in found]
+@@ -136,7 +193,10 @@
+             canonical: _clean(data_row[index] if index < len(data_row) else None)
+             for index, canonical in canonical_by_index.items()
+         }
+-        rows.append(_RawRow(row_number=offset, values=values))
++        linked = [
++            _clean(data_row[i]) for i in link_indexes if i < len(data_row) and _clean(data_row[i])
++        ]
++        rows.append(_RawRow(row_number=offset, values=values, linked_issue_keys=linked))
+ 
+     if not rows:
+         raise QcTicketImportStructureError(["El archivo no contiene filas de datos."])
+@@ -153,13 +213,47 @@
+     return QcTicketPriority.OTHER
+ 
+ 
++def _resolve_operativas_device_swf(affected_program: str | None, created: date_cls) -> tuple[str | None, str | None]:
++    if not affected_program:
++        return None, None
++    if affected_program in PRE_POST_BASE:
++        base = PRE_POST_BASE[affected_program]
++        suffix = "CL" if created < OPE_CUTOFF else "PR"
++        device = base + suffix
++    elif affected_program in QCO_MAP:
++        device = QCO_MAP[affected_program]
++    else:
++        return None, None
++    swf = OPE_SWF_MAP.get(device, "OTROS")
++    return device, swf
++
++
++def _resolve_release_swf(project_key: str | None) -> tuple[str | None, str | None]:
++    """Returns (operativo_final_or_None_if_excluded, swf). A return of (None, "EXCLUIR") signals
++    the ticket should be dropped entirely (matches REL_OPERATIVO_FINAL['DISPT'] = 'EXCLUIR')."""
++    if not project_key:
++        return None, None
++    operativo_final = REL_OPERATIVO_FINAL.get(project_key, project_key)
++    if operativo_final == "EXCLUIR":
++        return None, "EXCLUIR"
++    swf = REL_SWF_MAP2.get(operativo_final, "OTROS")
++    return operativo_final, swf
++
++
+ def validate_rows(
+-    rows: list[_RawRow], source: QcTicketSource
+-) -> tuple[list[QcTicketCreate], list[QcTicketImportRowError], list[QcTicketImportRowError]]:
++    rows: list[_RawRow], view: QcTicketView, source: QcTicketSource
++) -> tuple[list[QcTicketCreate], list[QcTicketImportRowError], list[QcTicketImportRowError], int, dict[str, list[str]]]:
++    """Returns (valid, errors, warnings, excluded_cancelled_count, linked_keys_by_issue).
++
++    linked_keys_by_issue is only populated for view=RELEASE, source=LEAKED -- the router uses it
++    to compute is_attributed (genuine-leak cross-reference) against already-imported QC/QA Bugs.
++    """
+     valid: list[QcTicketCreate] = []
+     errors: list[QcTicketImportRowError] = []
+     warnings: list[QcTicketImportRowError] = []
++    linked_keys_by_issue: dict[str, list[str]] = {}
+     seen_keys: dict[str, int] = {}
++    excluded_cancelled = 0
+ 
+     for row in rows:
+         issue_key = row.values.get("issue_key", "")
+@@ -168,6 +262,12 @@
+                 QcTicketImportRowError(row_number=row.row_number, message="Falta Clave de incidencia.")
+             )
+             continue
++
++        status_raw = row.values.get("status_raw", "")
++        if "cancel" in status_raw.strip().lower():
++            excluded_cancelled += 1
++            continue  # Cancelled tickets are excluded from ALL counts, no exception -- not imported.
++
+         if issue_key in seen_keys:
+             errors.append(
+                 QcTicketImportRowError(
+@@ -194,44 +294,70 @@
+         resolved_raw = row.values.get("resolved_date", "")
+         resolved = _parse_jira_date(resolved_raw) if resolved_raw else None
+ 
+-        status_raw = row.values.get("status_raw", "")
+         status_upper = status_raw.strip().upper()
+-        is_open = status_upper not in _CLOSED_STATUSES
+-        if status_upper not in _CLOSED_STATUSES and status_upper not in _KNOWN_OPEN_STATUSES:
++        closed_set = _CLOSED_STATUSES_OPERATIVAS if view == QcTicketView.OPERATIVAS else _CLOSED_STATUSES_RELEASE
++        is_open = status_upper not in closed_set
++        if status_upper not in _KNOWN_STATUSES:
+             warnings.append(
+                 QcTicketImportRowError(
+                     issue_key=issue_key,
+                     row_number=row.row_number,
+                     message=(
+-                        f"'{issue_key}': estado '{status_raw}' no reconocido, se asumió ABIERTO "
+-                        "por seguridad -- revisa si debería contarse como cerrado."
++                        f"'{issue_key}': estado '{status_raw}' no reconocido, se asumió "
++                        f"{'ABIERTO' if is_open else 'CERRADO'} por comparación de texto -- revisar."
+                     ),
+                 )
+             )
+ 
+-        cluster_raw = row.values.get("cluster_raw", "")
+-        summary_text = row.values.get("summary", "")
+-        cluster, cluster_warning = resolve_cluster(cluster_raw, summary_text)
+-        if cluster_warning:
+-            warnings.append(
+-                QcTicketImportRowError(issue_key=issue_key, row_number=row.row_number, message=f"'{issue_key}': {cluster_warning}")
+-            )
++        cluster = None
++        if view == QcTicketView.OPERATIVAS:
++            cluster_raw = row.values.get("cluster_raw", "")
++            cluster, cluster_warning = resolve_cluster(cluster_raw, row.values.get("summary", ""))
++            if cluster_warning:
++                warnings.append(
++                    QcTicketImportRowError(
++                        issue_key=issue_key, row_number=row.row_number, message=f"'{issue_key}': {cluster_warning}"
++                    )
++                )
+ 
+-        valid.append(
+-            QcTicketCreate(
+-                issue_key=issue_key,
+-                issue_type=row.values.get("issue_type") or None,
+-                project_key=row.values.get("project_key") or None,
+-                priority_bucket=_resolve_priority(row.values.get("priority_raw", "")),
+-                status_raw=status_raw,
+-                is_open=is_open,
+-                source=source,
+-                cluster=cluster,
+-                affected_program=row.values.get("affected_program") or None,
+-                created_date=created,
+-                resolved_date=resolved,
+-                summary=row.values.get("summary") or None,
+-            )
++        device = swf = None
++        if view == QcTicketView.OPERATIVAS:
++            device, swf = _resolve_operativas_device_swf(row.values.get("affected_program") or None, created)
++            if row.values.get("affected_program") and device is None:
++                warnings.append(
++                    QcTicketImportRowError(
++                        issue_key=issue_key,
++                        row_number=row.row_number,
++                        message=f"'{issue_key}': Programa Afectado '{row.values['affected_program']}' no reconocido, sin SWF.",
++                    )
++                )
++        else:
++            device, swf = _resolve_release_swf(row.values.get("project_key") or None)
++            if swf == "EXCLUIR":
++                continue  # DISPT-mapped projects are excluded from Release SWF entirely.
++            if row.values.get("project_key") and swf is None:
++                swf = "OTROS"
++
++        ticket = QcTicketCreate(
++            issue_key=issue_key,
++            issue_type=row.values.get("issue_type") or None,
++            project_key=row.values.get("project_key") or None,
++            priority_bucket=_resolve_priority(row.values.get("priority_raw", "")),
++            status_raw=status_raw,
++            is_open=is_open,
++            view=view,
++            source=source,
++            cluster=cluster,
++            affected_program=row.values.get("affected_program") or None,
++            device=device,
++            swf=swf,
++            created_date=created,
++            resolved_date=resolved,
++            summary=row.values.get("summary") or None,
+         )
++        valid.append(ticket)
++
++        if view == QcTicketView.RELEASE and source == QcTicketSource.LEAKED and row.linked_issue_keys:
++            linked_keys_by_issue[issue_key] = row.linked_issue_keys
+ 
+-    return valid, errors, warnings
++    return valid, errors, warnings, excluded_cancelled, linked_keys_by_issue
+diff --git a/backend/app/services/jira_client.py b/backend/app/services/jira_client.py
+--- a/backend/app/services/jira_client.py
++++ b/backend/app/services/jira_client.py
+@@ -18,7 +18,7 @@
+ import httpx
+ 
+ from app.config import settings
+-from app.models.qc_ticket import QcTicketPriority, QcTicketSource
++from app.models.qc_ticket import QcTicketPriority, QcTicketSource, QcTicketView
+ from app.schemas.qc_tickets import QcTicketCreate
+ from app.services.cluster_resolution import resolve_cluster
+ 
+@@ -86,7 +86,9 @@
+         return None
+ 
+ 
+-def _map_issue(issue: dict[str, Any], cluster_field_id: str | None, source: QcTicketSource) -> QcTicketCreate:
++def _map_issue(
++    issue: dict[str, Any], cluster_field_id: str | None, view: QcTicketView, source: QcTicketSource
++) -> QcTicketCreate:
+     fields = issue.get("fields", {})
+     priority = fields.get("priority") or {}
+     status = fields.get("status") or {}
+@@ -112,9 +114,12 @@
+         priority_bucket=_resolve_priority(priority.get("name")),
+         status_raw=status.get("name", ""),
+         is_open=status_category not in _CLOSED_STATUS_CATEGORIES,
++        view=view,
+         source=source,
+         cluster=cluster,
+         affected_program=None,
++        device=None,
++        swf=None,
+         created_date=created,
+         resolved_date=_parse_jira_timestamp(fields.get("resolutiondate")),
+         summary=fields.get("summary"),
+@@ -122,7 +127,7 @@
+ 
+ 
+ def fetch_tickets_by_filter(
+-    filter_id: str, source: QcTicketSource, cluster_field_id: str | None
++    filter_id: str, view: QcTicketView, source: QcTicketSource, cluster_field_id: str | None
+ ) -> tuple[list[QcTicketCreate], list[str]]:
+     """Returns (mapped tickets, skipped-issue-keys with unparseable dates)."""
+     tickets: list[QcTicketCreate] = []
+@@ -147,7 +152,7 @@
+             payload = response.json()
+             for issue in payload.get("issues", []):
+                 try:
+-                    tickets.append(_map_issue(issue, cluster_field_id, source))
++                    tickets.append(_map_issue(issue, cluster_field_id, view, source))
+                 except ValueError:
+                     skipped.append(issue.get("key", "?"))
+ 
+diff --git a/backend/app/routers/qc_tickets.py b/backend/app/routers/qc_tickets.py
+--- a/backend/app/routers/qc_tickets.py
++++ b/backend/app/routers/qc_tickets.py
+@@ -13,7 +13,7 @@
+ from sqlalchemy.orm import Session
+ 
+ from app.db import get_db
+-from app.models.qc_ticket import QcTicket, QcTicketSource
++from app.models.qc_ticket import QcTicket, QcTicketSource, QcTicketView
+ from app.schemas.qc_tickets import (
+     QcTicketBulkCreateError,
+     QcTicketBulkCreateResult,
+@@ -23,9 +23,9 @@
+     QcTicketRead,
+     QcTicketStats,
+ )
+-from app.services.qc_ticket_imports import QcTicketImportStructureError, parse_file, validate_rows
+ from app.services import jira_client
+ from app.services.jira_client import JiraApiError, JiraNotConfiguredError
++from app.services.qc_ticket_imports import QcTicketImportStructureError, parse_file, validate_rows
+ 
+ router = APIRouter(prefix="/api/v1/qc-tickets", tags=["qc-tickets"])
+ logger = logging.getLogger(__name__)
+@@ -34,6 +34,7 @@
+ @router.post("/import/preview", response_model=QcTicketImportPreviewResponse)
+ async def preview_qc_ticket_import(
+     file: UploadFile,
++    view: QcTicketView = Form(...),
+     source: QcTicketSource = Form(...),
+     db: Session = Depends(get_db),
+ ) -> QcTicketImportPreviewResponse:
+@@ -46,10 +47,10 @@
+     except QcTicketImportStructureError as exc:
+         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="; ".join(exc.messages)) from exc
+ 
+-    valid, errors, warnings = validate_rows(rows, source)
++    valid, errors, warnings, excluded_cancelled, linked_keys_by_issue = validate_rows(rows, view, source)
+ 
+     existing_keys = set(db.execute(select(QcTicket.issue_key)).scalars())
+-    still_valid = []
++    still_valid: list[QcTicketCreate] = []
+     for ticket in valid:
+         if ticket.issue_key in existing_keys:
+             errors.append(
+@@ -60,11 +61,30 @@
+         else:
+             still_valid.append(ticket)
+ 
++    # Fuga genuina (Release + LEAKED only): a leaked ticket that already has a QC/QA Bug linked
++    # (any Jira link type) was already caught by QA/QC before deriving into a prod issue, so it
++    # is NOT a genuine leak. Cross-referenced against QC/QA Bugs (view=RELEASE, source=
++    # QC_DETECTED) already persisted in CaseForge. If none exist yet, the cross can't be
++    # computed (matches the README note) -- is_attributed stays None (unknown), not False.
++    if view == QcTicketView.RELEASE and source == QcTicketSource.LEAKED:
++        known_qc_bug_keys = set(
++            db.execute(
++                select(QcTicket.issue_key).where(
++                    QcTicket.view == QcTicketView.RELEASE, QcTicket.source == QcTicketSource.QC_DETECTED
++                )
++            ).scalars()
++        )
++        if known_qc_bug_keys:
++            for ticket in still_valid:
++                linked = linked_keys_by_issue.get(ticket.issue_key, [])
++                ticket.is_attributed = bool(set(linked) & known_qc_bug_keys)
++
+     return QcTicketImportPreviewResponse(
+         valid=still_valid,
+         errors=errors,
+         warnings=warnings,
+         total_rows=len(rows),
++        excluded_cancelled_count=excluded_cancelled,
+         valid_count=len(still_valid),
+         error_count=len(errors),
+     )
+@@ -80,9 +100,8 @@
+     fast add_all()+flush() first, since the common case is "everything in `payload` already
+     passed preview validation and will insert cleanly". Only falls back to the slower per-row
+     savepoint loop -- needed to pinpoint exactly which row(s) failed -- if that fast path
+-    raises. This also means an unexpected DB-level error can no longer crash the request
+-    uncaught (see the earlier BLOCKER-enum incident): SQLAlchemyError is caught broadly here,
+-    not just IntegrityError/DataError, and always turned into a clean per-row error response.
++    raises. SQLAlchemyError is caught broadly, not just IntegrityError/DataError, and always
++    turned into a clean per-row error response instead of an opaque 500.
+     """
+     try:
+         rows = [QcTicket(**ticket.model_dump()) for ticket in payload]
+@@ -127,12 +146,15 @@
+ 
+ @router.get("", response_model=list[QcTicketRead])
+ def list_qc_tickets(
++    view: QcTicketView | None = Query(default=None),
+     cluster: str | None = Query(default=None),
+     source: QcTicketSource | None = Query(default=None),
+     is_open: bool | None = Query(default=None),
+     db: Session = Depends(get_db),
+ ) -> list[QcTicket]:
+     stmt = select(QcTicket).order_by(QcTicket.created_date.desc())
++    if view is not None:
++        stmt = stmt.where(QcTicket.view == view)
+     if cluster is not None:
+         stmt = stmt.where(QcTicket.cluster == cluster)
+     if source is not None:
+@@ -144,10 +166,14 @@
+ 
+ @router.get("/stats", response_model=QcTicketStats)
+ def get_qc_ticket_stats(
++    view: QcTicketView = Query(...),
+     cluster: str | None = Query(default=None),
+     db: Session = Depends(get_db),
+ ) -> QcTicketStats:
+-    stmt = select(QcTicket)
++    """Split by view -- Operativas and Release use different backlog rules and SWF derivations,
++    so a merged view/Release total would mix incompatible things (same reasoning as the
++    Dashboard's per-Release execution split earlier)."""
++    stmt = select(QcTicket).where(QcTicket.view == view)
+     if cluster is not None:
+         stmt = stmt.where(QcTicket.cluster == cluster)
+     tickets = list(db.execute(stmt).scalars().all())
+@@ -161,7 +187,14 @@
+     leaked = sum(1 for t in tickets if t.source == QcTicketSource.LEAKED)
+     leak_rate = round((leaked / (leaked + qc_detected)) * 100, 1) if (leaked + qc_detected) else 0.0
+ 
+-    by_cluster = Counter(t.cluster or "Sin cluster" for t in tickets)
++    genuine_leak_count = None
++    if view == QcTicketView.RELEASE:
++        genuine_leak_count = sum(
++            1 for t in tickets if t.source == QcTicketSource.LEAKED and t.is_attributed is not True
++        )
++
++    by_cluster = Counter(t.cluster or "Sin cluster" for t in tickets if t.cluster is not None)
++    by_swf = Counter(t.swf or "Sin SWF" for t in tickets)
+     by_month = Counter(f"{t.created_date.year:04d}-{t.created_date.month:02d}" for t in tickets)
+ 
+     return QcTicketStats(
+@@ -173,7 +206,9 @@
+         qc_detected_count=qc_detected,
+         leaked_count=leaked,
+         leak_rate_percent=leak_rate,
++        genuine_leak_count=genuine_leak_count,
+         by_cluster=dict(by_cluster),
++        by_swf=dict(by_swf),
+         by_month=dict(sorted(by_month.items())),
+     )
+ 
+@@ -199,6 +234,7 @@
+ @router.post("/jira/sync-preview", response_model=QcTicketImportPreviewResponse)
+ def preview_jira_sync(
+     filter_id: str = Query(...),
++    view: QcTicketView = Query(...),
+     source: QcTicketSource = Query(...),
+     cluster_field_id: str | None = Query(default=None),
+     db: Session = Depends(get_db),
+@@ -206,7 +242,7 @@
+     """Same preview contract as the CSV path: fetches from Jira, validates, but does NOT
+     persist. Approve by POSTing the returned `valid` list to /qc-tickets/bulk, same as CSV."""
+     try:
+-        tickets, skipped = jira_client.fetch_tickets_by_filter(filter_id, source, cluster_field_id)
++        tickets, skipped = jira_client.fetch_tickets_by_filter(filter_id, view, source, cluster_field_id)
+     except JiraNotConfiguredError as exc:
+         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+     except JiraApiError as exc:
+diff --git a/backend/tests/test_qc_tickets.py b/backend/tests/test_qc_tickets.py
+--- a/backend/tests/test_qc_tickets.py
++++ b/backend/tests/test_qc_tickets.py
+@@ -4,11 +4,11 @@
+ )
+ 
+ 
+-def _upload(client, csv_text: str, source: str = "QC_DETECTED"):
++def _upload(client, csv_text: str, view: str = "OPERATIVAS", source: str = "QC_DETECTED"):
+     return client.post(
+         "/api/v1/qc-tickets/import/preview",
+         files={"file": ("export.csv", csv_text.encode("utf-8"), "text/csv")},
+-        data={"source": source},
++        data={"view": view, "source": source},
+     )
+ 
+ 
+@@ -29,6 +29,63 @@
+     assert ticket["is_open"] is True
+     assert ticket["cluster"] == "AUP"
+     assert ticket["created_date"] == "2026-08-25"
++    # "Claro Video Web" -> WEBCL (QCO_MAP) -> SWF HITSS (OPE_SWF_MAP)
++    assert ticket["device"] == "WEBCL"
++    assert ticket["swf"] == "HITSS"
++
++
++def test_preview_computes_pre_post_device_from_cutoff_date(client) -> None:
++    """TVOS is a PRE/POST-variant program: before 20-abr-2026 -> TVOSCL, after -> TVOSPR."""
++    csv_text = CSV_HEADER + (
++        "OPE-1,Bug,PROJ,Otros,Analysis,01/ene/26 10:00 AM,,,,TVOS\n"
++        "OPE-2,Bug,PROJ,Otros,Analysis,01/ago/26 10:00 AM,,,,TVOS\n"
++    )
++    body = _upload(client, csv_text).json()
++    by_key = {t["issue_key"]: t for t in body["valid"]}
++    assert by_key["OPE-1"]["device"] == "TVOSCL"
++    assert by_key["OPE-1"]["swf"] == "HITSS"
++    assert by_key["OPE-2"]["device"] == "TVOSPR"
++    assert by_key["OPE-2"]["swf"] == "NEORIS"
++
++
++def test_preview_excludes_cancelled_tickets_entirely(client) -> None:
++    csv_text = CSV_HEADER + (
++        "OPE-1,Bug,PROJ,Critical,Cancelada,10/ene/26 10:00 AM,,,,\n"
++        "OPE-2,Bug,PROJ,Critical,Finalizada,10/ene/26 10:00 AM,,,,\n"
++    )
++    body = _upload(client, csv_text).json()
++    assert body["valid_count"] == 1
++    assert body["excluded_cancelled_count"] == 1
++    assert body["valid"][0]["issue_key"] == "OPE-2"
++
++
++def test_release_view_uses_finalizada_or_roll_out_as_closed(client) -> None:
++    csv_text = CSV_HEADER + (
++        "REL-1,QC Bug,CENAM,Critical,Roll Out,10/ene/26 10:00 AM,,,,\n"
++        "REL-2,QC Bug,CENAM,Critical,Finalizada,10/ene/26 10:00 AM,,,,\n"
++        "REL-3,QC Bug,CENAM,Critical,Analysis,10/ene/26 10:00 AM,,,,\n"
++    )
++    body = _upload(client, csv_text, view="RELEASE").json()
++    by_key = {t["issue_key"]: t for t in body["valid"]}
++    assert by_key["REL-1"]["is_open"] is False  # Roll Out counts as closed for Release
++    assert by_key["REL-2"]["is_open"] is False
++    assert by_key["REL-3"]["is_open"] is True
++    # CENAM -> BE (HITSS) (REL_OPERATIVO_FINAL) -> SWF HITSS (REL_SWF_MAP2)
++    assert by_key["REL-1"]["swf"] == "HITSS"
++
++
++def test_release_view_operativas_only_status_finalizada_closes(client) -> None:
++    """Same 'Roll Out' status must NOT close an Operativas ticket -- only 'Finalizada' does."""
++    csv_text = CSV_HEADER + "OPE-1,Bug,PROJ,Otros,Roll Out,10/ene/26 10:00 AM,,,,\n"
++    body = _upload(client, csv_text, view="OPERATIVAS").json()
++    assert body["valid"][0]["is_open"] is True
++
++
++def test_dispt_project_is_excluded_from_release_entirely(client) -> None:
++    csv_text = CSV_HEADER + "REL-1,QC Bug,DISPT,Critical,Analysis,10/ene/26 10:00 AM,,,,\n"
++    body = _upload(client, csv_text, view="RELEASE").json()
++    assert body["valid_count"] == 0
++    assert body["error_count"] == 0  # excluded silently by design (matches REL_OPERATIVO_FINAL), not an error
+ 
+ 
+ def test_preview_resolves_andina_dominicana_via_country_in_summary(client) -> None:
+@@ -67,16 +124,6 @@
+     assert any("agrupó bajo Global" in w["message"] for w in body["warnings"])
+ 
+ 
+-def test_preview_flags_unrecognized_status_as_open_with_warning(client) -> None:
+-    csv_text = CSV_HEADER + "OPE-2,Bug,PROJ,Otros,Weird Status,10/ene/26 10:00 AM,,,,\n"
+-    body = _upload(client, csv_text).json()
+-
+-    assert body["valid_count"] == 1
+-    assert body["valid"][0]["is_open"] is True
+-    assert body["valid"][0]["priority_bucket"] == "OTHER"
+-    assert any("no reconocido" in w["message"] for w in body["warnings"])
+-
+-
+ def test_preview_rejects_missing_required_columns(client) -> None:
+     csv_text = "Clave de incidencia,Prioridad\nOPE-1,Critical\n"
+     response = _upload(client, csv_text)
+@@ -118,7 +165,7 @@
+     leaked_preview = _upload(client, leaked_csv, source="LEAKED").json()
+     client.post("/api/v1/qc-tickets/bulk", json=leaked_preview["valid"])
+ 
+-    stats = client.get("/api/v1/qc-tickets/stats").json()
++    stats = client.get("/api/v1/qc-tickets/stats", params={"view": "OPERATIVAS"}).json()
+     assert stats["total"] == 3
+     assert stats["qc_detected_count"] == 2
+     assert stats["leaked_count"] == 1
+@@ -127,3 +174,25 @@
+     assert stats["by_cluster"]["CENAM"] == 1
+     assert stats["by_month"]["2026-01"] == 2
+     assert stats["by_month"]["2026-02"] == 1
++
++
++def test_release_fuga_genuina_excludes_tickets_already_attributed_to_a_qc_qa_bug(client) -> None:
++    """A leaked ticket linked to an already-imported QC/QA Bug is NOT a genuine leak."""
++    qc_bugs_csv = CSV_HEADER + "REL-BUG-1,QC Bug,CENAM,Critical,Finalizada,10/ene/26 10:00 AM,,,,\n"
++    qc_preview = _upload(client, qc_bugs_csv, view="RELEASE", source="QC_DETECTED").json()
++    client.post("/api/v1/qc-tickets/bulk", json=qc_preview["valid"])
++
++    fuga_csv = (
++        'Clave de incidencia,Clave del proyecto,Prioridad,Estado,Creada,"Enlace a la incidencia (Relates)"\n'
++        "REL-FUGA-1,CENAM,Critical,Finalizada,10/ene/26 10:00 AM,REL-BUG-1\n"
++        "REL-FUGA-2,CENAM,Critical,Finalizada,10/ene/26 10:00 AM,\n"
++    )
++    fuga_preview = _upload(client, fuga_csv, view="RELEASE", source="LEAKED").json()
++    by_key = {t["issue_key"]: t for t in fuga_preview["valid"]}
++    assert by_key["REL-FUGA-1"]["is_attributed"] is True
++    assert by_key["REL-FUGA-2"]["is_attributed"] is False
++
++    client.post("/api/v1/qc-tickets/bulk", json=fuga_preview["valid"])
++    stats = client.get("/api/v1/qc-tickets/stats", params={"view": "RELEASE"}).json()
++    assert stats["leaked_count"] == 2
++    assert stats["genuine_leak_count"] == 1  # only REL-FUGA-2
+diff --git a/backend/tests/test_jira_client.py b/backend/tests/test_jira_client.py
+--- a/backend/tests/test_jira_client.py
++++ b/backend/tests/test_jira_client.py
+@@ -10,7 +10,7 @@
+ def test_jira_sync_preview_returns_400_when_not_configured(client) -> None:
+     response = client.post(
+         "/api/v1/qc-tickets/jira/sync-preview",
+-        params={"filter_id": "112929", "source": "QC_DETECTED"},
++        params={"filter_id": "112929", "view": "OPERATIVAS", "source": "QC_DETECTED"},
+     )
+     assert response.status_code == 400
+     assert "JIRA_BASE_URL" in response.json()["detail"]
+diff --git a/frontend/lib/types.ts b/frontend/lib/types.ts
+--- a/frontend/lib/types.ts
++++ b/frontend/lib/types.ts
+@@ -201,6 +201,7 @@
+ 
+ export type QcTicketPriority = "BLOCKER" | "CRITICAL" | "OTHER";
+ export type QcTicketSource = "QC_DETECTED" | "LEAKED";
++export type QcTicketView = "OPERATIVAS" | "RELEASE";
+ 
+ export interface QcTicketCreate {
+   issue_key: string;
+@@ -209,9 +210,13 @@
+   priority_bucket: QcTicketPriority;
+   status_raw: string;
+   is_open: boolean;
++  view: QcTicketView;
+   source: QcTicketSource;
+   cluster: string | null;
+   affected_program: string | null;
++  device: string | null;
++  swf: string | null;
++  is_attributed: boolean | null;
+   created_date: string;
+   resolved_date: string | null;
+   summary: string | null;
+@@ -228,6 +233,7 @@
+   errors: QcTicketImportRowError[];
+   warnings: QcTicketImportRowError[];
+   total_rows: number;
++  excluded_cancelled_count: number;
+   valid_count: number;
+   error_count: number;
+ }
+@@ -246,6 +252,8 @@
+   qc_detected_count: number;
+   leaked_count: number;
+   leak_rate_percent: number;
++  genuine_leak_count: number | null;
+   by_cluster: Record<string, number>;
++  by_swf: Record<string, number>;
+   by_month: Record<string, number>;
+ }
+diff --git a/frontend/lib/api.ts b/frontend/lib/api.ts
+--- a/frontend/lib/api.ts
++++ b/frontend/lib/api.ts
+@@ -13,6 +13,7 @@
+   QcTicketImportPreviewResult,
+   QcTicketSource,
+   QcTicketStats,
++  QcTicketView,
+   Release,
+   ReleaseStatus,
+   ReleaseWindow,
+@@ -178,9 +179,12 @@
+   ) => request<ReleaseWindow>(`/api/releases/${releaseId}/windows`, { method: "POST", body: JSON.stringify(payload) }),
+ 
+   // QcTicket: independent defect radar (Import -> Validate -> Preview -> Approve -> Persist).
+-  previewQcTicketImport: async (file: File, source: QcTicketSource): Promise<QcTicketImportPreviewResult> => {
++  previewQcTicketImport: async (
++    file: File, view: QcTicketView, source: QcTicketSource
++  ): Promise<QcTicketImportPreviewResult> => {
+     const formData = new FormData();
+     formData.append("file", file);
++    formData.append("view", view);
+     formData.append("source", source);
+     const response = await fetch("/api/qc-tickets/import/preview", {
+       method: "POST",
+@@ -195,8 +199,9 @@
+   },
+   bulkCreateQcTickets: (tickets: QcTicketCreate[]) =>
+     request<QcTicketBulkCreateResult>("/api/qc-tickets/bulk", { method: "POST", body: JSON.stringify(tickets) }),
+-  getQcTicketStats: (cluster?: string) => {
+-    const suffix = cluster ? `?cluster=${encodeURIComponent(cluster)}` : "";
+-    return request<QcTicketStats>(`/api/qc-tickets/stats${suffix}`);
++  getQcTicketStats: (view: QcTicketView, cluster?: string) => {
++    const params = new URLSearchParams({ view });
++    if (cluster) params.set("cluster", cluster);
++    return request<QcTicketStats>(`/api/qc-tickets/stats?${params.toString()}`);
+   },
+ };
+diff --git a/frontend/app/components/QcTicketUploadCard.tsx b/frontend/app/components/QcTicketUploadCard.tsx
+--- a/frontend/app/components/QcTicketUploadCard.tsx
++++ b/frontend/app/components/QcTicketUploadCard.tsx
+@@ -3,16 +3,18 @@
+ import { AlertTriangle, Upload } from "lucide-react";
+ import { useRef, useState } from "react";
+ import { api, ApiRequestError } from "@/lib/api";
+-import type { QcTicketBulkCreateResult, QcTicketImportPreviewResult, QcTicketSource } from "@/lib/types";
++import type { QcTicketBulkCreateResult, QcTicketImportPreviewResult, QcTicketSource, QcTicketView } from "@/lib/types";
+ 
+ type Phase = "idle" | "analyzing" | "preview" | "importing" | "done";
+ 
+ export function QcTicketUploadCard({
+   title,
++  view,
+   source,
+   onImported,
+ }: {
+   title: string;
++  view: QcTicketView;
+   source: QcTicketSource;
+   onImported: () => void;
+ }): React.ReactElement {
+@@ -27,7 +29,7 @@
+     setPhase("analyzing");
+     setError(null);
+     try {
+-      const preview = await api.previewQcTicketImport(file, source);
++      const preview = await api.previewQcTicketImport(file, view, source);
+       setPreview(preview);
+       setPhase("preview");
+     } catch (err) {
+@@ -109,6 +111,11 @@
+               <div className="import-stat error"><div className="import-stat-value">{preview.error_count}</div><div className="import-stat-label">Con errores</div></div>
+               <div className="import-stat warning"><div className="import-stat-value">{preview.warnings.length}</div><div className="import-stat-label">Advertencias</div></div>
+             </div>
++            {preview.excluded_cancelled_count > 0 && (
++              <p className="muted" style={{ fontSize: "12.5px" }}>
++                {preview.excluded_cancelled_count} cancelado(s) excluido(s) automáticamente (no cuentan en ningún conteo).
++              </p>
++            )}
+             {preview.warnings.length > 0 && (
+               <div className="import-issues warning">
+                 <div className="import-issues-title"><AlertTriangle size={13} aria-hidden="true" /> Advertencias</div>
+diff --git a/frontend/app/kpis/page.tsx b/frontend/app/kpis/page.tsx
+--- a/frontend/app/kpis/page.tsx
++++ b/frontend/app/kpis/page.tsx
+@@ -3,24 +3,23 @@
+ import { useCallback, useEffect, useState } from "react";
+ import { QcTicketUploadCard } from "@/app/components/QcTicketUploadCard";
+ import { api } from "@/lib/api";
+-import type { QcTicketStats } from "@/lib/types";
++import type { QcTicketStats, QcTicketView } from "@/lib/types";
+ 
+-export default function KpisPage(): React.ReactElement {
++function ViewPanel({ view }: { view: QcTicketView }): React.ReactElement {
+   const [stats, setStats] = useState<QcTicketStats | null>(null);
+   const [error, setError] = useState<string | null>(null);
+ 
+   const load = useCallback((): void => {
+-    api.getQcTicketStats().then(setStats).catch((err: unknown) => setError(err instanceof Error ? err.message : "Error"));
+-  }, []);
++    api.getQcTicketStats(view).then(setStats).catch((err: unknown) => setError(err instanceof Error ? err.message : "Error"));
++  }, [view]);
+ 
+   useEffect(load, [load]);
+ 
+-  return (
+-    <div className="page page-wide">
+-      <p className="eyebrow">KPIs</p>
+-      <h1>Radar de Defectos</h1>
+-      <p className="subtitle">Volumetría de tickets QC — independiente de Releases y Test Cases</p>
++  const detectLabel = view === "OPERATIVAS" ? "Detección QC" : "QC + QA Bugs";
++  const leakLabel = view === "OPERATIVAS" ? "Fuga de defectos" : "Fuga de defectos (Release)";
+ 
++  return (
++    <>
+       {error && <p className="error-text">{error}</p>}
+ 
+       {stats && (
+@@ -30,34 +29,49 @@
+             <div className="metric-cell"><div className="metric-label">Blocker</div><div className="metric-value danger">{stats.blocker_count}</div></div>
+             <div className="metric-cell"><div className="metric-label">Critical</div><div className="metric-value">{stats.critical_count}</div></div>
+             <div className="metric-cell"><div className="metric-label">Backlog abierto</div><div className="metric-value">{stats.open_count}</div></div>
+-            <div className="metric-cell"><div className="metric-label">Detectados QC</div><div className="metric-value">{stats.qc_detected_count}</div></div>
+-            <div className="metric-cell"><div className="metric-label">Tasa de fuga</div><div className="metric-value accent">{stats.leak_rate_percent}%</div></div>
++            <div className="metric-cell"><div className="metric-label">Detectados</div><div className="metric-value">{stats.qc_detected_count}</div></div>
++            <div className="metric-cell">
++              <div className="metric-label">{view === "RELEASE" ? "Fuga genuina" : "Tasa de fuga"}</div>
++              <div className="metric-value accent">
++                {view === "RELEASE" && stats.genuine_leak_count !== null
++                  ? `${stats.genuine_leak_count} / ${stats.leaked_count}`
++                  : `${stats.leak_rate_percent}%`}
++              </div>
++            </div>
+           </div>
+ 
+           <div className="panel">
+-            <div className="panel-header"><h2>Distribución por Cluster</h2></div>
++            <div className="panel-header"><h2>Distribución por SWF</h2></div>
+             <div className="panel-body">
+               <div className="cluster-list">
+-                {Object.entries(stats.by_cluster).map(([cluster, count]) => (
+-                  <div className="cluster-list-item" key={cluster}>
+-                    <span>{cluster}</span>
+-                    <span className="count">{count}</span>
+-                  </div>
++                {Object.entries(stats.by_swf).map(([swf, count]) => (
++                  <div className="cluster-list-item" key={swf}><span>{swf}</span><span className="count">{count}</span></div>
+                 ))}
+-                {Object.keys(stats.by_cluster).length === 0 && <p className="muted">Sin datos todavía.</p>}
++                {Object.keys(stats.by_swf).length === 0 && <p className="muted">Sin datos todavía.</p>}
+               </div>
+             </div>
+           </div>
+ 
++          {view === "OPERATIVAS" && (
++            <div className="panel">
++              <div className="panel-header"><h2>Distribución por Cluster</h2></div>
++              <div className="panel-body">
++                <div className="cluster-list">
++                  {Object.entries(stats.by_cluster).map(([cluster, count]) => (
++                    <div className="cluster-list-item" key={cluster}><span>{cluster}</span><span className="count">{count}</span></div>
++                  ))}
++                  {Object.keys(stats.by_cluster).length === 0 && <p className="muted">Sin datos todavía.</p>}
++                </div>
++              </div>
++            </div>
++          )}
++
+           <div className="panel">
+             <div className="panel-header"><h2>Detección por mes</h2></div>
+             <div className="panel-body">
+               <div className="cluster-list">
+                 {Object.entries(stats.by_month).map(([month, count]) => (
+-                  <div className="cluster-list-item" key={month}>
+-                    <span>{month}</span>
+-                    <span className="count">{count}</span>
+-                  </div>
++                  <div className="cluster-list-item" key={month}><span>{month}</span><span className="count">{count}</span></div>
+                 ))}
+                 {Object.keys(stats.by_month).length === 0 && <p className="muted">Sin datos todavía.</p>}
+               </div>
+@@ -66,13 +80,34 @@
+         </>
+       )}
+ 
+-      <div className="section-header">
+-        <h2>Cargar tickets</h2>
+-      </div>
++      <div className="section-header"><h2>Cargar tickets</h2></div>
+       <div className="form-grid">
+-        <QcTicketUploadCard title="Detección QC" source="QC_DETECTED" onImported={load} />
+-        <QcTicketUploadCard title="Fuga de defectos" source="LEAKED" onImported={load} />
++        <QcTicketUploadCard title={detectLabel} view={view} source="QC_DETECTED" onImported={load} />
++        <QcTicketUploadCard title={leakLabel} view={view} source="LEAKED" onImported={load} />
+       </div>
++    </>
++  );
++}
++
++export default function KpisPage(): React.ReactElement {
++  const [tab, setTab] = useState<QcTicketView>("OPERATIVAS");
++
++  return (
++    <div className="page page-wide">
++      <p className="eyebrow">KPIs</p>
++      <h1>Radar de Defectos</h1>
++      <p className="subtitle">Volumetría de tickets QC — independiente de Releases y Test Cases</p>
++
++      <div className="filter-bar" style={{ marginBottom: "1rem" }}>
++        <button type="button" className={tab === "OPERATIVAS" ? "" : "secondary"} onClick={() => setTab("OPERATIVAS")}>
++          Operativas
++        </button>
++        <button type="button" className={tab === "RELEASE" ? "" : "secondary"} onClick={() => setTab("RELEASE")}>
++          Release
++        </button>
++      </div>
++
++      <ViewPanel view={tab} key={tab} />
+     </div>
+   );
+ }

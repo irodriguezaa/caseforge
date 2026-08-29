@@ -1,0 +1,298 @@
+===== 1. backend/app/models/test_case.py =====
+"""TestCase ORM model.
+
+test_case_id (e.g. "QC-001") is a QC-readable label, unique per release, NOT the primary key.
+The primary key is the internal `id` column, independent of the release-scoped label.
+"""
+
+import enum
+from datetime import datetime
+from typing import TYPE_CHECKING
+
+from sqlalchemy import DateTime, Enum, ForeignKey, String, Text, UniqueConstraint, func
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.db import Base
+
+if TYPE_CHECKING:
+    from app.models.defect import Defect
+    from app.models.release import Release
+    from app.models.test_step import TestStep
+    from app.models.window import OperationalWindow, ReleaseWindow
+
+
+class TestCasePriority(str, enum.Enum):
+    """Severity/priority scale used across CaseForge's QC standard: exactly Blocker and Critical."""
+
+    BLOCKER = "BLOCKER"
+    CRITICAL = "CRITICAL"
+
+
+class TestCaseType(str, enum.Enum):
+    FUNCTIONAL = "FUNCTIONAL"
+    REGRESSION = "REGRESSION"
+    SMOKE = "SMOKE"
+    UI = "UI"
+    PERFORMANCE = "PERFORMANCE"
+    OTHER = "OTHER"
+
+
+class TestCaseStatus(str, enum.Enum):
+    UNEXECUTED = "UNEXECUTED"
+    PASS = "PASS"
+    FAIL = "FAIL"
+    BLOCKED = "BLOCKED"
+    N_A = "N_A"
+
+
+class TestCase(Base):
+    """A QC test case belonging to exactly one Release. Owns many TestStep rows."""
+
+    __tablename__ = "test_cases"
+    __table_args__ = (
+        # test_case_id (e.g. "QC-001") is unique PER RELEASE, not globally.
+        UniqueConstraint("release_id", "test_case_id", name="uq_test_case_release_test_case_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    release_id: Mapped[int] = mapped_column(
+        ForeignKey("releases.id", ondelete="CASCADE"), nullable=False
+    )
+    test_case_id: Mapped[str] = mapped_column(String(20), nullable=False)
+    component: Mapped[str] = mapped_column(String(150), nullable=False)
+    test_case_name: Mapped[str] = mapped_column(String(250), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    user_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Independent, optional associations -- no hierarchy between the two window types.
+    operational_window_id: Mapped[int | None] = mapped_column(
+        ForeignKey("operational_windows.id", ondelete="SET NULL"), nullable=True
+    )
+    release_window_id: Mapped[int | None] = mapped_column(
+        ForeignKey("release_windows.id", ondelete="SET NULL"), nullable=True
+    )
+    priority: Mapped[TestCasePriority] = mapped_column(
+        Enum(TestCasePriority, name="test_case_priority", native_enum=True, validate_strings=True),
+        nullable=False,
+        default=TestCasePriority.CRITICAL,
+        server_default=TestCasePriority.CRITICAL.value,
+    )
+    test_type: Mapped[TestCaseType] = mapped_column(
+        Enum(TestCaseType, name="test_case_type", native_enum=True, validate_strings=True),
+        nullable=False,
+        default=TestCaseType.FUNCTIONAL,
+        server_default=TestCaseType.FUNCTIONAL.value,
+    )
+    status: Mapped[TestCaseStatus] = mapped_column(
+        Enum(TestCaseStatus, name="test_case_status", native_enum=True, validate_strings=True),
+        nullable=False,
+        default=TestCaseStatus.UNEXECUTED,
+        server_default=TestCaseStatus.UNEXECUTED.value,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    release: Mapped["Release"] = relationship(back_populates="test_cases")
+    steps: Mapped[list["TestStep"]] = relationship(
+        back_populates="test_case",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="TestStep.step_number",
+    )
+    operational_window: Mapped["OperationalWindow | None"] = relationship(back_populates="test_cases")
+    release_window: Mapped["ReleaseWindow | None"] = relationship(back_populates="test_cases")
+    defects: Mapped[list["Defect"]] = relationship(
+        back_populates="test_case", cascade="all, delete-orphan", passive_deletes=True
+    )
+
+===== 2. backend/app/models/__init__.py =====
+"""Domain ORM models. Imported eagerly so Base.metadata is complete for Alembic and create_all."""
+
+from app.models.defect import Defect, DefectStatus
+from app.models.qc_ticket import QcTicket, QcTicketPriority, QcTicketSource, QcTicketView
+from app.models.release import Release, ReleaseStatus
+from app.models.release_analysis import ReleaseAnalysis
+from app.models.test_case import TestCase, TestCasePriority, TestCaseStatus, TestCaseType
+from app.models.test_step import TestStep
+from app.models.window import OperationalWindow, ReleaseWindow, WindowStatus
+
+__all__ = [
+    "Defect",
+    "DefectStatus",
+    "QcTicket",
+    "QcTicketPriority",
+    "QcTicketSource",
+    "QcTicketView",
+    "Release",
+    "ReleaseStatus",
+    "ReleaseAnalysis",
+    "TestCase",
+    "TestCasePriority",
+    "TestCaseStatus",
+    "TestCaseType",
+    "TestStep",
+    "OperationalWindow",
+    "ReleaseWindow",
+    "WindowStatus",
+]
+
+===== 3. backend/app/main.py =====
+"""CaseForge API application."""
+
+from fastapi import FastAPI
+
+from app.routers.dashboard import router as dashboard_router
+from app.routers.defects import router as defects_router
+from app.routers.health import router as health_router
+from app.routers.imports import router as imports_router
+from app.routers.operational_windows import router as operational_windows_router
+from app.routers.qc_tickets import router as qc_tickets_router
+from app.routers.release_windows import router as release_windows_router
+from app.routers.releases import router as releases_router
+from app.routers.test_cases import router as test_cases_router
+from app.routers.test_steps import router as test_steps_router
+
+app = FastAPI(title="CaseForge API", version="0.3.0")
+
+# Sprint 1 (unchanged): GET /health, GET /health/db
+app.include_router(health_router)
+
+# Sprint 2: Releases + Test Cases, versioned under /api/v1
+app.include_router(releases_router)
+app.include_router(test_cases_router)
+app.include_router(test_steps_router)
+app.include_router(imports_router)
+
+# Sprint 2 extension: Operational Windows, Release Windows, Defects, QC Dashboard
+app.include_router(operational_windows_router)
+app.include_router(release_windows_router)
+app.include_router(defects_router)
+app.include_router(qc_tickets_router)
+app.include_router(dashboard_router)
+
+===== 4. backend/app/routers/common.py =====
+"""Shared lookup helpers used by the Sprint 2 domain routers."""
+
+from fastapi import HTTPException, status
+from sqlalchemy.orm import Session
+
+from app.models.release import Release
+from app.models.test_case import TestCase
+from app.models.test_step import TestStep
+
+
+def get_release_or_404(release_id: int, db: Session) -> Release:
+    release = db.get(Release, release_id)
+    if release is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Release not found.")
+    return release
+
+
+def get_test_case_or_404(test_case_id: int, db: Session) -> TestCase:
+    test_case = db.get(TestCase, test_case_id)
+    if test_case is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Test case not found.")
+    return test_case
+
+
+def get_test_step_or_404(step_id: int, db: Session) -> TestStep:
+    step = db.get(TestStep, step_id)
+    if step is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Test step not found.")
+    return step
+
+===== 5. backend/app/db.py =====
+"""SQLAlchemy engine, session factory, and declarative base for CaseForge domain models.
+
+This module is additive to Sprint 1: the existing `app/database.py` module (used by the
+`/health/db` endpoint) is untouched and keeps using `psycopg` directly. This module is used
+only by the new Sprint 2 domain routers (releases, test cases, test steps, dashboard).
+"""
+
+from collections.abc import Generator
+
+from sqlalchemy import create_engine
+from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+
+from app.config import settings
+
+
+def build_database_url() -> str:
+    """Build the SQLAlchemy connection URL from the same settings used by health checks."""
+    return (
+        f"postgresql+psycopg://{settings.database_user}:{settings.database_password}"
+        f"@{settings.database_host}:{settings.database_port}/{settings.database_name}"
+    )
+
+
+engine = create_engine(build_database_url(), pool_pre_ping=True)
+SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+
+
+class Base(DeclarativeBase):
+    """Declarative base for all CaseForge ORM models."""
+
+
+def get_db() -> Generator[Session, None, None]:
+    """FastAPI dependency that yields a request-scoped database session."""
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+===== 6. backend/tests/conftest.py =====
+"""Shared pytest fixtures for Sprint 2 domain tests.
+
+Uses an in-memory SQLite database (with foreign keys enforced) instead of PostgreSQL so these
+tests run without Docker. The Sprint 1 health tests are untouched and keep mocking the
+psycopg-based check directly, independent of this fixture.
+"""
+
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine, event
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
+
+import app.models  # noqa: F401  ensure all models are registered on Base.metadata
+from app.db import Base, get_db
+from app.main import app
+
+
+@pytest.fixture()
+def db_session():
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+
+    @event.listens_for(engine, "connect")
+    def _enable_sqlite_foreign_keys(dbapi_connection, _connection_record) -> None:
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
+    Base.metadata.create_all(engine)
+    testing_session_local = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+    session = testing_session_local()
+    try:
+        yield session
+    finally:
+        session.close()
+        engine.dispose()
+
+
+@pytest.fixture()
+def client(db_session):
+    def _override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = _override_get_db
+    with TestClient(app) as test_client:
+        yield test_client
+    app.dependency_overrides.clear()

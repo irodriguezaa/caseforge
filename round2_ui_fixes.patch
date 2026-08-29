@@ -1,0 +1,595 @@
+diff --git a/backend/app/schemas/dashboard.py b/backend/app/schemas/dashboard.py
+--- a/backend/app/schemas/dashboard.py
++++ b/backend/app/schemas/dashboard.py
+@@ -1,5 +1,7 @@
+ """Pydantic schemas for the QC dashboard summary."""
+ 
++from datetime import date
++
+ from pydantic import BaseModel, Field
+ 
+ 
+@@ -19,7 +21,7 @@
+ 
+ 
+ class ActivityItem(BaseModel):
+-    """One row of 'Actividades de QC en curso': an open Release and its current execution state."""
++    """One row of 'Actividades QC en curso': an open Release and its current execution state."""
+ 
+     release_id: int
+     release_name: str
+@@ -27,6 +29,8 @@
+     platform: str
+     cluster: str | None
+     window_name: str | None
++    window_start_date: date | None = None
++    window_end_date: date | None = None
+     status: str  # ReleaseStatus value, e.g. "DRAFT" | "IN_PROGRESS"
+     planned: int
+     executed: int
+@@ -34,6 +38,7 @@
+     fail_count: int = 0
+     blocked_count: int = 0
+     unexecuted_count: int = 0
++    defects_blocker_count: int = 0
+     percent_avance: float
+     percent_cobertura: float
+     risk_level: str  # "LOW" | "MEDIUM" | "HIGH"
+diff --git a/backend/app/routers/dashboard.py b/backend/app/routers/dashboard.py
+--- a/backend/app/routers/dashboard.py
++++ b/backend/app/routers/dashboard.py
+@@ -223,6 +223,16 @@
+         rel_unexecuted = rel_planned - rel_executed
+         rel_avance = round((rel_executed / rel_planned) * 100, 1) if rel_planned else 0.0
+ 
++        rel_test_case_ids = [tc.id for tc in rel_test_cases]
++        rel_defects_blocker = 0
++        if rel_test_case_ids:
++            rel_defects_blocker = db.execute(
++                select(func.count(Defect.id)).where(
++                    Defect.test_case_id.in_(rel_test_case_ids),
++                    Defect.severity == TestCasePriority.BLOCKER,
++                )
++            ).scalar_one()
++
+         active_window = db.execute(
+             select(ReleaseWindow)
+             .where(ReleaseWindow.release_id == rel.id, ReleaseWindow.status == WindowStatus.ACTIVE)
+@@ -264,6 +274,8 @@
+                 platform=rel.platform,
+                 cluster=rel.cluster,
+                 window_name=active_window.name if active_window else None,
++                window_start_date=active_window.start_date if active_window else None,
++                window_end_date=active_window.end_date if active_window else None,
+                 status=rel.status.value,
+                 planned=rel_planned,
+                 executed=rel_executed,
+@@ -271,6 +283,7 @@
+                 fail_count=rel_fail,
+                 blocked_count=rel_blocked,
+                 unexecuted_count=rel_unexecuted,
++                defects_blocker_count=rel_defects_blocker,
+                 percent_avance=rel_avance,
+                 percent_cobertura=rel_avance,
+                 risk_level=risk_level,
+diff --git a/backend/tests/test_qc_summary.py b/backend/tests/test_qc_summary.py
+--- a/backend/tests/test_qc_summary.py
++++ b/backend/tests/test_qc_summary.py
+@@ -189,3 +189,27 @@
+     assert item["fail_count"] == 1
+     assert item["blocked_count"] == 1
+     assert item["unexecuted_count"] == 1
++
++
++def test_qc_summary_active_items_exposes_window_dates_and_blocker_defects(client) -> None:
++    release = _create_release(client)
++    client.patch(f"/api/v1/releases/{release['id']}", json={"status": "IN_PROGRESS"})
++    window = client.post(
++        f"/api/v1/releases/{release['id']}/windows",
++        json={"name": "Ventana inicial", "start_date": "2026-08-25", "end_date": "2026-08-28"},
++    ).json()
++    client.patch(f"/api/v1/release-windows/{window['id']}", json={"status": "ACTIVE"})
++
++    test_case = client.post(
++        f"/api/v1/releases/{release['id']}/test-cases",
++        json={"test_case_id": "QC-001", "component": "X", "test_case_name": "A", "status": "FAIL"},
++    ).json()
++    client.post(f"/api/v1/test-cases/{test_case['id']}/defects", json={"title": "Crash", "severity": "BLOCKER"})
++    client.post(f"/api/v1/test-cases/{test_case['id']}/defects", json={"title": "Other", "severity": "CRITICAL"})
++
++    body = client.get("/api/v1/dashboard/qc-summary").json()
++    item = next(i for i in body["active_items"] if i["release_id"] == release["id"])
++
++    assert item["window_start_date"] == "2026-08-25"
++    assert item["window_end_date"] == "2026-08-28"
++    assert item["defects_blocker_count"] == 1  # only the BLOCKER-severity one counts
+diff --git a/frontend/lib/constants.ts b/frontend/lib/constants.ts
+--- a/frontend/lib/constants.ts
++++ b/frontend/lib/constants.ts
+@@ -1,6 +1,9 @@
+-// Controlled vocabulary for Cluster. "TODOS" is a filter-only value (Dashboard) and must never
+-// be stored on a Release -- CLUSTERS is what a Release can actually have.
++// Cluster vocabulary. Split into two lists because this round of adjustments made "Todos" a
++// real, storable Release value (a release can apply company-wide), while the Dashboard's
++// cluster FILTER intentionally excludes "Todos" (see product instructions) -- so the two lists
++// are no longer the same set.
+ export const CLUSTERS = ["AUP", "Andina", "CENAM", "Dominicana", "Global"] as const;
++export const RELEASE_CLUSTER_OPTIONS = [...CLUSTERS, "Todos"] as const;
+ 
+ export const MONTHS = [
+   { value: "01", label: "Enero" },
+diff --git a/frontend/lib/types.ts b/frontend/lib/types.ts
+--- a/frontend/lib/types.ts
++++ b/frontend/lib/types.ts
+@@ -148,6 +148,8 @@
+   platform: string;
+   cluster: string | null;
+   window_name: string | null;
++  window_start_date: string | null;
++  window_end_date: string | null;
+   status: ReleaseStatus;
+   planned: number;
+   executed: number;
+@@ -155,6 +157,7 @@
+   fail_count: number;
+   blocked_count: number;
+   unexecuted_count: number;
++  defects_blocker_count: number;
+   percent_avance: number;
+   percent_cobertura: number;
+   risk_level: RiskLevel;
+diff --git a/frontend/lib/api.ts b/frontend/lib/api.ts
+--- a/frontend/lib/api.ts
++++ b/frontend/lib/api.ts
+@@ -167,4 +167,8 @@
+   },
+   listOperationalWindows: () => request<OperationalWindow[]>("/api/operational-windows"),
+   listAllReleaseWindows: () => request<ReleaseWindow[]>("/api/release-windows"),
++  createReleaseWindow: (
++    releaseId: number,
++    payload: { name: string; start_date: string; end_date: string; status?: "PLANNED" | "ACTIVE" | "CLOSED" },
++  ) => request<ReleaseWindow>(`/api/releases/${releaseId}/windows`, { method: "POST", body: JSON.stringify(payload) }),
+ };
+diff --git a/frontend/app/components/Sidebar.tsx b/frontend/app/components/Sidebar.tsx
+--- a/frontend/app/components/Sidebar.tsx
++++ b/frontend/app/components/Sidebar.tsx
+@@ -8,7 +8,7 @@
+ // and "Defectos" are placeholders until their screens exist. Only Dashboard/Releases are live.
+ const NAV_ITEMS = [
+   { href: "/", label: "Dashboard", icon: LayoutDashboard, enabled: true },
+-  { href: "/releases", label: "Releases", icon: Package, enabled: true },
++  { href: "/releases", label: "Release", icon: Package, enabled: true },
+   { href: "/operativa", label: "Operativa", icon: Activity, enabled: false },
+   { href: "/kpis", label: "KPIs", icon: Gauge, enabled: false },
+   { href: "/defects", label: "Defectos", icon: Bug, enabled: false },
+diff --git a/frontend/app/page.tsx b/frontend/app/page.tsx
+--- a/frontend/app/page.tsx
++++ b/frontend/app/page.tsx
+@@ -1,10 +1,11 @@
+ "use client";
+ 
+-import { Bug, ListChecks, Target, TrendingUp } from "lucide-react";
++import { ListChecks } from "lucide-react";
+ import { useCallback, useEffect, useState } from "react";
+ import { RiskBadge } from "@/app/components/RiskBadge";
++import { StatusBadge } from "@/app/components/StatusBadge";
+ import { api } from "@/lib/api";
+-import { MONTHS } from "@/lib/constants";
++import { CLUSTERS, MONTHS } from "@/lib/constants";
+ import type { QcDashboardSummary, QcSummaryFilters, Release } from "@/lib/types";
+ import { useRouter } from "next/navigation";
+ 
+@@ -18,7 +19,12 @@
+ 
+ const healthCheckTimeoutMs = 5_000;
+ const CURRENT_YEAR = new Date().getFullYear();
+-const CLUSTER_FILTER_OPTIONS = ["AUP", "Andina", "CENAM", "Dominicana", "Global"];
++const CURRENT_MONTH = String(new Date().getMonth() + 1).padStart(2, "0");
++
++function formatDate(iso: string): string {
++  const [y, m, d] = iso.split("-");
++  return `${d}/${m}/${y}`;
++}
+ 
+ export default function DashboardPage(): React.ReactElement {
+   const router = useRouter();
+@@ -27,8 +33,11 @@
+   const [summaryError, setSummaryError] = useState<string | null>(null);
+   const [releases, setReleases] = useState<Release[]>([]);
+ 
+-  const [month, setMonth] = useState<string>("");
+-  const [cluster, setCluster] = useState<string>("TODOS");
++  // No "todos" catch-all per product decision this round -- these always hold one concrete
++  // value. Defaults below (current month, first cluster/release) are an assumption; flagged
++  // to the user as worth confirming since there's no longer a neutral "show everything" state.
++  const [month, setMonth] = useState<string>(CURRENT_MONTH);
++  const [cluster, setCluster] = useState<string>(CLUSTERS[0]);
+   const [releaseId, setReleaseId] = useState<string>("");
+ 
+   const [system, setSystem] = useState<{ backend: CheckStatus; database: CheckStatus }>({
+@@ -37,13 +46,14 @@
+   });
+ 
+   useEffect(() => {
+-    api.listReleases().then(setReleases).catch(() => setReleases([]));
++    api.listReleases().then((data) => {
++      setReleases(data);
++      if (data.length > 0) setReleaseId((current) => current || String(data[0].id));
++    }).catch(() => setReleases([]));
+   }, []);
+ 
+   const loadSummary = useCallback((): void => {
+-    const filters: QcSummaryFilters = {};
+-    if (month) filters.month = `${CURRENT_YEAR}-${month}`;
+-    if (cluster !== "TODOS") filters.cluster = cluster;
++    const filters: QcSummaryFilters = { month: `${CURRENT_YEAR}-${month}`, cluster };
+     if (releaseId) filters.release_id = Number(releaseId);
+     api
+       .getQcSummary(filters)
+@@ -72,53 +82,37 @@
+     void checkConnection();
+   }, [checkConnection]);
+ 
+-  // RELEASES / EN CURSO are computed here, from the actual Release.status field, rather than
+-  // from window activity -- fixes the bug where "EN CURSO" could read 0 even with an
+-  // IN_PROGRESS release, since it was previously counting active *windows*, not release status.
+   const filteredReleases = releases.filter((r) => {
+-    if (cluster !== "TODOS" && r.cluster !== cluster) return false;
++    if (cluster && r.cluster !== cluster && r.cluster !== "Todos") return false;
+     if (releaseId && String(r.id) !== releaseId) return false;
+     return true;
+   });
+   const releasesTotal = filteredReleases.length;
+   const releasesInProgress = filteredReleases.filter((r) => r.status === "IN_PROGRESS").length;
+ 
+-  const inProgressItems = summary?.active_items.filter((item) => item.status === "IN_PROGRESS") ?? [];
+-
+-  const selectedReleaseName = releaseId ? releases.find((r) => String(r.id) === releaseId)?.name : null;
+-
+-  const clusterActivity = Array.from(
+-    inProgressItems.reduce((map, item) => {
+-      const key = item.cluster ?? "Sin cluster";
+-      map.set(key, (map.get(key) ?? 0) + 1);
+-      return map;
+-    }, new Map<string, number>()),
+-  );
++  const activeItems = summary?.active_items ?? [];
+ 
+   return (
+     <div className="page page-wide">
+       <div className="dashboard-header">
+         <div className="page-header" style={{ marginBottom: 0 }}>
+-          <h1>¿Qué está haciendo QC ahora?</h1>
++          <h1>Actividades QC en curso</h1>
+           <p className="subtitle">
+-            {selectedReleaseName ? `Contextualizado en: ${selectedReleaseName}` : "Vista global"}
++            {releases.find((r) => String(r.id) === releaseId)?.name ?? ""} · {cluster} · {MONTHS.find((m) => m.value === month)?.label}
+           </p>
+         </div>
+         <div className="filter-bar">
+           <select value={month} onChange={(e) => setMonth(e.target.value)}>
+-            <option value="">Todos los meses</option>
+             {MONTHS.map((m) => (
+               <option key={m.value} value={m.value}>{m.label}</option>
+             ))}
+           </select>
+           <select value={cluster} onChange={(e) => setCluster(e.target.value)}>
+-            <option value="TODOS">Todos los clusters</option>
+-            {CLUSTER_FILTER_OPTIONS.map((c) => (
++            {CLUSTERS.map((c) => (
+               <option key={c} value={c}>{c}</option>
+             ))}
+           </select>
+           <select value={releaseId} onChange={(e) => setReleaseId(e.target.value)}>
+-            <option value="">Todas las releases</option>
+             {releases.map((r) => (
+               <option key={r.id} value={r.id}>{r.name} v{r.version}</option>
+             ))}
+@@ -130,7 +124,7 @@
+ 
+       {summary && (
+         <>
+-          <div className="metrics-row">
++          <div className="metrics-row metrics-row-compact">
+             <div className="metric-cell">
+               <div className="metric-label">Releases</div>
+               <div className="metric-value">{releasesTotal}</div>
+@@ -140,35 +134,14 @@
+               <div className="metric-value">{releasesInProgress}</div>
+             </div>
+             <div className="metric-cell">
+-              <div className="metric-label"><TrendingUp size={12} aria-hidden="true" />Avance global de QC</div>
+-              <div className="metric-value accent">{summary.percent_avance.toFixed(0)}%</div>
+-            </div>
+-            <div className="metric-cell">
+-              <div className="metric-label"><Target size={12} aria-hidden="true" />% Cobertura</div>
+-              <div className="metric-value accent">{summary.percent_cobertura.toFixed(0)}%</div>
+-              <div className="metric-caption">Mismo cálculo que Avance por ahora — alcance pendiente de definir</div>
+-            </div>
+-            <div className="metric-cell">
+-              <div className="metric-label"><ListChecks size={12} aria-hidden="true" />Test cases</div>
++              <div className="metric-label"><ListChecks size={12} aria-hidden="true" />Total de Cases</div>
+               <div className="metric-value">{summary.test_cases_planned}</div>
+             </div>
+-            <div className="metric-cell">
+-              <div className="metric-label"><Bug size={12} aria-hidden="true" />Defectos</div>
+-              <div className="metric-value danger">{summary.defects_found}</div>
+-            </div>
+           </div>
+ 
+-          {clusterActivity.length > 0 && (
+-            <div className="cluster-strip">
+-              {clusterActivity.map(([name, count]) => (
+-                <span key={name} className="cluster-chip">{name}<b>{count}</b></span>
+-              ))}
+-            </div>
+-          )}
+-
+           <div className="panel">
+             <div className="panel-header">
+-              <h2>Actividades de QC en curso</h2>
++              <h2>Actividades QC en curso</h2>
+               <a href="/releases" className="panel-action">Ver todas las releases →</a>
+             </div>
+             <div className="panel-body no-pad">
+@@ -176,31 +149,41 @@
+                 <thead>
+                   <tr>
+                     <th>Release</th>
+-                    <th>Ventana</th>
++                    <th>Fecha</th>
+                     <th>Cluster</th>
+                     <th>Dispositivo</th>
+-                    <th>Avance</th>
++                    <th>% Avance</th>
++                    <th>% Cobertura</th>
+                     <th>Estado</th>
++                    <th>Blocker</th>
++                    <th>Nivel de riesgo</th>
+                   </tr>
+                 </thead>
+                 <tbody>
+-                  {inProgressItems.map((item) => (
++                  {activeItems.map((item) => (
+                     <tr
+                       key={item.release_id}
+-                      className={`clickable${releaseId === String(item.release_id) ? " selected" : ""}`}
+-                      onClick={() => setReleaseId(String(item.release_id))}
+-                      title="Click para contextualizar el Dashboard a esta actividad"
++                      className="clickable"
++                      onClick={() => router.push(`/releases/${item.release_id}`)}
++                      title="Ver detalle de la Release"
+                     >
+                       <td style={{ fontWeight: 500 }}>{item.release_name} v{item.release_version}</td>
+-                      <td className="muted">{item.window_name ?? "Sin ventana"}</td>
++                      <td className="muted">
++                        {item.window_start_date && item.window_end_date
++                          ? `${formatDate(item.window_start_date)} – ${formatDate(item.window_end_date)}`
++                          : "Sin fecha"}
++                      </td>
+                       <td className="muted">{item.cluster ?? "—"}</td>
+                       <td className="muted">{item.platform}</td>
+                       <td>{item.percent_avance.toFixed(0)}%</td>
++                      <td>{item.percent_cobertura.toFixed(0)}%</td>
++                      <td><StatusBadge status={item.status} /></td>
++                      <td className={item.defects_blocker_count > 0 ? "danger-text" : "muted"}>{item.defects_blocker_count}</td>
+                       <td><RiskBadge level={item.risk_level} /></td>
+                     </tr>
+                   ))}
+-                  {inProgressItems.length === 0 && (
+-                    <tr><td colSpan={6} className="muted">No hay actividades de QC en curso para este filtro.</td></tr>
++                  {activeItems.length === 0 && (
++                    <tr><td colSpan={9} className="muted">No hay actividades de QC en curso para este filtro.</td></tr>
+                   )}
+                 </tbody>
+               </table>
+@@ -234,42 +217,6 @@
+               </div>
+             </div>
+           </div>
+-
+-          <div className="panel">
+-            <div className="panel-header"><h2>QC Risk</h2></div>
+-            <div className="panel-body no-pad">
+-              <table className="activity">
+-                <thead>
+-                  <tr>
+-                    <th>Release</th>
+-                    <th>Nivel de riesgo</th>
+-                    <th>Blocked</th>
+-                    <th>Fail</th>
+-                    <th>Avance</th>
+-                  </tr>
+-                </thead>
+-                <tbody>
+-                  {inProgressItems.map((item) => (
+-                    <tr
+-                      key={item.release_id}
+-                      className="clickable"
+-                      onClick={() => router.push(`/releases/${item.release_id}`)}
+-                      title="Ir al detalle de la Release"
+-                    >
+-                      <td style={{ fontWeight: 500 }}>{item.release_name} v{item.release_version}</td>
+-                      <td><RiskBadge level={item.risk_level} /></td>
+-                      <td className={item.blocked_count > 0 ? "danger-text" : "muted"}>{item.blocked_count}</td>
+-                      <td className={item.fail_count > 0 ? "danger-text" : "muted"}>{item.fail_count}</td>
+-                      <td>{item.percent_avance.toFixed(0)}%</td>
+-                    </tr>
+-                  ))}
+-                  {inProgressItems.length === 0 && (
+-                    <tr><td colSpan={5} className="muted">Sin actividad para evaluar riesgo.</td></tr>
+-                  )}
+-                </tbody>
+-              </table>
+-            </div>
+-          </div>
+         </>
+       )}
+ 
+diff --git a/frontend/app/releases/page.tsx b/frontend/app/releases/page.tsx
+--- a/frontend/app/releases/page.tsx
++++ b/frontend/app/releases/page.tsx
+@@ -5,10 +5,18 @@
+ import { useEffect, useState } from "react";
+ import { StatusBadge } from "@/app/components/StatusBadge";
+ import { api, ApiRequestError } from "@/lib/api";
+-import { CLUSTERS } from "@/lib/constants";
++import { RELEASE_CLUSTER_OPTIONS } from "@/lib/constants";
+ import type { ReleaseWithCounts } from "@/lib/types";
+ 
+-const emptyForm = { name: "", version: "", platform: "", cluster: "", description: "" };
++const emptyForm = {
++  name: "",
++  version: "",
++  platform: "",
++  cluster: "",
++  description: "",
++  startDate: "",
++  endDate: "",
++};
+ 
+ export default function ReleasesPage(): React.ReactElement {
+   const router = useRouter();
+@@ -42,6 +50,20 @@
+         cluster: form.cluster || null,
+         description: form.description || null,
+       });
++      // Reuses the existing Release Window entity/endpoint instead of adding new date fields
++      // to Release -- "Inicio/Fin de revisión" become that release's initial (active) window.
++      if (form.startDate && form.endDate) {
++        try {
++          await api.createReleaseWindow(created.id, {
++            name: "Ventana inicial",
++            start_date: form.startDate,
++            end_date: form.endDate,
++            status: "ACTIVE",
++          });
++        } catch {
++          // The release itself was created successfully; a failed window doesn't block that.
++        }
++      }
+       setForm(emptyForm);
+       router.push(`/releases/${created.id}`);
+     } catch (err) {
+@@ -99,11 +121,30 @@
+                 onChange={(e) => setForm({ ...form, cluster: e.target.value })}
+               >
+                 <option value="" disabled>Selecciona un cluster</option>
+-                {CLUSTERS.map((c) => (
++                {RELEASE_CLUSTER_OPTIONS.map((c) => (
+                   <option key={c} value={c}>{c}</option>
+                 ))}
+               </select>
+             </div>
++            <div className="form-field">
++              <label htmlFor="startDate">Inicio de revisión</label>
++              <input
++                id="startDate"
++                type="date"
++                value={form.startDate}
++                onChange={(e) => setForm({ ...form, startDate: e.target.value })}
++              />
++            </div>
++            <div className="form-field">
++              <label htmlFor="endDate">Fin de revisión</label>
++              <input
++                id="endDate"
++                type="date"
++                min={form.startDate || undefined}
++                value={form.endDate}
++                onChange={(e) => setForm({ ...form, endDate: e.target.value })}
++              />
++            </div>
+             <div className="form-field full">
+               <label htmlFor="description">Descripción</label>
+               <textarea
+diff --git a/frontend/app/releases/[id]/page.tsx b/frontend/app/releases/[id]/page.tsx
+--- a/frontend/app/releases/[id]/page.tsx
++++ b/frontend/app/releases/[id]/page.tsx
+@@ -117,7 +117,10 @@
+   const canDelete = release.status === "DRAFT";
+ 
+   return (
+-    <div className="page">
++    <div className="page page-wide">
++      <p style={{ marginBottom: "1rem" }}>
++        <Link href="/releases" className="back-link">← Volver a Releases</Link>
++      </p>
+       <p className="eyebrow">Release</p>
+       <h1>
+         {release.name} <span className="muted">v{release.version}</span>
+@@ -128,6 +131,7 @@
+       </p>
+       {release.description && <p>{release.description}</p>}
+ 
++
+       {actionError && <p className="error-text">{actionError}</p>}
+ 
+       <div className="card">
+@@ -274,12 +278,13 @@
+                 <select
+                   value={testCase.status}
+                   onChange={(e) => void handleInlineStatusChange(testCase.id, e.target.value as TestCase["status"])}
+-                  className="status-select"
++                  className={`status-select status-select-${testCase.status.toLowerCase()}`}
+                 >
+                   <option value="UNEXECUTED">UNEXECUTED</option>
+                   <option value="PASS">PASS</option>
+                   <option value="FAIL">FAIL</option>
+                   <option value="BLOCKED">BLOCKED</option>
++                  <option value="N_A">N/A</option>
+                 </select>
+               </td>
+             </tr>
+diff --git a/frontend/app/styles.css b/frontend/app/styles.css
+--- a/frontend/app/styles.css
++++ b/frontend/app/styles.css
+@@ -43,11 +43,13 @@
+ .center-page { min-height: calc(100vh - 52px); display: grid; place-items: center; }
+ section.hero { width: min(100%, 580px); }
+ 
+-.page-header { margin-bottom: 16px; }
++.page-header { margin-bottom: 16px; margin-top: 10px; }
+ .page-header h1 { font-size: 18px; font-weight: 600; margin: 0; }
+ .page-header .subtitle { font-size: 13px; color: var(--text-muted); margin: 2px 0 0; }
+ .eyebrow { color: var(--accent); font-size: .75rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+ 
++.metrics-row-compact { grid-template-columns: repeat(3, minmax(140px, 220px)); }
++
+ /* Dashboard header row: title + filters side by side */
+ .dashboard-header { display: flex; align-items: flex-end; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 14px; }
+ .filter-bar { display: flex; gap: 8px; flex-wrap: wrap; }
+@@ -168,6 +170,11 @@
+ .badge-error { background: var(--danger-bg); color: var(--danger); }
+ .badge-warning { background: var(--warning-bg); color: var(--warning); }
+ .status-select { font-size: 12px; padding: 4px 22px 4px 8px; background-color: var(--bg); }
++.status-select-pass { color: var(--success); border-color: var(--success); }
++.status-select-fail { color: var(--danger); border-color: var(--danger); }
++.status-select-blocked { color: var(--warning); border-color: var(--warning); }
++.status-select-n_a { color: #7aa2e8; border-color: #7aa2e8; }
++.status-select-unexecuted { color: var(--text-muted); }
+ 
+ .section-header { display: flex; align-items: center; justify-content: space-between; margin: 1.75rem 0 .85rem; }
+ .section-header h2 { margin: 0; }
+diff --git a/frontend/app/api/releases/[id]/windows/route.ts b/frontend/app/api/releases/[id]/windows/route.ts
+new file mode 100644
+--- /dev/null
++++ b/frontend/app/api/releases/[id]/windows/route.ts
+@@ -0,0 +1,17 @@
++import { NextRequest, NextResponse } from "next/server";
++import { proxyToBackend } from "@/lib/backend";
++
++interface RouteParams {
++  params: Promise<{ id: string }>;
++}
++
++export async function POST(request: NextRequest, { params }: RouteParams): Promise<NextResponse> {
++  const { id } = await params;
++  const payload = await request.json();
++  const response = await proxyToBackend(`/api/v1/releases/${id}/windows`, {
++    method: "POST",
++    body: JSON.stringify(payload),
++  });
++  const body = await response.json();
++  return NextResponse.json(body, { status: response.status });
++}

@@ -15,8 +15,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models.deliverable import Deliverable
-from app.models.release import Release, ReleaseStatus, ReleaseType
+from app.models.release import Release, ReleaseStatus
 from app.models.release_analysis import ReleaseAnalysis
 from app.models.test_case import TestCase
 from app.routers.common import get_release_or_404
@@ -42,92 +41,6 @@ _VALID_TRANSITIONS: dict[ReleaseStatus, set[ReleaseStatus]] = {
     ReleaseStatus.COMPLETED: set(),
     ReleaseStatus.CANCELLED: set(),
 }
-
-# Entregable / Tipo de Release / Release origen can only change while still DRAFT (product
-# decision) -- same posture as the existing DRAFT-only hard-delete rule below.
-_LINEAGE_FIELDS = {"deliverable_name", "release_type", "parent_release_id"}
-
-
-def _resolve_deliverable(name: str | None, db: Session) -> Deliverable | None:
-    """Get-or-create by case-insensitive name match. No picker in this phase -- a typo creates
-    a new Deliverable rather than silently merging, which is an accepted tradeoff for now."""
-    if not name or not name.strip():
-        return None
-    normalized = name.strip()
-    existing = db.execute(
-        select(Deliverable).where(func.lower(Deliverable.name) == normalized.lower())
-    ).scalar_one_or_none()
-    if existing is not None:
-        return existing
-    deliverable = Deliverable(name=normalized)
-    db.add(deliverable)
-    try:
-        db.flush()
-    except IntegrityError:
-        # Rare race: another request created the exact same name between our lookup and this
-        # flush. The UNIQUE constraint caught it -- fall back to reusing that row instead of
-        # surfacing a 500 for something that isn't really an error from the caller's view.
-        db.rollback()
-        return db.execute(
-            select(Deliverable).where(func.lower(Deliverable.name) == normalized.lower())
-        ).scalar_one()
-    return deliverable
-
-
-def _would_create_cycle(release_id: int, proposed_parent_id: int | None, db: Session) -> bool:
-    """Walks up the proposed parent's own chain -- if it ever reaches release_id, setting
-    proposed_parent_id as release_id's parent would create a cycle."""
-    if proposed_parent_id is None:
-        return False
-    current_id: int | None = proposed_parent_id
-    visited: set[int] = set()
-    while current_id is not None:
-        if current_id == release_id:
-            return True
-        if current_id in visited:
-            break  # guards against an already-corrupt chain elsewhere; never infinite-loops
-        visited.add(current_id)
-        parent = db.get(Release, current_id)
-        current_id = parent.parent_release_id if parent else None
-    return False
-
-
-def _validate_lineage(
-    release_type: ReleaseType | None,
-    parent_release_id: int | None,
-    deliverable_id: int | None,
-    db: Session,
-    self_release_id: int | None = None,
-) -> None:
-    if release_type == ReleaseType.REVALIDACION:
-        if parent_release_id is None:
-            raise HTTPException(
-                status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Una Release de tipo Revalidación requiere una Release origen.",
-            )
-        if self_release_id is not None and parent_release_id == self_release_id:
-            raise HTTPException(
-                status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Una Release no puede ser su propia Release origen.",
-            )
-        parent = db.get(Release, parent_release_id)
-        if parent is None:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Release origen no encontrada.")
-        if deliverable_id is None or parent.deliverable_id != deliverable_id:
-            raise HTTPException(
-                status.HTTP_409_CONFLICT,
-                detail="La Release origen debe pertenecer al mismo Entregable.",
-            )
-        if self_release_id is not None and _would_create_cycle(self_release_id, parent_release_id, db):
-            raise HTTPException(
-                status.HTTP_409_CONFLICT,
-                detail="Esa Release origen generaría un ciclo en la cadena de versiones del Entregable.",
-            )
-    elif release_type == ReleaseType.EVOLUTIVO and parent_release_id is not None:
-        raise HTTPException(
-            status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Una Release de tipo Evolutivo no debe tener Release origen.",
-        )
 
 
 @router.post("/analyze-rn", response_model=ReleaseNoteAnalyzeResponse)
@@ -197,7 +110,6 @@ def list_releases(
                     if latest_analysis
                     else None
                 ),
-                deliverable_name=release.deliverable.name if release.deliverable else None,
             )
         )
     return results
@@ -205,15 +117,11 @@ def list_releases(
 
 @router.post("", response_model=ReleaseRead, status_code=status.HTTP_201_CREATED)
 def create_release(payload: ReleaseCreate, db: Session = Depends(get_db)) -> Release:
-    release_dict = payload.model_dump(exclude={"analysis_data", "deliverable_name"})
+    release_dict = payload.model_dump(exclude={"analysis_data"})
     if release_dict.get("execution_days") is None and release_dict.get("start_date") and release_dict.get("end_date"):
         release_dict["execution_days"] = calculate_business_days(
             release_dict["start_date"], release_dict["end_date"]
         )
-
-    deliverable = _resolve_deliverable(payload.deliverable_name, db)
-    release_dict["deliverable_id"] = deliverable.id if deliverable else None
-    _validate_lineage(payload.release_type, payload.parent_release_id, release_dict["deliverable_id"], db)
 
     release = Release(**release_dict)
     db.add(release)
@@ -256,12 +164,6 @@ def update_release(
     release = get_release_or_404(release_id, db)
     updates = payload.model_dump(exclude_unset=True)
 
-    if _LINEAGE_FIELDS & updates.keys() and release.status != ReleaseStatus.DRAFT:
-        raise HTTPException(
-            status.HTTP_409_CONFLICT,
-            detail="Entregable, Tipo de Release y Release origen solo pueden editarse mientras la Release está en DRAFT.",
-        )
-
     new_status = updates.get("status")
     if new_status is not None and new_status != release.status:
         allowed = _VALID_TRANSITIONS.get(release.status, set())
@@ -273,17 +175,6 @@ def update_release(
                     f"to {new_status.value}."
                 ),
             )
-
-    original_keys = set(updates.keys())
-    if "deliverable_name" in updates:
-        deliverable = _resolve_deliverable(updates.pop("deliverable_name"), db)
-        updates["deliverable_id"] = deliverable.id if deliverable else None
-
-    if _LINEAGE_FIELDS & original_keys:
-        effective_type = updates.get("release_type", release.release_type)
-        effective_parent = updates.get("parent_release_id", release.parent_release_id)
-        effective_deliverable_id = updates.get("deliverable_id", release.deliverable_id)
-        _validate_lineage(effective_type, effective_parent, effective_deliverable_id, db, self_release_id=release_id)
 
     for field, value in updates.items():
         setattr(release, field, value)
@@ -303,14 +194,6 @@ def update_release(
 @router.delete("/{release_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_release(release_id: int, db: Session = Depends(get_db)) -> None:
     release = get_release_or_404(release_id, db)
-    has_children = db.execute(
-        select(Release.id).where(Release.parent_release_id == release_id)
-    ).first()
-    if has_children:
-        raise HTTPException(
-            status.HTTP_409_CONFLICT,
-            detail="No se puede eliminar una Release que es origen de otras Releases (Revalidaciones).",
-        )
     if release.status != ReleaseStatus.DRAFT:
         raise HTTPException(
             status.HTTP_409_CONFLICT,

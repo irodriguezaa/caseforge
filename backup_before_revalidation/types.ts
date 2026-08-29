@@ -1,5 +1,4 @@
 export type ReleaseStatus = "DRAFT" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
-export type ReleaseType = "EVOLUTIVO" | "REVALIDACION";
 
 export type TestCasePriority = "BLOCKER" | "CRITICAL";
 
@@ -68,7 +67,6 @@ export interface ReleaseAnalysis {
   features_count: number;
   qa_qc_issues_count: number;
   nco_issues_count: number;
-  tri_issues_count: number;
   detected_devices?: string | null;
   proposed_coverage?: number | null;
   estimation_text?: string | null;
@@ -98,9 +96,6 @@ export interface Release {
   execution_days?: number | null;
   validation_type?: string | null;
   jira_issue_filter?: string | null;
-  deliverable_id: number | null;
-  release_type: ReleaseType | null;
-  parent_release_id: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -108,34 +103,6 @@ export interface Release {
 export interface ReleaseWithCounts extends Release {
   test_case_count: number;
   latest_analysis?: ReleaseAnalysis | null;
-  deliverable_name: string | null;
-}
-
-export interface Deliverable {
-  id: number;
-  name: string;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface DeliverableReleaseSummary {
-  id: number;
-  name: string;
-  version: string;
-  status: ReleaseStatus;
-  release_type: ReleaseType | null;
-  parent_release_id: number | null;
-  created_at: string;
-}
-
-export interface DeliverableWithMetrics extends Deliverable {
-  total_versions: number;
-  total_evolutivas: number;
-  total_revalidaciones: number;
-  total_defects: number;
-  latest_release_id: number | null;
-  latest_release_status: ReleaseStatus | null;
-  releases: DeliverableReleaseSummary[];
 }
 
 export interface TestStep {
@@ -229,11 +196,6 @@ export interface ActivityItem {
   percent_cobertura: number;
   risk_level: RiskLevel;
   risk_reasons: string[];
-  deliverable_name: string | null;
-  release_type: ReleaseType | null;
-  deliverable_release_ordinal: number | null;
-  deliverable_total_versions: number | null;
-  deliverable_total_revalidaciones: number | null;
 }
 
 export interface QcDashboardSummary {

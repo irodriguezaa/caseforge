@@ -1,0 +1,14 @@
+?? backup_before_revalidation/
+?? claude_context_revalidation.txt
+?? claude_release_context.txt
+?? cluster_fix_500_fix.patch
+?? crea
+?? docker_test_runner_fix.patch
+?? exec_per_release.patch
+?? filters_fix.patch
+?? import_ui_delta.patch
+?? priority_enum_fix.patch
+?? qc_tickets_jira.patch
+?? qc_view_operativas_release.patch
+?? round1_ui_fixes.patch
+?? round2_ui_fixes.patch

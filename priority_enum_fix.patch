@@ -1,0 +1,351 @@
+diff --git a/backend/alembic/versions/0003_fix_priority_enum_drift.py b/backend/alembic/versions/0003_fix_priority_enum_drift.py
+new file mode 100644
+--- /dev/null
++++ b/backend/alembic/versions/0003_fix_priority_enum_drift.py
+@@ -0,0 +1,80 @@
++"""Correct test_case_priority drift: ensure it is exactly BLOCKER/CRITICAL
++
++Revision ID: 0003
++Revises: 0002
++Create Date: 2026-08-28
++
++Context: during Sprint 2 development, migration 0001 was edited in place to narrow
++TestCasePriority from {LOW, MEDIUM, HIGH, CRITICAL} down to {BLOCKER, CRITICAL} before it had
++ever been applied against a real database, in the belief that no environment had run it yet.
++That assumption was wrong for at least one environment: Alembic had already recorded "0001" as
++applied there, so re-running `alembic upgrade head` after the edit never re-executed 0001's
++`CREATE TYPE test_case_priority ...` -- the live enum kept whatever value set was current when
++0001 first ran. This left that database's enum out of sync with the application code, causing
++`invalid input value for enum test_case_priority: "BLOCKER"` on insert.
++
++This migration is idempotent and safe regardless of which of the two possible historical value
++sets is present (the only two that ever existed in this codebase's history):
++  - Already correct: {BLOCKER, CRITICAL} -- values pass through unchanged.
++  - Stale/original: {LOW, MEDIUM, HIGH, CRITICAL} -- mapped to the new 2-value scale below.
++
++Mapping for stale values (best-effort; this data is Sprint 2 development/validation data, not
++production QC records): HIGH -> BLOCKER (most severe old bucket maps to the most severe new
++one), CRITICAL -> CRITICAL (unchanged), MEDIUM -> CRITICAL, LOW -> CRITICAL. Any other
++unrecognized value also falls back to CRITICAL rather than failing the migration.
++
++Editing already-applied migrations is not safe practice; going forward, schema corrections like
++this belong in new migrations, never in edits to 0001/0002.
++"""
++
++from typing import Sequence, Union
++
++from alembic import op
++
++revision: str = "0003"
++down_revision: Union[str, None] = "0002"
++branch_labels: Union[str, Sequence[str], None] = None
++depends_on: Union[str, Sequence[str], None] = None
++
++_VALUE_MAP_SQL = """
++    CASE priority_column::text
++        WHEN 'BLOCKER' THEN 'BLOCKER'
++        WHEN 'CRITICAL' THEN 'CRITICAL'
++        WHEN 'HIGH' THEN 'BLOCKER'
++        WHEN 'MEDIUM' THEN 'CRITICAL'
++        WHEN 'LOW' THEN 'CRITICAL'
++        ELSE 'CRITICAL'
++    END
++"""
++
++
++def upgrade() -> None:
++    # New type under a temporary name, guaranteed to hold exactly the correct two values,
++    # regardless of what the existing `test_case_priority` type currently contains.
++    op.execute("CREATE TYPE test_case_priority_fixed AS ENUM ('BLOCKER', 'CRITICAL')")
++
++    op.execute(
++        "ALTER TABLE test_cases ALTER COLUMN priority DROP DEFAULT"
++    )
++    op.execute(
++        "ALTER TABLE test_cases ALTER COLUMN priority TYPE test_case_priority_fixed "
++        "USING (" + _VALUE_MAP_SQL.replace("priority_column", "priority") + ")::test_case_priority_fixed"
++    )
++    op.execute(
++        "ALTER TABLE test_cases ALTER COLUMN priority SET DEFAULT 'CRITICAL'"
++    )
++
++    op.execute(
++        "ALTER TABLE defects ALTER COLUMN severity TYPE test_case_priority_fixed "
++        "USING (" + _VALUE_MAP_SQL.replace("priority_column", "severity") + ")::test_case_priority_fixed"
++    )
++
++    op.execute("DROP TYPE test_case_priority")
++    op.execute("ALTER TYPE test_case_priority_fixed RENAME TO test_case_priority")
++
++
++def downgrade() -> None:
++    # Not reversible: the source value sets (LOW/MEDIUM/HIGH) are not recoverable once
++    # collapsed into BLOCKER/CRITICAL. Downgrading past this point requires a manual decision
++    # about what a 4-value scale should mean again, so this is intentionally left as a no-op.
++    pass
+diff --git a/backend/app/routers/test_cases.py b/backend/app/routers/test_cases.py
+--- a/backend/app/routers/test_cases.py
++++ b/backend/app/routers/test_cases.py
+@@ -1,15 +1,14 @@
+ """TestCase endpoints.
+ 
+ Includes a bulk-create endpoint (`POST /releases/{release_id}/test-cases/bulk`) whose payload
+-and per-row error shape are designed to be reused, unchanged, as the "Persist" stage of a
+-future Import -> Validate -> Preview -> Approve -> Persist Excel/CSV pipeline. No import
+-parsing, staging, or preview logic exists yet -- this Sprint only guarantees the persistence
+-contract will not need to change shape later.
++and per-row error shape are designed to be reused, unchanged, as the "Persist" stage of the
++Import -> Validate -> Preview -> Approve -> Persist pipeline. The endpoint is transactional:
++either every row in the batch persists, or none do -- see bulk_create_test_cases for details.
+ """
+ 
+ from fastapi import APIRouter, Depends, HTTPException, Query, status
+ from sqlalchemy import select
+-from sqlalchemy.exc import IntegrityError
++from sqlalchemy.exc import DataError, IntegrityError
+ from sqlalchemy.orm import Session, selectinload
+ 
+ from app.db import get_db
+@@ -76,6 +75,19 @@
+     return test_case
+ 
+ 
++def _describe_bulk_error(exc: Exception, row: TestCaseCreate) -> str:
++    if isinstance(exc, IntegrityError):
++        return f"test_case_id '{row.test_case_id}' already exists in this release."
++    if isinstance(exc, DataError):
++        return (
++            f"test_case_id '{row.test_case_id}': la base de datos rechazó uno de los valores "
++            f"enviados (por ejemplo, priority='{row.priority}'). Verifica que coincida con los "
++            "valores que la base de datos acepta actualmente -- puede indicar que falta aplicar "
++            "una migración."
++        )
++    return f"test_case_id '{row.test_case_id}': error inesperado al guardar ({exc.__class__.__name__})."
++
++
+ @router.post(
+     "/releases/{release_id}/test-cases/bulk",
+     response_model=TestCaseBulkCreateResult,
+@@ -84,14 +96,17 @@
+ def bulk_create_test_cases(
+     release_id: int, payload: TestCaseBulkCreate, db: Session = Depends(get_db)
+ ) -> TestCaseBulkCreateResult:
+-    """Persist stage for a future bulk-import pipeline: create many already-approved rows.
++    """Persist stage for the bulk-import pipeline: create many already-approved rows.
+ 
+-    Each row is attempted independently (via a savepoint) so one invalid/duplicate row does not
+-    discard the rest of an approved batch.
++    Transactional: every row is tried independently (via its own savepoint) so the response can
++    report a precise per-row error, but nothing is persisted unless ALL rows succeed. If any row
++    fails -- a duplicate test_case_id (IntegrityError), a value the database rejects such as an
++    out-of-sync enum (DataError), or any other DB-level error -- the entire batch is rolled back.
++    No partial import is ever left behind.
+     """
+     get_release_or_404(release_id, db)
+ 
+-    created: list[TestCase] = []
++    tentative_created: list[TestCase] = []
+     errors: list[BulkCreateError] = []
+ 
+     for index, row in enumerate(payload.test_cases):
+@@ -100,23 +115,29 @@
+         db.add(test_case)
+         try:
+             db.flush()
+-        except IntegrityError:
++        except (IntegrityError, DataError) as exc:
+             savepoint.rollback()
+             errors.append(
+                 BulkCreateError(
+                     index=index,
+                     test_case_id=row.test_case_id,
+-                    message=f"test_case_id '{row.test_case_id}' already exists in this release.",
++                    message=_describe_bulk_error(exc, row),
+                 )
+             )
+             continue
+-        created.append(test_case)
++        tentative_created.append(test_case)
++
++    if errors:
++        # At least one row failed: roll back the whole batch, including any rows that flushed
++        # successfully above. Nothing partial is committed.
++        db.rollback()
++        return TestCaseBulkCreateResult(created=[], errors=errors)
+ 
+     db.commit()
+-    for test_case in created:
++    for test_case in tentative_created:
+         db.refresh(test_case)
+ 
+-    return TestCaseBulkCreateResult(created=created, errors=errors)
++    return TestCaseBulkCreateResult(created=tentative_created, errors=[])
+ 
+ 
+ @router.get("/test-cases/{test_case_id}", response_model=TestCaseReadWithSteps)
+diff --git a/backend/app/services/imports.py b/backend/app/services/imports.py
+--- a/backend/app/services/imports.py
++++ b/backend/app/services/imports.py
+@@ -38,7 +38,7 @@
+ import openpyxl
+ from pydantic import ValidationError
+ 
+-from app.models.test_case import TestCaseType
++from app.models.test_case import TestCasePriority, TestCaseType
+ from app.schemas.imports import ImportRowError
+ from app.schemas.test_case import TestCaseCreate
+ from app.schemas.test_step import TestStepCreate
+@@ -114,7 +114,7 @@
+     "NA": "N_A",
+ }
+ 
+-_PRIORITY_ALIASES = {"BLOCKER": "BLOCKER", "CRITICAL": "CRITICAL"}
++_PRIORITY_ALIASES = {member.value: member.value for member in TestCasePriority}
+ _TEST_TYPE_ALIASES = {member.value: member.value for member in TestCaseType}
+ 
+ _SHEET_NAME_PREFERENCE = ["casos de prueba", "zephyr export"]
+diff --git a/backend/tests/test_test_cases.py b/backend/tests/test_test_cases.py
+--- a/backend/tests/test_test_cases.py
++++ b/backend/tests/test_test_cases.py
+@@ -4,6 +4,78 @@
+     return client.post("/api/v1/releases", json=payload).json()
+ 
+ 
++def test_bulk_create_accepts_blocker_priority(client) -> None:
++    """Regression test for the exact case that failed against a drifted Postgres enum: BLOCKER
++    is a first-class, supported priority value and must persist end to end."""
++    release = _create_release(client)
++
++    response = client.post(
++        f"/api/v1/releases/{release['id']}/test-cases/bulk",
++        json={
++            "test_cases": [
++                {
++                    "test_case_id": "QC-001",
++                    "component": "Playback",
++                    "test_case_name": "Case A",
++                    "priority": "BLOCKER",
++                }
++            ]
++        },
++    )
++
++    assert response.status_code == 201
++    body = response.json()
++    assert body["errors"] == []
++    assert len(body["created"]) == 1
++    assert body["created"][0]["priority"] == "BLOCKER"
++
++
++def test_bulk_create_rolls_back_everything_on_unexpected_db_error(client, db_session, monkeypatch) -> None:
++    """Simulates the class of failure that actually occurred in production: a DB-level error
++    (DataError, e.g. an out-of-sync enum) on one row must not leave any other row from the same
++    batch persisted, and must not crash the request uncaught."""
++    from sqlalchemy.exc import DataError
++
++    from app.models.test_case import TestCase as TestCaseModel
++
++    release = _create_release(client)
++
++    original_flush = db_session.flush
++
++    def flaky_flush(*args, **kwargs):
++        pending = [obj for obj in db_session.new if isinstance(obj, TestCaseModel)]
++        if any(obj.test_case_id == "QC-002" for obj in pending):
++            raise DataError(
++                "INSERT INTO test_cases ...",
++                {},
++                Exception('invalid input value for enum test_case_priority: "BLOCKER"'),
++            )
++        return original_flush(*args, **kwargs)
++
++    monkeypatch.setattr(db_session, "flush", flaky_flush)
++
++    response = client.post(
++        f"/api/v1/releases/{release['id']}/test-cases/bulk",
++        json={
++            "test_cases": [
++                {"test_case_id": "QC-001", "component": "Playback", "test_case_name": "A", "priority": "CRITICAL"},
++                {"test_case_id": "QC-002", "component": "Playback", "test_case_name": "B", "priority": "BLOCKER"},
++            ]
++        },
++    )
++
++    assert response.status_code == 201
++    body = response.json()
++    assert body["created"] == []
++    assert len(body["errors"]) == 1
++    assert body["errors"][0]["test_case_id"] == "QC-002"
++    assert "base de datos rechazó" in body["errors"][0]["message"]
++
++    monkeypatch.setattr(db_session, "flush", original_flush)
++    remaining = client.get(f"/api/v1/releases/{release['id']}/test-cases").json()
++    assert remaining == []
++
++
+ def test_create_test_case_with_nested_steps(client) -> None:
+     release = _create_release(client)
+ 
+@@ -123,7 +195,10 @@
+     assert client.patch(f"/api/v1/steps/{step_id}", json={"test_step": "x"}).status_code == 404
+ 
+ 
+-def test_bulk_create_reports_partial_success(client) -> None:
++def test_bulk_create_is_transactional_one_bad_row_persists_nothing(client) -> None:
++    """Per product decision: the bulk endpoint is all-or-nothing. One failing row (here, a
++    duplicate test_case_id) must roll back the entire batch -- including QC-002, which on its
++    own would have been perfectly valid."""
+     release = _create_release(client)
+     client.post(
+         f"/api/v1/releases/{release['id']}/test-cases",
+@@ -142,7 +217,12 @@
+ 
+     assert response.status_code == 201
+     body = response.json()
+-    assert len(body["created"]) == 1
+-    assert body["created"][0]["test_case_id"] == "QC-002"
++    assert body["created"] == []
++    assert len(body["errors"]) == 1
++    assert body["errors"][0]["test_case_id"] == "QC-001"
++
++    # Confirm QC-002 was NOT left behind despite having no problem of its own.
++    remaining = client.get(f"/api/v1/releases/{release['id']}/test-cases").json()
++    assert [tc["test_case_id"] for tc in remaining] == ["QC-001"]
+     assert len(body["errors"]) == 1
+     assert body["errors"][0]["test_case_id"] == "QC-001"
+diff --git a/backend/tests/test_imports.py b/backend/tests/test_imports.py
+--- a/backend/tests/test_imports.py
++++ b/backend/tests/test_imports.py
+@@ -21,6 +21,32 @@
+     )
+ 
+ 
++def test_preview_and_bulk_agree_on_which_priorities_are_persistable(client) -> None:
++    """Guards against the exact class of bug that just occurred: preview's accepted priority
++    values and the database's actual enum must never diverge. This asserts they're driven by
++    the same source (TestCasePriority) rather than a second, hand-maintained list -- if BLOCKER
++    is ever removed from the model without updating the importer (or vice versa), this fails."""
++    from app.models.test_case import TestCasePriority
++    from app.services.imports import _PRIORITY_ALIASES
++
++    assert set(_PRIORITY_ALIASES.keys()) == {member.value for member in TestCasePriority}
++
++    release = _create_release(client)
++    csv_text = CSV_HEADER + (
++        "QC-001,Playback,Play a VOD asset,,Subscriber,1,Open app,App opens,Blocker,Functional,Pendiente\n"
++    )
++    preview = _upload_csv(client, release["id"], csv_text).json()
++    assert preview["valid_count"] == 1
++    assert preview["valid"][0]["priority"] == "BLOCKER"
++
++    persist = client.post(
++        f"/api/v1/releases/{release['id']}/test-cases/bulk",
++        json={"test_cases": preview["valid"]},
++    )
++    assert persist.status_code == 201
++    assert len(persist.json()["created"]) == 1
++
++
+ def test_preview_valid_csv_with_two_test_cases(client) -> None:
+     release = _create_release(client)
+     csv_text = CSV_HEADER + (

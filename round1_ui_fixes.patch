@@ -1,0 +1,813 @@
+diff --git a/backend/app/schemas/dashboard.py b/backend/app/schemas/dashboard.py
+--- a/backend/app/schemas/dashboard.py
++++ b/backend/app/schemas/dashboard.py
+@@ -19,7 +19,7 @@
+ 
+ 
+ class ActivityItem(BaseModel):
+-    """One row of 'Actividad actual de QC': an open Release and its current execution state."""
++    """One row of 'Actividades de QC en curso': an open Release and its current execution state."""
+ 
+     release_id: int
+     release_name: str
+@@ -27,8 +27,13 @@
+     platform: str
+     cluster: str | None
+     window_name: str | None
++    status: str  # ReleaseStatus value, e.g. "DRAFT" | "IN_PROGRESS"
+     planned: int
+     executed: int
++    pass_count: int = 0
++    fail_count: int = 0
++    blocked_count: int = 0
++    unexecuted_count: int = 0
+     percent_avance: float
+     percent_cobertura: float
+     risk_level: str  # "LOW" | "MEDIUM" | "HIGH"
+diff --git a/backend/app/routers/dashboard.py b/backend/app/routers/dashboard.py
+--- a/backend/app/routers/dashboard.py
++++ b/backend/app/routers/dashboard.py
+@@ -217,8 +217,10 @@
+ 
+         rel_planned = len(rel_test_cases)
+         rel_executed = sum(1 for tc in rel_test_cases if tc.status != TestCaseStatus.UNEXECUTED)
++        rel_pass = sum(1 for tc in rel_test_cases if tc.status == TestCaseStatus.PASS)
+         rel_blocked = sum(1 for tc in rel_test_cases if tc.status == TestCaseStatus.BLOCKED)
+         rel_fail = sum(1 for tc in rel_test_cases if tc.status == TestCaseStatus.FAIL)
++        rel_unexecuted = rel_planned - rel_executed
+         rel_avance = round((rel_executed / rel_planned) * 100, 1) if rel_planned else 0.0
+ 
+         active_window = db.execute(
+@@ -262,8 +264,13 @@
+                 platform=rel.platform,
+                 cluster=rel.cluster,
+                 window_name=active_window.name if active_window else None,
++                status=rel.status.value,
+                 planned=rel_planned,
+                 executed=rel_executed,
++                pass_count=rel_pass,
++                fail_count=rel_fail,
++                blocked_count=rel_blocked,
++                unexecuted_count=rel_unexecuted,
+                 percent_avance=rel_avance,
+                 percent_cobertura=rel_avance,
+                 risk_level=risk_level,
+diff --git a/backend/tests/test_qc_summary.py b/backend/tests/test_qc_summary.py
+--- a/backend/tests/test_qc_summary.py
++++ b/backend/tests/test_qc_summary.py
+@@ -170,3 +170,22 @@
+ 
+     release_ids = [item["release_id"] for item in body["active_items"]]
+     assert completed["id"] not in release_ids
++
++
++def test_qc_summary_active_items_exposes_status_and_per_status_counts(client) -> None:
++    release = _create_release(client)
++    client.patch(f"/api/v1/releases/{release['id']}", json={"status": "IN_PROGRESS"})
++    for i, st in enumerate(["PASS", "FAIL", "BLOCKED", "UNEXECUTED"], start=1):
++        client.post(
++            f"/api/v1/releases/{release['id']}/test-cases",
++            json={"test_case_id": f"QC-00{i}", "component": "X", "test_case_name": f"Case {i}", "status": st},
++        )
++
++    body = client.get("/api/v1/dashboard/qc-summary").json()
++
++    item = next(i for i in body["active_items"] if i["release_id"] == release["id"])
++    assert item["status"] == "IN_PROGRESS"
++    assert item["pass_count"] == 1
++    assert item["fail_count"] == 1
++    assert item["blocked_count"] == 1
++    assert item["unexecuted_count"] == 1
+diff --git a/frontend/app/components/Sidebar.tsx b/frontend/app/components/Sidebar.tsx
+--- a/frontend/app/components/Sidebar.tsx
++++ b/frontend/app/components/Sidebar.tsx
+@@ -1,13 +1,16 @@
+ "use client";
+ 
+-import { Bug, CalendarClock, LayoutDashboard, Package } from "lucide-react";
++import { Activity, Bug, Gauge, LayoutDashboard, Package } from "lucide-react";
+ import Link from "next/link";
+ import { usePathname } from "next/navigation";
+ 
++// "Operativa" will house Ventanas (Operational/Release Windows) once that UI is built; "KPIs"
++// and "Defectos" are placeholders until their screens exist. Only Dashboard/Releases are live.
+ const NAV_ITEMS = [
+   { href: "/", label: "Dashboard", icon: LayoutDashboard, enabled: true },
+   { href: "/releases", label: "Releases", icon: Package, enabled: true },
+-  { href: "/windows", label: "Ventanas", icon: CalendarClock, enabled: false },
++  { href: "/operativa", label: "Operativa", icon: Activity, enabled: false },
++  { href: "/kpis", label: "KPIs", icon: Gauge, enabled: false },
+   { href: "/defects", label: "Defectos", icon: Bug, enabled: false },
+ ] as const;
+ 
+diff --git a/frontend/lib/constants.ts b/frontend/lib/constants.ts
+new file mode 100644
+--- /dev/null
++++ b/frontend/lib/constants.ts
+@@ -0,0 +1,18 @@
++// Controlled vocabulary for Cluster. "TODOS" is a filter-only value (Dashboard) and must never
++// be stored on a Release -- CLUSTERS is what a Release can actually have.
++export const CLUSTERS = ["AUP", "Andina", "CENAM", "Dominicana", "Global"] as const;
++
++export const MONTHS = [
++  { value: "01", label: "Enero" },
++  { value: "02", label: "Febrero" },
++  { value: "03", label: "Marzo" },
++  { value: "04", label: "Abril" },
++  { value: "05", label: "Mayo" },
++  { value: "06", label: "Junio" },
++  { value: "07", label: "Julio" },
++  { value: "08", label: "Agosto" },
++  { value: "09", label: "Septiembre" },
++  { value: "10", label: "Octubre" },
++  { value: "11", label: "Noviembre" },
++  { value: "12", label: "Diciembre" },
++] as const;
+diff --git a/frontend/lib/types.ts b/frontend/lib/types.ts
+--- a/frontend/lib/types.ts
++++ b/frontend/lib/types.ts
+@@ -148,8 +148,13 @@
+   platform: string;
+   cluster: string | null;
+   window_name: string | null;
++  status: ReleaseStatus;
+   planned: number;
+   executed: number;
++  pass_count: number;
++  fail_count: number;
++  blocked_count: number;
++  unexecuted_count: number;
+   percent_avance: number;
+   percent_cobertura: number;
+   risk_level: RiskLevel;
+diff --git a/frontend/app/page.tsx b/frontend/app/page.tsx
+--- a/frontend/app/page.tsx
++++ b/frontend/app/page.tsx
+@@ -1,17 +1,12 @@
+ "use client";
+ 
+-import { Bug, CalendarClock, ListChecks, PlayCircle, Target, TrendingUp } from "lucide-react";
+-import { useRouter } from "next/navigation";
++import { Bug, ListChecks, Target, TrendingUp } from "lucide-react";
+ import { useCallback, useEffect, useState } from "react";
+ import { RiskBadge } from "@/app/components/RiskBadge";
+ import { api } from "@/lib/api";
+-import type {
+-  OperationalWindow,
+-  QcDashboardSummary,
+-  QcSummaryFilters,
+-  Release,
+-  ReleaseWindow,
+-} from "@/lib/types";
++import { MONTHS } from "@/lib/constants";
++import type { QcDashboardSummary, QcSummaryFilters, Release } from "@/lib/types";
++import { useRouter } from "next/navigation";
+ 
+ type CheckStatus = "idle" | "loading" | "ok" | "error";
+ 
+@@ -22,33 +17,19 @@
+ }
+ 
+ const healthCheckTimeoutMs = 5_000;
+-
+-const currentMonthValue = (): string => {
+-  const now = new Date();
+-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+-};
+-
+-const monthLabel = (value: string): string => {
+-  if (!value) return "todos los periodos";
+-  const [year, month] = value.split("-").map(Number);
+-  return new Date(year, month - 1, 1).toLocaleDateString("es-ES", { month: "long", year: "numeric" });
+-};
+-
+-type WindowChoice = { kind: "operational" | "release"; id: number; label: string };
++const CURRENT_YEAR = new Date().getFullYear();
++const CLUSTER_FILTER_OPTIONS = ["AUP", "Andina", "CENAM", "Dominicana", "Global"];
+ 
+ export default function DashboardPage(): React.ReactElement {
+   const router = useRouter();
+ 
+   const [summary, setSummary] = useState<QcDashboardSummary | null>(null);
+   const [summaryError, setSummaryError] = useState<string | null>(null);
+-
+   const [releases, setReleases] = useState<Release[]>([]);
+-  const [windowChoices, setWindowChoices] = useState<WindowChoice[]>([]);
+ 
+-  const [month, setMonth] = useState<string>(currentMonthValue());
+-  const [cluster, setCluster] = useState<string>("");
++  const [month, setMonth] = useState<string>("");
++  const [cluster, setCluster] = useState<string>("TODOS");
+   const [releaseId, setReleaseId] = useState<string>("");
+-  const [windowChoice, setWindowChoice] = useState<string>("");
+ 
+   const [system, setSystem] = useState<{ backend: CheckStatus; database: CheckStatus }>({
+     backend: "idle",
+@@ -57,32 +38,18 @@
+ 
+   useEffect(() => {
+     api.listReleases().then(setReleases).catch(() => setReleases([]));
+-    Promise.all([api.listOperationalWindows(), api.listAllReleaseWindows()])
+-      .then(([operational, releaseWindows]: [OperationalWindow[], ReleaseWindow[]]) => {
+-        const choices: WindowChoice[] = [
+-          ...operational.map((w) => ({ kind: "operational" as const, id: w.id, label: `${w.name} (operativa)` })),
+-          ...releaseWindows.map((w) => ({ kind: "release" as const, id: w.id, label: `${w.name} (release)` })),
+-        ];
+-        setWindowChoices(choices);
+-      })
+-      .catch(() => setWindowChoices([]));
+   }, []);
+ 
+   const loadSummary = useCallback((): void => {
+     const filters: QcSummaryFilters = {};
+-    if (month) filters.month = month;
+-    if (cluster) filters.cluster = cluster;
++    if (month) filters.month = `${CURRENT_YEAR}-${month}`;
++    if (cluster !== "TODOS") filters.cluster = cluster;
+     if (releaseId) filters.release_id = Number(releaseId);
+-    if (windowChoice) {
+-      const [kind, id] = windowChoice.split(":");
+-      if (kind === "operational") filters.operational_window_id = Number(id);
+-      if (kind === "release") filters.release_window_id = Number(id);
+-    }
+     api
+       .getQcSummary(filters)
+       .then(setSummary)
+       .catch((err: unknown) => setSummaryError(err instanceof Error ? err.message : "Error"));
+-  }, [month, cluster, releaseId, windowChoice]);
++  }, [month, cluster, releaseId]);
+ 
+   useEffect(loadSummary, [loadSummary]);
+ 
+@@ -105,40 +72,48 @@
+     void checkConnection();
+   }, [checkConnection]);
+ 
+-  const clusters = Array.from(new Set(releases.map((r) => r.cluster).filter((c): c is string => !!c)));
++  // RELEASES / EN CURSO are computed here, from the actual Release.status field, rather than
++  // from window activity -- fixes the bug where "EN CURSO" could read 0 even with an
++  // IN_PROGRESS release, since it was previously counting active *windows*, not release status.
++  const filteredReleases = releases.filter((r) => {
++    if (cluster !== "TODOS" && r.cluster !== cluster) return false;
++    if (releaseId && String(r.id) !== releaseId) return false;
++    return true;
++  });
++  const releasesTotal = filteredReleases.length;
++  const releasesInProgress = filteredReleases.filter((r) => r.status === "IN_PROGRESS").length;
+ 
+-  const execTotal = summary
+-    ? summary.pass_count + summary.fail_count + summary.blocked_count + summary.unexecuted_count
+-    : 0;
+-  const pct = (n: number): number => (execTotal ? (n / execTotal) * 100 : 0);
+-
+-  const clusterActivity = summary
+-    ? Array.from(
+-        summary.active_items.reduce((map, item) => {
+-          const key = item.cluster ?? "Sin cluster";
+-          map.set(key, (map.get(key) ?? 0) + 1);
+-          return map;
+-        }, new Map<string, number>()),
+-      )
+-    : [];
++  const inProgressItems = summary?.active_items.filter((item) => item.status === "IN_PROGRESS") ?? [];
++
++  const selectedReleaseName = releaseId ? releases.find((r) => String(r.id) === releaseId)?.name : null;
++
++  const clusterActivity = Array.from(
++    inProgressItems.reduce((map, item) => {
++      const key = item.cluster ?? "Sin cluster";
++      map.set(key, (map.get(key) ?? 0) + 1);
++      return map;
++    }, new Map<string, number>()),
++  );
+ 
+   return (
+-    <div className="page">
++    <div className="page page-wide">
+       <div className="dashboard-header">
+-        <div>
+-          <div className="page-header" style={{ marginBottom: 0 }}>
+-            <h1>¿Qué está haciendo QC ahora?</h1>
+-            <p className="subtitle">Vista global · {monthLabel(month)}</p>
+-          </div>
++        <div className="page-header" style={{ marginBottom: 0 }}>
++          <h1>¿Qué está haciendo QC ahora?</h1>
++          <p className="subtitle">
++            {selectedReleaseName ? `Contextualizado en: ${selectedReleaseName}` : "Vista global"}
++          </p>
+         </div>
+         <div className="filter-bar">
+           <select value={month} onChange={(e) => setMonth(e.target.value)}>
+-            <option value="">Todos los periodos</option>
+-            <option value={currentMonthValue()}>{monthLabel(currentMonthValue())}</option>
++            <option value="">Todos los meses</option>
++            {MONTHS.map((m) => (
++              <option key={m.value} value={m.value}>{m.label}</option>
++            ))}
+           </select>
+           <select value={cluster} onChange={(e) => setCluster(e.target.value)}>
+-            <option value="">Todos los clusters</option>
+-            {clusters.map((c) => (
++            <option value="TODOS">Todos los clusters</option>
++            {CLUSTER_FILTER_OPTIONS.map((c) => (
+               <option key={c} value={c}>{c}</option>
+             ))}
+           </select>
+@@ -148,12 +123,6 @@
+               <option key={r.id} value={r.id}>{r.name} v{r.version}</option>
+             ))}
+           </select>
+-          <select value={windowChoice} onChange={(e) => setWindowChoice(e.target.value)}>
+-            <option value="">Todas las ventanas</option>
+-            {windowChoices.map((w) => (
+-              <option key={`${w.kind}:${w.id}`} value={`${w.kind}:${w.id}`}>{w.label}</option>
+-            ))}
+-          </select>
+         </div>
+       </div>
+ 
+@@ -163,20 +132,21 @@
+         <>
+           <div className="metrics-row">
+             <div className="metric-cell">
+-              <div className="metric-label"><CalendarClock size={12} aria-hidden="true" />Ventanas</div>
+-              <div className="metric-value">{summary.windows_total}</div>
++              <div className="metric-label">Releases</div>
++              <div className="metric-value">{releasesTotal}</div>
+             </div>
+             <div className="metric-cell">
+-              <div className="metric-label"><PlayCircle size={12} aria-hidden="true" />En curso</div>
+-              <div className="metric-value">{summary.windows_active}</div>
++              <div className="metric-label">En curso</div>
++              <div className="metric-value">{releasesInProgress}</div>
+             </div>
+             <div className="metric-cell">
+-              <div className="metric-label"><TrendingUp size={12} aria-hidden="true" />% Avance</div>
++              <div className="metric-label"><TrendingUp size={12} aria-hidden="true" />Avance global de QC</div>
+               <div className="metric-value accent">{summary.percent_avance.toFixed(0)}%</div>
+             </div>
+             <div className="metric-cell">
+               <div className="metric-label"><Target size={12} aria-hidden="true" />% Cobertura</div>
+               <div className="metric-value accent">{summary.percent_cobertura.toFixed(0)}%</div>
++              <div className="metric-caption">Mismo cálculo que Avance por ahora — alcance pendiente de definir</div>
+             </div>
+             <div className="metric-cell">
+               <div className="metric-label"><ListChecks size={12} aria-hidden="true" />Test cases</div>
+@@ -188,103 +158,118 @@
+             </div>
+           </div>
+ 
+-          <div className="dashboard-grid">
+-            <div className="dashboard-col">
+-              <div className="panel">
+-                <div className="panel-header">
+-                  <h2>Actividad actual de QC</h2>
+-                  <a href="/releases" className="panel-action">Ver todas las releases →</a>
+-                </div>
+-                <div className="panel-body no-pad">
+-                  <table className="activity">
+-                    <thead>
+-                      <tr>
+-                        <th>Release</th>
+-                        <th>Ventana</th>
+-                        <th>Cluster</th>
+-                        <th>Plataforma</th>
+-                        <th>Avance</th>
+-                        <th>Estado</th>
+-                      </tr>
+-                    </thead>
+-                    <tbody>
+-                      {summary.active_items.map((item) => (
+-                        <tr
+-                          key={item.release_id}
+-                          className="clickable"
+-                          onClick={() => router.push(`/releases/${item.release_id}`)}
+-                        >
+-                          <td style={{ fontWeight: 500 }}>{item.release_name} v{item.release_version}</td>
+-                          <td className="muted">{item.window_name ?? "Sin ventana"}</td>
+-                          <td className="muted">{item.cluster ?? "—"}</td>
+-                          <td className="muted">{item.platform}</td>
+-                          <td>{item.percent_avance.toFixed(0)}%</td>
+-                          <td><RiskBadge level={item.risk_level} /></td>
+-                        </tr>
+-                      ))}
+-                      {summary.active_items.length === 0 && (
+-                        <tr><td colSpan={6} className="muted">No hay releases abiertas para este filtro.</td></tr>
+-                      )}
+-                    </tbody>
+-                  </table>
+-                </div>
+-              </div>
++          {clusterActivity.length > 0 && (
++            <div className="cluster-strip">
++              {clusterActivity.map(([name, count]) => (
++                <span key={name} className="cluster-chip">{name}<b>{count}</b></span>
++              ))}
++            </div>
++          )}
+ 
+-              <div className="panel">
+-                <div className="panel-header"><h2>Ejecución</h2></div>
+-                <div className="panel-body">
+-                  <div className="exec-numbers">
+-                    <div className="exec-item"><div className="exec-label">Planned</div><div className="exec-value">{summary.test_cases_planned}</div></div>
+-                    <div className="exec-item"><div className="exec-label">Executed</div><div className="exec-value">{summary.test_cases_executed}</div></div>
+-                    <div className="exec-item pass"><div className="exec-label">Pass</div><div className="exec-value">{summary.pass_count}</div></div>
+-                    <div className="exec-item fail"><div className="exec-label">Fail</div><div className="exec-value">{summary.fail_count}</div></div>
+-                    <div className="exec-item blocked"><div className="exec-label">Blocked</div><div className="exec-value">{summary.blocked_count}</div></div>
+-                    <div className="exec-item"><div className="exec-label">Unexecuted</div><div className="exec-value">{summary.unexecuted_count}</div></div>
+-                  </div>
+-                  <div className="exec-bar">
+-                    <div className="seg-pass" style={{ width: `${pct(summary.pass_count)}%` }} />
+-                    <div className="seg-fail" style={{ width: `${pct(summary.fail_count)}%` }} />
+-                    <div className="seg-blocked" style={{ width: `${pct(summary.blocked_count)}%` }} />
+-                    <div className="seg-unexecuted" style={{ width: `${pct(summary.unexecuted_count)}%` }} />
+-                  </div>
+-                </div>
+-              </div>
++          <div className="panel">
++            <div className="panel-header">
++              <h2>Actividades de QC en curso</h2>
++              <a href="/releases" className="panel-action">Ver todas las releases →</a>
++            </div>
++            <div className="panel-body no-pad">
++              <table className="activity">
++                <thead>
++                  <tr>
++                    <th>Release</th>
++                    <th>Ventana</th>
++                    <th>Cluster</th>
++                    <th>Dispositivo</th>
++                    <th>Avance</th>
++                    <th>Estado</th>
++                  </tr>
++                </thead>
++                <tbody>
++                  {inProgressItems.map((item) => (
++                    <tr
++                      key={item.release_id}
++                      className={`clickable${releaseId === String(item.release_id) ? " selected" : ""}`}
++                      onClick={() => setReleaseId(String(item.release_id))}
++                      title="Click para contextualizar el Dashboard a esta actividad"
++                    >
++                      <td style={{ fontWeight: 500 }}>{item.release_name} v{item.release_version}</td>
++                      <td className="muted">{item.window_name ?? "Sin ventana"}</td>
++                      <td className="muted">{item.cluster ?? "—"}</td>
++                      <td className="muted">{item.platform}</td>
++                      <td>{item.percent_avance.toFixed(0)}%</td>
++                      <td><RiskBadge level={item.risk_level} /></td>
++                    </tr>
++                  ))}
++                  {inProgressItems.length === 0 && (
++                    <tr><td colSpan={6} className="muted">No hay actividades de QC en curso para este filtro.</td></tr>
++                  )}
++                </tbody>
++              </table>
+             </div>
++          </div>
+ 
+-            <div className="dashboard-col">
+-              <div className="panel">
+-                <div className="panel-header"><h2>QC Risk</h2></div>
+-                <div className="panel-body">
+-                  <div className="risk-list">
+-                    {summary.active_items.map((item) => (
+-                      <div className={`risk-list-item ${item.risk_level.toLowerCase()}`} key={item.release_id}>
+-                        {item.release_name} v{item.release_version}
+-                        <span className="risk-reason">
+-                          {item.risk_reasons.length > 0 ? item.risk_reasons[0] : "Sin riesgos"}
+-                        </span>
+-                      </div>
+-                    ))}
+-                    {summary.active_items.length === 0 && <p className="muted">Sin actividad para evaluar riesgo.</p>}
+-                  </div>
+-                </div>
++          <div className="panel">
++            <div className="panel-header"><h2>Ejecución</h2></div>
++            <div className="panel-body">
++              <div className="exec-numbers">
++                <div className="exec-item"><div className="exec-label">Planned</div><div className="exec-value">{summary.test_cases_planned}</div></div>
++                <div className="exec-item"><div className="exec-label">Executed</div><div className="exec-value">{summary.test_cases_executed}</div></div>
++                <div className="exec-item pass"><div className="exec-label">Pass</div><div className="exec-value">{summary.pass_count}</div></div>
++                <div className="exec-item fail"><div className="exec-label">Fail</div><div className="exec-value">{summary.fail_count}</div></div>
++                <div className="exec-item blocked"><div className="exec-label">Blocked</div><div className="exec-value">{summary.blocked_count}</div></div>
++                <div className="exec-item"><div className="exec-label">Unexecuted</div><div className="exec-value">{summary.unexecuted_count}</div></div>
+               </div>
+-
+-              <div className="panel">
+-                <div className="panel-header"><h2>Clusters con actividad</h2></div>
+-                <div className="panel-body">
+-                  <div className="cluster-list">
+-                    {clusterActivity.map(([name, count]) => (
+-                      <div className="cluster-list-item" key={name}>
+-                        <span>{name}</span>
+-                        <span className="count">{count} release{count === 1 ? "" : "s"}</span>
+-                      </div>
+-                    ))}
+-                    {clusterActivity.length === 0 && <p className="muted">Sin actividad.</p>}
+-                  </div>
+-                </div>
++              <div className="exec-bar wide">
++                {(() => {
++                  const total = summary.pass_count + summary.fail_count + summary.blocked_count + summary.unexecuted_count;
++                  const pct = (n: number) => (total ? (n / total) * 100 : 0);
++                  return (
++                    <>
++                      <div className="seg-pass" style={{ width: `${pct(summary.pass_count)}%` }} />
++                      <div className="seg-fail" style={{ width: `${pct(summary.fail_count)}%` }} />
++                      <div className="seg-blocked" style={{ width: `${pct(summary.blocked_count)}%` }} />
++                      <div className="seg-unexecuted" style={{ width: `${pct(summary.unexecuted_count)}%` }} />
++                    </>
++                  );
++                })()}
+               </div>
+             </div>
+           </div>
++
++          <div className="panel">
++            <div className="panel-header"><h2>QC Risk</h2></div>
++            <div className="panel-body no-pad">
++              <table className="activity">
++                <thead>
++                  <tr>
++                    <th>Release</th>
++                    <th>Nivel de riesgo</th>
++                    <th>Blocked</th>
++                    <th>Fail</th>
++                    <th>Avance</th>
++                  </tr>
++                </thead>
++                <tbody>
++                  {inProgressItems.map((item) => (
++                    <tr
++                      key={item.release_id}
++                      className="clickable"
++                      onClick={() => router.push(`/releases/${item.release_id}`)}
++                      title="Ir al detalle de la Release"
++                    >
++                      <td style={{ fontWeight: 500 }}>{item.release_name} v{item.release_version}</td>
++                      <td><RiskBadge level={item.risk_level} /></td>
++                      <td className={item.blocked_count > 0 ? "danger-text" : "muted"}>{item.blocked_count}</td>
++                      <td className={item.fail_count > 0 ? "danger-text" : "muted"}>{item.fail_count}</td>
++                      <td>{item.percent_avance.toFixed(0)}%</td>
++                    </tr>
++                  ))}
++                  {inProgressItems.length === 0 && (
++                    <tr><td colSpan={5} className="muted">Sin actividad para evaluar riesgo.</td></tr>
++                  )}
++                </tbody>
++              </table>
++            </div>
++          </div>
+         </>
+       )}
+ 
+diff --git a/frontend/app/releases/page.tsx b/frontend/app/releases/page.tsx
+--- a/frontend/app/releases/page.tsx
++++ b/frontend/app/releases/page.tsx
+@@ -5,6 +5,7 @@
+ import { useEffect, useState } from "react";
+ import { StatusBadge } from "@/app/components/StatusBadge";
+ import { api, ApiRequestError } from "@/lib/api";
++import { CLUSTERS } from "@/lib/constants";
+ import type { ReleaseWithCounts } from "@/lib/types";
+ 
+ const emptyForm = { name: "", version: "", platform: "", cluster: "", description: "" };
+@@ -51,12 +52,13 @@
+   };
+ 
+   return (
+-    <div className="page">
++    <div className="page page-wide">
+       <p className="eyebrow">CaseForge</p>
+       <h1>Releases</h1>
++      <p className="subtitle">Gestión de releases y su ciclo de QC</p>
+ 
+       <div className="card">
+-        <h2>Nueva Release</h2>
++        <h2>Nuevo Release</h2>
+         <form onSubmit={handleSubmit}>
+           <div className="form-grid">
+             <div className="form-field">
+@@ -79,27 +81,34 @@
+               />
+             </div>
+             <div className="form-field">
+-              <label htmlFor="platform">Plataforma</label>
++              <label htmlFor="platform">Dispositivo</label>
+               <input
+                 id="platform"
+                 required
+-                placeholder="tvOS, iOS, ADR..."
++                placeholder="WEB, iOS, tvOS, Roku, Fire TV, Android TV..."
+                 value={form.platform}
+                 onChange={(e) => setForm({ ...form, platform: e.target.value })}
+               />
+             </div>
+             <div className="form-field">
+               <label htmlFor="cluster">Cluster</label>
+-              <input
++              <select
+                 id="cluster"
++                required
+                 value={form.cluster}
+                 onChange={(e) => setForm({ ...form, cluster: e.target.value })}
+-              />
++              >
++                <option value="" disabled>Selecciona un cluster</option>
++                {CLUSTERS.map((c) => (
++                  <option key={c} value={c}>{c}</option>
++                ))}
++              </select>
+             </div>
+             <div className="form-field full">
+               <label htmlFor="description">Descripción</label>
+               <textarea
+                 id="description"
++                placeholder="Notas sobre el alcance de esta release"
+                 value={form.description}
+                 onChange={(e) => setForm({ ...form, description: e.target.value })}
+               />
+@@ -115,46 +124,50 @@
+       </div>
+ 
+       <div className="section-header">
+-        <h2>Listado</h2>
++        <h2>Listado ({releases.length})</h2>
+       </div>
+ 
+       {loading && <p className="muted">Cargando releases…</p>}
+       {loadError && <p className="error-text">{loadError}</p>}
+ 
+       {!loading && !loadError && (
+-        <table>
+-          <thead>
+-            <tr>
+-              <th>Nombre</th>
+-              <th>Versión</th>
+-              <th>Plataforma</th>
+-              <th>Estado</th>
+-              <th>Test Cases</th>
+-            </tr>
+-          </thead>
+-          <tbody>
+-            {releases.map((release) => (
+-              <tr
+-                key={release.id}
+-                className="clickable"
+-                onClick={() => router.push(`/releases/${release.id}`)}
+-              >
+-                <td>{release.name}</td>
+-                <td>{release.version}</td>
+-                <td>{release.platform}</td>
+-                <td><StatusBadge status={release.status} /></td>
+-                <td>{release.test_case_count}</td>
+-              </tr>
+-            ))}
+-            {releases.length === 0 && (
++        <div className="panel">
++          <table className="activity">
++            <thead>
+               <tr>
+-                <td colSpan={5} className="muted">
+-                  No hay releases todavía.
+-                </td>
++                <th>Nombre</th>
++                <th>Versión</th>
++                <th>Dispositivo</th>
++                <th>Cluster</th>
++                <th>Estado</th>
++                <th>Test Cases</th>
+               </tr>
+-            )}
+-          </tbody>
+-        </table>
++            </thead>
++            <tbody>
++              {releases.map((release) => (
++                <tr
++                  key={release.id}
++                  className="clickable"
++                  onClick={() => router.push(`/releases/${release.id}`)}
++                >
++                  <td style={{ fontWeight: 500 }}>{release.name}</td>
++                  <td className="muted">v{release.version}</td>
++                  <td className="muted">{release.platform}</td>
++                  <td className="muted">{release.cluster ?? "—"}</td>
++                  <td><StatusBadge status={release.status} /></td>
++                  <td>{release.test_case_count}</td>
++                </tr>
++              ))}
++              {releases.length === 0 && (
++                <tr>
++                  <td colSpan={6} className="muted">
++                    No hay releases todavía.
++                  </td>
++                </tr>
++              )}
++            </tbody>
++          </table>
++        </div>
+       )}
+ 
+       <p style={{ marginTop: "1.5rem" }}>
+diff --git a/frontend/app/releases/[id]/page.tsx b/frontend/app/releases/[id]/page.tsx
+--- a/frontend/app/releases/[id]/page.tsx
++++ b/frontend/app/releases/[id]/page.tsx
+@@ -85,6 +85,18 @@
+     }
+   };
+ 
++  const handleInlineStatusChange = async (testCaseId: number, status: TestCase["status"]): Promise<void> => {
++    const previous = testCases;
++    setTestCases((current) => current.map((tc) => (tc.id === testCaseId ? { ...tc, status } : tc)));
++    setActionError(null);
++    try {
++      await api.updateTestCase(testCaseId, { status });
++    } catch (err) {
++      setTestCases(previous);
++      setActionError(err instanceof ApiRequestError ? err.message : "No se pudo actualizar el estado del Test Case.");
++    }
++  };
++
+   if (loadError) {
+     return (
+       <div className="page">
+@@ -258,7 +270,18 @@
+               <td>{testCase.test_case_name}</td>
+               <td>{testCase.component}</td>
+               <td>{testCase.priority}</td>
+-              <td><StatusBadge status={testCase.status} /></td>
++              <td onClick={(e) => e.stopPropagation()}>
++                <select
++                  value={testCase.status}
++                  onChange={(e) => void handleInlineStatusChange(testCase.id, e.target.value as TestCase["status"])}
++                  className="status-select"
++                >
++                  <option value="UNEXECUTED">UNEXECUTED</option>
++                  <option value="PASS">PASS</option>
++                  <option value="FAIL">FAIL</option>
++                  <option value="BLOCKED">BLOCKED</option>
++                </select>
++              </td>
+             </tr>
+           ))}
+           {testCases.length === 0 && (
+diff --git a/frontend/app/styles.css b/frontend/app/styles.css
+--- a/frontend/app/styles.css
++++ b/frontend/app/styles.css
+@@ -36,6 +36,9 @@
+ 
+ main { padding: 24px; }
+ .page { max-width: 1280px; }
++.page-wide { max-width: 1280px; }
++@media (min-width: 1600px) { .page-wide { max-width: 1600px; } main { padding: 28px 40px; } }
++@media (min-width: 2000px) { .page-wide { max-width: 1900px; } main { padding: 32px 56px; } }
+ .page-narrow { max-width: 720px; margin: 0 auto; }
+ .center-page { min-height: calc(100vh - 52px); display: grid; place-items: center; }
+ section.hero { width: min(100%, 580px); }
+@@ -57,13 +60,16 @@
+ .metric-cell .metric-value { font-size: 19px; font-weight: 600; margin-top: 3px; }
+ .metric-cell .metric-value.accent { color: var(--accent); }
+ .metric-cell .metric-value.danger { color: var(--danger); }
++.metric-cell .metric-caption { font-size: 9.5px; color: var(--text-dim); margin-top: 3px; line-height: 1.3; }
+ @media (max-width: 900px) { .metrics-row { grid-template-columns: repeat(3, 1fr); } }
+ @media (max-width: 560px) { .metrics-row { grid-template-columns: repeat(2, 1fr); } }
+ 
+-/* Dashboard main grid: activity+execution (left) / risk+clusters (right) */
+-.dashboard-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 12px; align-items: start; }
+-.dashboard-col { display: flex; flex-direction: column; gap: 12px; }
+-@media (max-width: 980px) { .dashboard-grid { grid-template-columns: 1fr; } }
++/* Cluster activity strip */
++.cluster-strip { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
++.cluster-chip { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-muted); background: var(--surface-1); border: 1px solid var(--border); border-radius: 999px; padding: 4px 10px; }
++.cluster-chip b { color: var(--text); font-weight: 600; }
++
++/* Dashboard: vertical stack of full-width panels (per requested information hierarchy) */
+ 
+ /* Sections */
+ .panel { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+@@ -95,11 +101,15 @@
+ .exec-numbers .exec-item.fail .exec-value, .exec-numbers .exec-item.fail .exec-label { color: var(--danger); }
+ .exec-numbers .exec-item.blocked .exec-value, .exec-numbers .exec-item.blocked .exec-label { color: var(--warning); }
+ .exec-bar { display: flex; height: 5px; border-radius: 3px; overflow: hidden; margin-top: 10px; background: var(--border); }
++.exec-bar.wide { height: 10px; border-radius: 5px; margin-top: 12px; }
+ .exec-bar .seg-pass { background: var(--success); }
+ .exec-bar .seg-fail { background: var(--danger); }
+ .exec-bar .seg-blocked { background: var(--warning); }
+ .exec-bar .seg-unexecuted { background: var(--border-strong); }
+ 
++.danger-text { color: var(--danger); font-weight: 600; }
++table.activity tr.selected { background: var(--accent-dim); }
++
+ /* Risk list: left border color instead of a dot */
+ .risk-list { display: flex; flex-direction: column; gap: 9px; }
+ .risk-list-item { font-size: 12px; padding-left: 9px; border-left: 2px solid var(--border-strong); line-height: 1.5; }
+@@ -157,6 +167,7 @@
+ .badge-ok { background: var(--success-bg); color: var(--success); }
+ .badge-error { background: var(--danger-bg); color: var(--danger); }
+ .badge-warning { background: var(--warning-bg); color: var(--warning); }
++.status-select { font-size: 12px; padding: 4px 22px 4px 8px; background-color: var(--bg); }
+ 
+ .section-header { display: flex; align-items: center; justify-content: space-between; margin: 1.75rem 0 .85rem; }
+ .section-header h2 { margin: 0; }

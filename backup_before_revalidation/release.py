@@ -4,13 +4,12 @@ import enum
 from datetime import date, datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Date, DateTime, Enum, ForeignKey, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import Date, DateTime, Enum, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
 
 if TYPE_CHECKING:
-    from app.models.deliverable import Deliverable
     from app.models.release_analysis import ReleaseAnalysis
     from app.models.test_case import TestCase
 
@@ -27,17 +26,6 @@ class ReleaseStatus(str, enum.Enum):
     IN_PROGRESS = "IN_PROGRESS"
     COMPLETED = "COMPLETED"
     CANCELLED = "CANCELLED"
-
-
-class ReleaseType(str, enum.Enum):
-    """Distinguishes a fresh feature cycle from a re-test of a prior one, within a Deliverable.
-
-    Orthogonal to ReleaseStatus (which tracks whether QC has *finished* the cycle) -- this
-    tracks *why* the cycle exists at all. Nullable at the DB level so existing Releases that
-    predate this concept aren't forced into a classification nobody made."""
-
-    EVOLUTIVO = "EVOLUTIVO"
-    REVALIDACION = "REVALIDACION"
 
 
 class Release(Base):
@@ -67,18 +55,6 @@ class Release(Base):
     validation_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
     jira_issue_filter: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    # --- Deliverable / lineage (Entregable, Tipo de Release, Release origen) ---
-    deliverable_id: Mapped[int | None] = mapped_column(
-        ForeignKey("deliverables.id", ondelete="SET NULL"), nullable=True
-    )
-    release_type: Mapped[ReleaseType | None] = mapped_column(
-        Enum(ReleaseType, name="release_type", native_enum=True, validate_strings=True),
-        nullable=True,
-    )
-    parent_release_id: Mapped[int | None] = mapped_column(
-        ForeignKey("releases.id", ondelete="SET NULL"), nullable=True
-    )
-
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -98,6 +74,3 @@ class Release(Base):
         passive_deletes=True,
         order_by="ReleaseAnalysis.created_at.desc()",
     )
-    deliverable: Mapped["Deliverable | None"] = relationship(back_populates="releases")
-    parent: Mapped["Release | None"] = relationship(remote_side=[id], back_populates="children")
-    children: Mapped[list["Release"]] = relationship(back_populates="parent")

@@ -1,0 +1,464 @@
+diff --git a/backend/app/routers/qc_tickets.py b/backend/app/routers/qc_tickets.py
+--- a/backend/app/routers/qc_tickets.py
++++ b/backend/app/routers/qc_tickets.py
+@@ -4,11 +4,12 @@
+ kept as a fully separate pipeline since QcTicket has no relationship to Release/TestCase/Defect.
+ """
+ 
++import logging
+ from collections import Counter
+ 
+ from fastapi import APIRouter, Depends, Form, HTTPException, Query, UploadFile, status
+ from sqlalchemy import select
+-from sqlalchemy.exc import DataError, IntegrityError
++from sqlalchemy.exc import SQLAlchemyError
+ from sqlalchemy.orm import Session
+ 
+ from app.db import get_db
+@@ -27,6 +28,7 @@
+ from app.services.jira_client import JiraApiError, JiraNotConfiguredError
+ 
+ router = APIRouter(prefix="/api/v1/qc-tickets", tags=["qc-tickets"])
++logger = logging.getLogger(__name__)
+ 
+ 
+ @router.post("/import/preview", response_model=QcTicketImportPreviewResponse)
+@@ -72,37 +74,55 @@
+ def bulk_create_qc_tickets(
+     payload: list[QcTicketCreate], db: Session = Depends(get_db)
+ ) -> QcTicketBulkCreateResult:
+-    """Transactional, same contract as the Test Case bulk endpoint: any row failing rolls back
+-    the whole batch."""
+-    tentative: list[QcTicket] = []
+-    errors: list[QcTicketBulkCreateError] = []
+-
+-    for ticket in payload:
+-        savepoint = db.begin_nested()
+-        row = QcTicket(**ticket.model_dump())
+-        db.add(row)
+-        try:
+-            db.flush()
+-        except (IntegrityError, DataError) as exc:
+-            savepoint.rollback()
+-            errors.append(
+-                QcTicketBulkCreateError(
+-                    issue_key=ticket.issue_key,
+-                    message=f"'{ticket.issue_key}': no se pudo guardar ({exc.__class__.__name__}).",
+-                )
+-            )
+-            continue
+-        tentative.append(row)
++    """Transactional: any row failing rolls back the whole batch.
+ 
+-    if errors:
++    Two-phase for performance at scale (thousands of rows from a real Jira export): tries one
++    fast add_all()+flush() first, since the common case is "everything in `payload` already
++    passed preview validation and will insert cleanly". Only falls back to the slower per-row
++    savepoint loop -- needed to pinpoint exactly which row(s) failed -- if that fast path
++    raises. This also means an unexpected DB-level error can no longer crash the request
++    uncaught (see the earlier BLOCKER-enum incident): SQLAlchemyError is caught broadly here,
++    not just IntegrityError/DataError, and always turned into a clean per-row error response.
++    """
++    try:
++        rows = [QcTicket(**ticket.model_dump()) for ticket in payload]
++        db.add_all(rows)
++        db.flush()
++    except SQLAlchemyError:
+         db.rollback()
+-        return QcTicketBulkCreateResult(created=[], errors=errors)
++        tentative: list[QcTicket] = []
++        errors: list[QcTicketBulkCreateError] = []
++        for ticket in payload:
++            savepoint = db.begin_nested()
++            row = QcTicket(**ticket.model_dump())
++            db.add(row)
++            try:
++                db.flush()
++            except SQLAlchemyError as exc:
++                savepoint.rollback()
++                logger.warning("qc_ticket bulk import row failed: %s (%s)", ticket.issue_key, exc)
++                errors.append(
++                    QcTicketBulkCreateError(
++                        issue_key=ticket.issue_key,
++                        message=f"'{ticket.issue_key}': no se pudo guardar ({exc.__class__.__name__}).",
++                    )
++                )
++                continue
++            tentative.append(row)
++
++        if errors:
++            db.rollback()
++            return QcTicketBulkCreateResult(created=[], errors=errors)
++
++        db.commit()
++        for row in tentative:
++            db.refresh(row)
++        return QcTicketBulkCreateResult(created=tentative, errors=[])
+ 
+     db.commit()
+-    for row in tentative:
++    for row in rows:
+         db.refresh(row)
+-
+-    return QcTicketBulkCreateResult(created=tentative, errors=[])
++    return QcTicketBulkCreateResult(created=rows, errors=[])
+ 
+ 
+ @router.get("", response_model=list[QcTicketRead])
+diff --git a/backend/app/routers/test_cases.py b/backend/app/routers/test_cases.py
+--- a/backend/app/routers/test_cases.py
++++ b/backend/app/routers/test_cases.py
+@@ -8,7 +8,7 @@
+ 
+ from fastapi import APIRouter, Depends, HTTPException, Query, status
+ from sqlalchemy import select
+-from sqlalchemy.exc import DataError, IntegrityError
++from sqlalchemy.exc import DataError, IntegrityError, SQLAlchemyError
+ from sqlalchemy.orm import Session, selectinload
+ 
+ from app.db import get_db
+@@ -106,38 +106,51 @@
+     """
+     get_release_or_404(release_id, db)
+ 
+-    tentative_created: list[TestCase] = []
+-    errors: list[BulkCreateError] = []
++    try:
++        rows = []
++        for row in payload.test_cases:
++            test_case = _build_test_case(release_id, row)
++            db.add(test_case)
++            rows.append(test_case)
++        db.flush()
++    except SQLAlchemyError:
++        db.rollback()
++        tentative_created: list[TestCase] = []
++        errors: list[BulkCreateError] = []
+ 
+-    for index, row in enumerate(payload.test_cases):
+-        savepoint = db.begin_nested()
+-        test_case = _build_test_case(release_id, row)
+-        db.add(test_case)
+-        try:
+-            db.flush()
+-        except (IntegrityError, DataError) as exc:
+-            savepoint.rollback()
+-            errors.append(
+-                BulkCreateError(
+-                    index=index,
+-                    test_case_id=row.test_case_id,
+-                    message=_describe_bulk_error(exc, row),
++        for index, row in enumerate(payload.test_cases):
++            savepoint = db.begin_nested()
++            test_case = _build_test_case(release_id, row)
++            db.add(test_case)
++            try:
++                db.flush()
++            except SQLAlchemyError as exc:
++                savepoint.rollback()
++                errors.append(
++                    BulkCreateError(
++                        index=index,
++                        test_case_id=row.test_case_id,
++                        message=_describe_bulk_error(exc, row),
++                    )
+                 )
+-            )
+-            continue
+-        tentative_created.append(test_case)
+-
+-    if errors:
+-        # At least one row failed: roll back the whole batch, including any rows that flushed
+-        # successfully above. Nothing partial is committed.
+-        db.rollback()
+-        return TestCaseBulkCreateResult(created=[], errors=errors)
++                continue
++            tentative_created.append(test_case)
++
++        if errors:
++            # At least one row failed: roll back the whole batch, including any rows that flushed
++            # successfully above. Nothing partial is committed.
++            db.rollback()
++            return TestCaseBulkCreateResult(created=[], errors=errors)
++
++        db.commit()
++        for test_case in tentative_created:
++            db.refresh(test_case)
++        return TestCaseBulkCreateResult(created=tentative_created, errors=[])
+ 
+     db.commit()
+-    for test_case in tentative_created:
++    for test_case in rows:
+         db.refresh(test_case)
+-
+-    return TestCaseBulkCreateResult(created=tentative_created, errors=[])
++    return TestCaseBulkCreateResult(created=rows, errors=[])
+ 
+ 
+ @router.get("/test-cases/{test_case_id}", response_model=TestCaseReadWithSteps)
+diff --git a/backend/app/services/cluster_resolution.py b/backend/app/services/cluster_resolution.py
+new file mode 100644
+--- /dev/null
++++ b/backend/app/services/cluster_resolution.py
+@@ -0,0 +1,60 @@
++"""Cluster normalization shared by the CSV importer and the Jira sync client.
++
++Rules per the QC team's existing documented methodology (README_metodologia.md, section 3):
++- Direct values map 1:1 to CaseForge's 5-value Cluster vocabulary (AUP/Andina/CENAM/
++  Dominicana/Global); "Mexico"/"Colombia" fold into Global.
++- Jira's combined value "Andina/Dominicana" is split by reading the country mentioned in the
++  ticket's Summary (word-boundary, case-insensitive): Ecuador/Peru/Chile -> Andina;
++  Dominicana/RD -> Dominicana; Colombia -> Global. If no country is found, the combined value
++  is kept as-is (not silently dropped) so it's visible as its own "needs manual review" bucket,
++  matching how the reference tool counted it separately.
++"""
++
++import re
++
++_ANDINA_COUNTRY_RE = re.compile(r"\b(ECUADOR|PER[UÚ]|CHILE)\b", re.IGNORECASE)
++_DOMINICANA_RE = re.compile(r"\b(DOMINICANA|RD)\b", re.IGNORECASE)
++_COLOMBIA_RE = re.compile(r"\bCOLOMBIA\b", re.IGNORECASE)
++
++_DIRECT_ALIASES = {
++    "AUP": "AUP",
++    "ANDINA": "Andina",
++    "CENAM": "CENAM",
++    "DOMINICANA": "Dominicana",
++    "GLOBAL": "Global",
++    "MEXICO": "Global",
++    "MÉXICO": "Global",
++    "COLOMBIA": "Global",
++}
++_REGION_FOLDED_INTO_GLOBAL = {"MEXICO", "MÉXICO", "COLOMBIA"}
++_COMBINED_UNRESOLVED_KEY = "ANDINA/DOMINICANA"
++
++
++def resolve_cluster(raw_cluster: str | None, summary: str | None) -> tuple[str | None, str | None]:
++    """Returns (normalized_cluster_or_None, warning_message_or_None)."""
++    if not raw_cluster:
++        return None, None
++
++    key = raw_cluster.strip().upper()
++
++    if key == _COMBINED_UNRESOLVED_KEY:
++        text = summary or ""
++        if _DOMINICANA_RE.search(text):
++            return "Dominicana", f"Cluster '{raw_cluster}' resuelto a Dominicana según el Resumen."
++        if _ANDINA_COUNTRY_RE.search(text):
++            return "Andina", f"Cluster '{raw_cluster}' resuelto a Andina según el Resumen."
++        if _COLOMBIA_RE.search(text):
++            return "Global", f"Cluster '{raw_cluster}' resuelto a Global (Colombia) según el Resumen."
++        return (
++            raw_cluster.strip(),
++            f"Cluster '{raw_cluster}' no se pudo resolver desde el Resumen -- revisar manualmente.",
++        )
++
++    normalized = _DIRECT_ALIASES.get(key)
++    if normalized is None:
++        return None, f"Cluster '{raw_cluster}' no reconocido, se importó sin cluster."
++
++    if key in _REGION_FOLDED_INTO_GLOBAL:
++        return normalized, f"Cluster '{raw_cluster}' se agrupó bajo Global."
++
++    return normalized, None
+diff --git a/backend/app/services/qc_ticket_imports.py b/backend/app/services/qc_ticket_imports.py
+--- a/backend/app/services/qc_ticket_imports.py
++++ b/backend/app/services/qc_ticket_imports.py
+@@ -25,6 +25,7 @@
+ 
+ from app.models.qc_ticket import QcTicketPriority, QcTicketSource
+ from app.schemas.qc_tickets import QcTicketCreate, QcTicketImportRowError
++from app.services.cluster_resolution import resolve_cluster
+ 
+ _REQUIRED_HEADERS = ["issue_key", "priority_raw", "status_raw", "created_date"]
+ 
+@@ -41,19 +42,8 @@
+     "campo personalizado (programa afectado)": "affected_program",
+ }
+ 
+-# Canonical Cluster vocabulary Release.cluster already uses. "Mexico"/"Colombia" are regions
+-# reported under the Global cluster per product decision -- not a new cluster value.
+-_CLUSTER_ALIASES = {
+-    "AUP": "AUP",
+-    "ANDINA": "Andina",
+-    "CENAM": "CENAM",
+-    "DOMINICANA": "Dominicana",
+-    "GLOBAL": "Global",
+-    "MEXICO": "Global",
+-    "MÉXICO": "Global",
+-    "COLOMBIA": "Global",
+-}
+-_REGION_FOLDED_INTO_GLOBAL = {"MEXICO", "MÉXICO", "COLOMBIA"}
++# Canonical Cluster vocabulary and Andina/Dominicana-splitting logic now live in
++# services/cluster_resolution.py, shared with the Jira sync client.
+ 
+ # Statuses observed in a real export. Unrecognized statuses default to OPEN (safer for
+ # visibility than silently hiding a ticket from the backlog) and are flagged as a warning.
+@@ -220,27 +210,12 @@
+             )
+ 
+         cluster_raw = row.values.get("cluster_raw", "")
+-        cluster: str | None = None
+-        if cluster_raw:
+-            normalized = _CLUSTER_ALIASES.get(cluster_raw.strip().upper())
+-            if normalized is None:
+-                warnings.append(
+-                    QcTicketImportRowError(
+-                        issue_key=issue_key,
+-                        row_number=row.row_number,
+-                        message=f"'{issue_key}': Cluster '{cluster_raw}' no reconocido, se importó sin cluster.",
+-                    )
+-                )
+-            else:
+-                cluster = normalized
+-                if cluster_raw.strip().upper() in _REGION_FOLDED_INTO_GLOBAL:
+-                    warnings.append(
+-                        QcTicketImportRowError(
+-                            issue_key=issue_key,
+-                            row_number=row.row_number,
+-                            message=f"'{issue_key}': Cluster '{cluster_raw}' se agrupó bajo Global.",
+-                        )
+-                    )
++        summary_text = row.values.get("summary", "")
++        cluster, cluster_warning = resolve_cluster(cluster_raw, summary_text)
++        if cluster_warning:
++            warnings.append(
++                QcTicketImportRowError(issue_key=issue_key, row_number=row.row_number, message=f"'{issue_key}': {cluster_warning}")
++            )
+ 
+         valid.append(
+             QcTicketCreate(
+diff --git a/backend/app/services/jira_client.py b/backend/app/services/jira_client.py
+--- a/backend/app/services/jira_client.py
++++ b/backend/app/services/jira_client.py
+@@ -20,6 +20,7 @@
+ from app.config import settings
+ from app.models.qc_ticket import QcTicketPriority, QcTicketSource
+ from app.schemas.qc_tickets import QcTicketCreate
++from app.services.cluster_resolution import resolve_cluster
+ 
+ _REQUEST_TIMEOUT_SECONDS = 15.0
+ _CLOSED_STATUS_CATEGORIES = {"done"}  # Jira's own statusCategory.key for "closed-like" statuses
+@@ -96,6 +97,7 @@
+     cluster_raw = fields.get(cluster_field_id) if cluster_field_id else None
+     if isinstance(cluster_raw, dict):
+         cluster_raw = cluster_raw.get("value") or cluster_raw.get("name")
++    cluster, _cluster_warning = resolve_cluster(cluster_raw, fields.get("summary"))
+ 
+     created = _parse_jira_timestamp(fields.get("created"))
+     if created is None:
+@@ -111,7 +113,7 @@
+         status_raw=status.get("name", ""),
+         is_open=status_category not in _CLOSED_STATUS_CATEGORIES,
+         source=source,
+-        cluster=str(cluster_raw) if cluster_raw else None,
++        cluster=cluster,
+         affected_program=None,
+         created_date=created,
+         resolved_date=_parse_jira_timestamp(fields.get("resolutiondate")),
+diff --git a/backend/tests/test_qc_tickets.py b/backend/tests/test_qc_tickets.py
+--- a/backend/tests/test_qc_tickets.py
++++ b/backend/tests/test_qc_tickets.py
+@@ -31,6 +31,29 @@
+     assert ticket["created_date"] == "2026-08-25"
+ 
+ 
++def test_preview_resolves_andina_dominicana_via_country_in_summary(client) -> None:
++    csv_text = CSV_HEADER + (
++        'OPE-100,Bug,PROJ,Critical,Finalizada,10/ene/26 10:00 AM,,"Falla en Ecuador para app",'
++        'Andina/Dominicana,\n'
++        'OPE-101,Bug,PROJ,Critical,Finalizada,10/ene/26 10:00 AM,,"Reportado en Rep. Dominicana (RD)",'
++        'Andina/Dominicana,\n'
++        'OPE-102,Bug,PROJ,Critical,Finalizada,10/ene/26 10:00 AM,,"Ticket sin país mencionado",'
++        'Andina/Dominicana,\n'
++    )
++    body = _upload(client, csv_text).json()
++
++    assert body["valid_count"] == 3
++    by_key = {t["issue_key"]: t for t in body["valid"]}
++    assert by_key["OPE-100"]["cluster"] == "Andina"
++    assert by_key["OPE-101"]["cluster"] == "Dominicana"
++    assert by_key["OPE-102"]["cluster"] == "Andina/Dominicana"  # kept visible, not dropped
++
++    messages = " ".join(w["message"] for w in body["warnings"])
++    assert "resuelto a Andina" in messages
++    assert "resuelto a Dominicana" in messages
++    assert "no se pudo resolver" in messages
++
++
+ def test_preview_folds_mexico_into_global_with_warning(client) -> None:
+     csv_text = CSV_HEADER + (
+         "OPE-1,Bug,PROJ,Critical,Finalizada,10/ene/26 10:00 AM,,,"
+diff --git a/frontend/app/api/qc-tickets/bulk/route.ts b/frontend/app/api/qc-tickets/bulk/route.ts
+--- a/frontend/app/api/qc-tickets/bulk/route.ts
++++ b/frontend/app/api/qc-tickets/bulk/route.ts
+@@ -1,12 +1,24 @@
+ import { NextRequest, NextResponse } from "next/server";
+-import { proxyToBackend } from "@/lib/backend";
++
++const backendUrl = process.env.BACKEND_URL ?? "http://backend:8000";
++// Bulk imports can carry thousands of rows (a real Jira export); the shared 5s proxy default
++// (lib/backend.ts) is tuned for small CRUD calls and was very likely why a 2435-row import
++// failed with a proxy timeout. This route gets its own, much longer budget instead.
++const bulkImportTimeoutMs = 120_000;
+ 
+ export async function POST(request: NextRequest): Promise<NextResponse> {
+   const payload = await request.json();
+-  const response = await proxyToBackend("/api/v1/qc-tickets/bulk", {
+-    method: "POST",
+-    body: JSON.stringify(payload),
+-  });
+-  const body = await response.json();
+-  return NextResponse.json(body, { status: response.status });
++  try {
++    const response = await fetch(`${backendUrl}/api/v1/qc-tickets/bulk`, {
++      method: "POST",
++      body: JSON.stringify(payload),
++      cache: "no-store",
++      headers: { "Content-Type": "application/json" },
++      signal: AbortSignal.timeout(bulkImportTimeoutMs),
++    });
++    const body = await response.json();
++    return NextResponse.json(body, { status: response.status });
++  } catch {
++    return NextResponse.json({ status: "error", message: "Backend unavailable" }, { status: 503 });
++  }
+ }
+diff --git a/frontend/app/api/releases/[id]/test-cases/bulk/route.ts b/frontend/app/api/releases/[id]/test-cases/bulk/route.ts
+--- a/frontend/app/api/releases/[id]/test-cases/bulk/route.ts
++++ b/frontend/app/api/releases/[id]/test-cases/bulk/route.ts
+@@ -1,5 +1,9 @@
+ import { NextRequest, NextResponse } from "next/server";
+-import { proxyToBackend } from "@/lib/backend";
++
++const backendUrl = process.env.BACKEND_URL ?? "http://backend:8000";
++// Same reasoning as qc-tickets/bulk: large imports shouldn't be bound by the shared 5s
++// CRUD-sized proxy default.
++const bulkImportTimeoutMs = 120_000;
+ 
+ interface RouteParams {
+   params: Promise<{ id: string }>;
+@@ -8,10 +12,17 @@
+ export async function POST(request: NextRequest, { params }: RouteParams): Promise<NextResponse> {
+   const { id } = await params;
+   const payload = await request.json();
+-  const response = await proxyToBackend(`/api/v1/releases/${id}/test-cases/bulk`, {
+-    method: "POST",
+-    body: JSON.stringify(payload),
+-  });
+-  const body = await response.json();
+-  return NextResponse.json(body, { status: response.status });
++  try {
++    const response = await fetch(`${backendUrl}/api/v1/releases/${id}/test-cases/bulk`, {
++      method: "POST",
++      body: JSON.stringify(payload),
++      cache: "no-store",
++      headers: { "Content-Type": "application/json" },
++      signal: AbortSignal.timeout(bulkImportTimeoutMs),
++    });
++    const body = await response.json();
++    return NextResponse.json(body, { status: response.status });
++  } catch {
++    return NextResponse.json({ status: "error", message: "Backend unavailable" }, { status: 503 });
++  }
+ }

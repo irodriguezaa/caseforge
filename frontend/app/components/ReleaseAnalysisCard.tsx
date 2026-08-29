@@ -1,8 +1,6 @@
 "use client";
 
-import { AlertTriangle, Eye, Sparkles } from "lucide-react";
-import { useState } from "react";
-import { ReleaseAnalysisModal } from "@/app/components/ReleaseAnalysisModal";
+import { Sparkles } from "lucide-react";
 import type { ReleaseAnalysis } from "@/lib/types";
 
 interface ReleaseAnalysisCardProps {
@@ -14,26 +12,10 @@ interface ReleaseAnalysisCardProps {
 
 export function ReleaseAnalysisCard({
   analysis,
-  qcResources,
-  executionDays,
   onGenerateClick,
 }: ReleaseAnalysisCardProps): React.ReactElement {
-  const [modalOpen, setModalOpen] = useState(false);
-
-  // Estimation string calculated from QC config if available
-  const estimationDisplay =
-    qcResources && executionDays
-      ? `${qcResources} recurso${qcResources > 1 ? "s" : ""} / ${executionDays} día${executionDays > 1 ? "s" : ""}`
-      : "Configurar en paso 3";
-
-  // Coverage display placeholder for Phase 1 (QC engine will calculate in future)
-  const coverageDisplay = analysis.proposed_coverage
-    ? `${analysis.proposed_coverage} casos`
-    : "Se definirá por motor QC";
-
   return (
-    <>
-      <div className="card" style={{ borderLeft: "3px solid var(--accent)" }}>
+    <div className="card" style={{ borderLeft: "3px solid var(--accent)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
           <h2>Análisis de Release</h2>
           <span className="badge badge-info" style={{ fontSize: "11px" }}>
@@ -41,53 +23,40 @@ export function ReleaseAnalysisCard({
           </span>
         </div>
 
-        <div className="analysis-stat-grid">
-          <div className="analysis-stat-cell">
-            <div className="analysis-stat-num">{analysis.features_count}</div>
-            <div className="analysis-stat-lbl">Funcionalidades detectadas</div>
-          </div>
-          <div className="analysis-stat-cell">
-            <div className="analysis-stat-num">{analysis.qa_qc_issues_count}</div>
-            <div className="analysis-stat-lbl">Incidencias QA/QC</div>
-          </div>
-          <div className="analysis-stat-cell">
-            <div className="analysis-stat-num">{analysis.nco_issues_count}</div>
-            <div className="analysis-stat-lbl">Incidencias NCO</div>
-          </div>
-          <div className="analysis-stat-cell">
-            <div className="analysis-stat-num" style={{ fontSize: "14px", marginTop: "3px" }}>
-              {analysis.detected_devices || analysis.detected_platform || "WIN / XBOX"}
+        {/* Únicamente las 4 métricas pedidas -- sin Dispositivos, Cobertura propuesta ni
+            Estimación. Estilos en línea: label y valor van agrupados en la misma celda, en
+            grid horizontal cuando hay espacio -- no depende de clases CSS externas no verificadas. */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
+            gap: "10px",
+          }}
+        >
+          {[
+            { label: "Funcionalidades", value: analysis.features_count },
+            { label: "NCOS", value: analysis.nco_issues_count },
+            { label: "QA/QC Bugs", value: analysis.qa_qc_issues_count },
+            { label: "TRIS", value: analysis.tri_issues_count },
+          ].map((stat) => (
+            <div
+              key={stat.label}
+              style={{
+                background: "var(--surface-2)",
+                border: "1px solid var(--border)",
+                borderRadius: "8px",
+                padding: "10px 14px",
+              }}
+            >
+              <div style={{ fontSize: "10.5px", textTransform: "uppercase", letterSpacing: ".04em", color: "var(--text-dim)" }}>
+                {stat.label}
+              </div>
+              <div style={{ fontSize: "22px", fontWeight: 700, marginTop: "2px" }}>{stat.value}</div>
             </div>
-            <div className="analysis-stat-lbl">Dispositivos</div>
-          </div>
-          <div className="analysis-stat-cell">
-            <div className="analysis-stat-num" style={{ fontSize: "14px", marginTop: "3px", color: "var(--text)" }}>
-              {coverageDisplay}
-            </div>
-            <div className="analysis-stat-lbl">Cobertura propuesta</div>
-          </div>
-          <div className="analysis-stat-cell">
-            <div className="analysis-stat-num" style={{ fontSize: "14px", marginTop: "3px", color: "var(--text)" }}>
-              {estimationDisplay}
-            </div>
-            <div className="analysis-stat-lbl">Estimación</div>
-          </div>
+          ))}
         </div>
 
-        {analysis.observations && analysis.observations.length > 0 && (
-          <div style={{ margin: "14px 0 10px", fontSize: "12.5px", color: "var(--warning)" }}>
-            <span style={{ display: "inline-flex", alignItems: "center", gap: "6px", fontWeight: 600 }}>
-              <AlertTriangle size={14} aria-hidden="true" />
-              {analysis.observations.length} observación{analysis.observations.length > 1 ? "es" : ""} detectada{analysis.observations.length > 1 ? "s" : ""} en el documento
-            </span>
-          </div>
-        )}
-
         <div className="form-actions" style={{ marginTop: "14px" }}>
-          <button type="button" className="secondary" onClick={() => setModalOpen(true)}>
-            <Eye size={14} style={{ verticalAlign: "-2px", marginRight: "6px" }} />
-            Ver análisis
-          </button>
           <button
             type="button"
             onClick={onGenerateClick}
@@ -98,10 +67,5 @@ export function ReleaseAnalysisCard({
           </button>
         </div>
       </div>
-
-      {modalOpen && (
-        <ReleaseAnalysisModal analysis={analysis} onClose={() => setModalOpen(false)} />
-      )}
-    </>
   );
 }

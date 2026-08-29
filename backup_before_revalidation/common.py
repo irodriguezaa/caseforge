@@ -3,7 +3,6 @@
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.models.deliverable import Deliverable
 from app.models.release import Release
 from app.models.test_case import TestCase
 from app.models.test_step import TestStep
@@ -28,10 +27,3 @@ def get_test_step_or_404(step_id: int, db: Session) -> TestStep:
     if step is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Test step not found.")
     return step
-
-
-def get_deliverable_or_404(deliverable_id: int, db: Session) -> Deliverable:
-    deliverable = db.get(Deliverable, deliverable_id)
-    if deliverable is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Deliverable not found.")
-    return deliverable

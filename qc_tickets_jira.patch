@@ -1,0 +1,1505 @@
+diff --git a/backend/app/models/qc_ticket.py b/backend/app/models/qc_ticket.py
+new file mode 100644
+--- /dev/null
++++ b/backend/app/models/qc_ticket.py
+@@ -0,0 +1,63 @@
++"""QcTicket ORM model.
++
++Fully independent of Release/TestCase/Defect (per product decision): this is a general QC
++defect-radar entity fed from Jira exports (CSV today, Jira API later), covering ALL QC ticket
++volume across operational windows and releases -- not tied to a specific Release's Test Cases.
++"""
++
++import enum
++from datetime import date, datetime
++
++from sqlalchemy import Boolean, Date, DateTime, Enum, String, Text, UniqueConstraint, func
++from sqlalchemy.orm import Mapped, mapped_column
++
++from app.db import Base
++
++
++class QcTicketPriority(str, enum.Enum):
++    """Distinct from TestCasePriority: real Jira data includes a third 'Otros' bucket that
++    doesn't apply to CaseForge's own Test Case severity scale."""
++
++    BLOCKER = "BLOCKER"
++    CRITICAL = "CRITICAL"
++    OTHER = "OTHER"
++
++
++class QcTicketSource(str, enum.Enum):
++    """Set by which upload the ticket came from (or which Jira filter, once that exists) --
++    not a column in the Jira export itself."""
++
++    QC_DETECTED = "QC_DETECTED"
++    LEAKED = "LEAKED"
++
++
++class QcTicket(Base):
++    __tablename__ = "qc_tickets"
++    __table_args__ = (UniqueConstraint("issue_key", name="uq_qc_ticket_issue_key"),)
++
++    id: Mapped[int] = mapped_column(primary_key=True)
++    issue_key: Mapped[str] = mapped_column(String(50), nullable=False)
++    issue_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
++    project_key: Mapped[str | None] = mapped_column(String(50), nullable=True)
++    priority_bucket: Mapped[QcTicketPriority] = mapped_column(
++        Enum(QcTicketPriority, name="qc_ticket_priority", native_enum=True, validate_strings=True),
++        nullable=False,
++    )
++    status_raw: Mapped[str] = mapped_column(String(100), nullable=False)
++    is_open: Mapped[bool] = mapped_column(Boolean, nullable=False)
++    source: Mapped[QcTicketSource] = mapped_column(
++        Enum(QcTicketSource, name="qc_ticket_source", native_enum=True, validate_strings=True),
++        nullable=False,
++    )
++    # Normalized to the same 5-value vocabulary Release.cluster uses (AUP/Andina/CENAM/
++    # Dominicana/Global); "Mexico" and similar are folded into Global at import time.
++    cluster: Mapped[str | None] = mapped_column(String(50), nullable=True)
++    # Raw "Campo personalizado (Programa Afectado)" -- device/SWF derivation needs a business
++    # mapping table we don't have yet, so it's intentionally not computed here.
++    affected_program: Mapped[str | None] = mapped_column(String(150), nullable=True)
++    created_date: Mapped[date] = mapped_column(Date, nullable=False)
++    resolved_date: Mapped[date | None] = mapped_column(Date, nullable=True)
++    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
++    imported_at: Mapped[datetime] = mapped_column(
++        DateTime(timezone=True), server_default=func.now(), nullable=False
++    )
+diff --git a/backend/app/models/__init__.py b/backend/app/models/__init__.py
+--- a/backend/app/models/__init__.py
++++ b/backend/app/models/__init__.py
+@@ -1,6 +1,7 @@
+ """Domain ORM models. Imported eagerly so Base.metadata is complete for Alembic and create_all."""
+ 
+ from app.models.defect import Defect, DefectStatus
++from app.models.qc_ticket import QcTicket, QcTicketPriority, QcTicketSource
+ from app.models.release import Release, ReleaseStatus
+ from app.models.test_case import TestCase, TestCasePriority, TestCaseStatus, TestCaseType
+ from app.models.test_step import TestStep
+@@ -9,6 +10,9 @@
+ __all__ = [
+     "Defect",
+     "DefectStatus",
++    "QcTicket",
++    "QcTicketPriority",
++    "QcTicketSource",
+     "Release",
+     "ReleaseStatus",
+     "TestCase",
+diff --git a/backend/alembic/versions/0004_qc_tickets.py b/backend/alembic/versions/0004_qc_tickets.py
+new file mode 100644
+--- /dev/null
++++ b/backend/alembic/versions/0004_qc_tickets.py
+@@ -0,0 +1,67 @@
++"""Add qc_tickets (independent defect radar, not linked to Release/TestCase/Defect)
++
++Revision ID: 0004
++Revises: 0003
++Create Date: 2026-08-28
++
++"""
++
++from typing import Sequence, Union
++
++import sqlalchemy as sa
++from alembic import op
++from sqlalchemy.dialects import postgresql
++
++revision: str = "0004"
++down_revision: Union[str, None] = "0003"
++branch_labels: Union[str, Sequence[str], None] = None
++depends_on: Union[str, Sequence[str], None] = None
++
++qc_ticket_priority = postgresql.ENUM(
++    "BLOCKER", "CRITICAL", "OTHER", name="qc_ticket_priority", create_type=False
++)
++qc_ticket_source = postgresql.ENUM(
++    "QC_DETECTED", "LEAKED", name="qc_ticket_source", create_type=False
++)
++
++
++def upgrade() -> None:
++    bind = op.get_bind()
++    qc_ticket_priority.create(bind, checkfirst=True)
++    qc_ticket_source.create(bind, checkfirst=True)
++
++    op.create_table(
++        "qc_tickets",
++        sa.Column("id", sa.Integer(), nullable=False),
++        sa.Column("issue_key", sa.String(length=50), nullable=False),
++        sa.Column("issue_type", sa.String(length=100), nullable=True),
++        sa.Column("project_key", sa.String(length=50), nullable=True),
++        sa.Column("priority_bucket", qc_ticket_priority, nullable=False),
++        sa.Column("status_raw", sa.String(length=100), nullable=False),
++        sa.Column("is_open", sa.Boolean(), nullable=False),
++        sa.Column("source", qc_ticket_source, nullable=False),
++        sa.Column("cluster", sa.String(length=50), nullable=True),
++        sa.Column("affected_program", sa.String(length=150), nullable=True),
++        sa.Column("created_date", sa.Date(), nullable=False),
++        sa.Column("resolved_date", sa.Date(), nullable=True),
++        sa.Column("summary", sa.Text(), nullable=True),
++        sa.Column(
++            "imported_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False
++        ),
++        sa.PrimaryKeyConstraint("id"),
++        sa.UniqueConstraint("issue_key", name="uq_qc_ticket_issue_key"),
++    )
++    op.create_index("idx_qc_tickets_cluster", "qc_tickets", ["cluster"])
++    op.create_index("idx_qc_tickets_source", "qc_tickets", ["source"])
++    op.create_index("idx_qc_tickets_created_date", "qc_tickets", ["created_date"])
++
++
++def downgrade() -> None:
++    op.drop_index("idx_qc_tickets_created_date", table_name="qc_tickets")
++    op.drop_index("idx_qc_tickets_source", table_name="qc_tickets")
++    op.drop_index("idx_qc_tickets_cluster", table_name="qc_tickets")
++    op.drop_table("qc_tickets")
++
++    bind = op.get_bind()
++    qc_ticket_source.drop(bind, checkfirst=True)
++    qc_ticket_priority.drop(bind, checkfirst=True)
+diff --git a/backend/app/schemas/qc_tickets.py b/backend/app/schemas/qc_tickets.py
+new file mode 100644
+--- /dev/null
++++ b/backend/app/schemas/qc_tickets.py
+@@ -0,0 +1,74 @@
++"""Pydantic schemas for QcTicket and its bulk-import pipeline (Import -> Validate -> Preview ->
++Approve -> Persist, same pattern as Test Case import)."""
++
++from datetime import date, datetime
++
++from pydantic import BaseModel, ConfigDict, Field
++
++from app.models.qc_ticket import QcTicketPriority, QcTicketSource
++
++
++class QcTicketBase(BaseModel):
++    issue_key: str = Field(min_length=1, max_length=50)
++    issue_type: str | None = None
++    project_key: str | None = None
++    priority_bucket: QcTicketPriority
++    status_raw: str
++    is_open: bool
++    cluster: str | None = None
++    affected_program: str | None = None
++    created_date: date
++    resolved_date: date | None = None
++    summary: str | None = None
++
++
++class QcTicketCreate(QcTicketBase):
++    source: QcTicketSource
++
++
++class QcTicketRead(QcTicketBase):
++    model_config = ConfigDict(from_attributes=True)
++
++    id: int
++    source: QcTicketSource
++    imported_at: datetime
++
++
++class QcTicketImportRowError(BaseModel):
++    issue_key: str | None = None
++    row_number: int | None = None
++    message: str
++
++
++class QcTicketImportPreviewResponse(BaseModel):
++    valid: list[QcTicketCreate]
++    errors: list[QcTicketImportRowError]
++    warnings: list[QcTicketImportRowError] = Field(default_factory=list)
++    total_rows: int
++    valid_count: int
++    error_count: int
++
++
++class QcTicketBulkCreateError(BaseModel):
++    issue_key: str | None
++    message: str
++
++
++class QcTicketBulkCreateResult(BaseModel):
++    created: list[QcTicketRead]
++    errors: list[QcTicketBulkCreateError]
++
++
++class QcTicketStats(BaseModel):
++    """Backs the KPIs -> Radar de Defectos screen."""
++
++    total: int
++    blocker_count: int
++    critical_count: int
++    other_count: int
++    open_count: int
++    qc_detected_count: int
++    leaked_count: int
++    leak_rate_percent: float  # leaked / (leaked + qc_detected) * 100
++    by_cluster: dict[str, int] = Field(default_factory=dict)
++    by_month: dict[str, int] = Field(default_factory=dict)  # "YYYY-MM" -> count
+diff --git a/backend/app/services/qc_ticket_imports.py b/backend/app/services/qc_ticket_imports.py
+new file mode 100644
+--- /dev/null
++++ b/backend/app/services/qc_ticket_imports.py
+@@ -0,0 +1,262 @@
++"""Parsing and validation for the QcTicket bulk-import pipeline.
++
++Reads the actual columns Jira's export produces (verified against a real export sample):
++Clave de incidencia, Tipo de Incidencia, Clave del proyecto, Prioridad, Estado, Creada,
++Resuelta, Resumen, "Campo personalizado (Cluster)". Dates use Jira's default Spanish-locale
++format: DD/MMM/YY HH:MM AM|PM (e.g. "25/ago/26 03:45 PM").
++
++Device/SWF are intentionally NOT derived here: the reference tool computed them via a
++business-maintained Program-to-Device lookup table we don't have visibility into. Only
++"Campo personalizado (Programa Afectado)" (the raw affected-program field) is imported;
++deriving Device/SWF from it is a follow-up once that mapping is provided.
++
++Cluster values are normalized to the same 5-value vocabulary Release.cluster uses. Any raw
++value outside that list is not silently dropped -- it surfaces as a warning if aliased, or a
++warning (imported without cluster) if completely unrecognized.
++"""
++
++import csv
++import io
++import re
++from dataclasses import dataclass
++from datetime import date as date_cls
++
++import openpyxl
++
++from app.models.qc_ticket import QcTicketPriority, QcTicketSource
++from app.schemas.qc_tickets import QcTicketCreate, QcTicketImportRowError
++
++_REQUIRED_HEADERS = ["issue_key", "priority_raw", "status_raw", "created_date"]
++
++_HEADER_ALIASES = {
++    "clave de incidencia": "issue_key",
++    "tipo de incidencia": "issue_type",
++    "clave del proyecto": "project_key",
++    "prioridad": "priority_raw",
++    "estado": "status_raw",
++    "creada": "created_date",
++    "resuelta": "resolved_date",
++    "resumen": "summary",
++    "campo personalizado (cluster)": "cluster_raw",
++    "campo personalizado (programa afectado)": "affected_program",
++}
++
++# Canonical Cluster vocabulary Release.cluster already uses. "Mexico"/"Colombia" are regions
++# reported under the Global cluster per product decision -- not a new cluster value.
++_CLUSTER_ALIASES = {
++    "AUP": "AUP",
++    "ANDINA": "Andina",
++    "CENAM": "CENAM",
++    "DOMINICANA": "Dominicana",
++    "GLOBAL": "Global",
++    "MEXICO": "Global",
++    "MÉXICO": "Global",
++    "COLOMBIA": "Global",
++}
++_REGION_FOLDED_INTO_GLOBAL = {"MEXICO", "MÉXICO", "COLOMBIA"}
++
++# Statuses observed in a real export. Unrecognized statuses default to OPEN (safer for
++# visibility than silently hiding a ticket from the backlog) and are flagged as a warning.
++_CLOSED_STATUSES = {"FINALIZADA", "CERRADA", "DONE", "RESUELTA", "CANCELADA", "CANCELLED"}
++_KNOWN_OPEN_STATUSES = {
++    "TO DEVELOP", "IN PROGRAM REVIEW", "PENDING EXTERNAL DATA", "PENDING BUSINESS OWNER",
++}
++
++_MONTHS_ES = {
++    "ene": 1, "feb": 2, "mar": 3, "abr": 4, "may": 5, "jun": 6,
++    "jul": 7, "ago": 8, "sep": 9, "oct": 10, "nov": 11, "dic": 12,
++}
++_DATE_RE = re.compile(r"(\d{2})/(\w{3})/(\d{2})\s+(\d{1,2}):(\d{2})\s*(AM|PM)", re.IGNORECASE)
++
++
++class QcTicketImportStructureError(Exception):
++    def __init__(self, messages: list[str]) -> None:
++        super().__init__("; ".join(messages))
++        self.messages = messages
++
++
++@dataclass
++class _RawRow:
++    row_number: int
++    values: dict[str, str]
++
++
++def _clean(value: object) -> str:
++    return "" if value is None else str(value).strip()
++
++
++def _normalize_header(raw: str) -> str | None:
++    return _HEADER_ALIASES.get(raw.strip().lower())
++
++
++def _parse_jira_date(raw: str) -> date_cls | None:
++    match = _DATE_RE.match(raw.strip())
++    if not match:
++        return None
++    day, mon_es, yy, _hh, _mm, _ampm = match.groups()
++    month = _MONTHS_ES.get(mon_es.lower())
++    if month is None:
++        return None
++    try:
++        return date_cls(2000 + int(yy), month, int(day))
++    except ValueError:
++        return None
++
++
++def _read_grid(filename: str, content: bytes) -> list[list[object]]:
++    lower = filename.lower()
++    if lower.endswith(".csv"):
++        text = content.decode("utf-8-sig")
++        return list(csv.reader(io.StringIO(text)))
++    if lower.endswith((".xlsx", ".xlsm")):
++        workbook = openpyxl.load_workbook(io.BytesIO(content), data_only=True, read_only=True)
++        sheet = workbook.worksheets[0]
++        return [list(row) for row in sheet.iter_rows(values_only=True)]
++    raise QcTicketImportStructureError(
++        ["Formato de archivo no soportado. Solo se aceptan archivos .csv o .xlsx."]
++    )
++
++
++def parse_file(filename: str, content: bytes) -> list[_RawRow]:
++    grid = _read_grid(filename, content)
++    if not grid:
++        raise QcTicketImportStructureError(["El archivo está vacío."])
++
++    header_row = grid[0]
++    canonical_by_index: dict[int, str] = {}
++    for index, raw_header in enumerate(header_row):
++        if raw_header is None:
++            continue
++        canonical = _normalize_header(str(raw_header))
++        if canonical is not None:
++            canonical_by_index[index] = canonical
++
++    found = set(canonical_by_index.values())
++    missing = [f for f in _REQUIRED_HEADERS if f not in found]
++    if missing:
++        raise QcTicketImportStructureError(
++            [f"Faltan columnas obligatorias en el archivo: {', '.join(missing)}."]
++        )
++
++    rows: list[_RawRow] = []
++    for offset, data_row in enumerate(grid[1:], start=2):
++        if all(cell is None or _clean(cell) == "" for cell in data_row):
++            continue
++        values = {
++            canonical: _clean(data_row[index] if index < len(data_row) else None)
++            for index, canonical in canonical_by_index.items()
++        }
++        rows.append(_RawRow(row_number=offset, values=values))
++
++    if not rows:
++        raise QcTicketImportStructureError(["El archivo no contiene filas de datos."])
++
++    return rows
++
++
++def _resolve_priority(raw: str) -> QcTicketPriority:
++    lowered = raw.lower()
++    if "impedimento" in lowered or "blocker" in lowered:
++        return QcTicketPriority.BLOCKER
++    if "crítica" in lowered or "critica" in lowered or "critical" in lowered:
++        return QcTicketPriority.CRITICAL
++    return QcTicketPriority.OTHER
++
++
++def validate_rows(
++    rows: list[_RawRow], source: QcTicketSource
++) -> tuple[list[QcTicketCreate], list[QcTicketImportRowError], list[QcTicketImportRowError]]:
++    valid: list[QcTicketCreate] = []
++    errors: list[QcTicketImportRowError] = []
++    warnings: list[QcTicketImportRowError] = []
++    seen_keys: dict[str, int] = {}
++
++    for row in rows:
++        issue_key = row.values.get("issue_key", "")
++        if not issue_key:
++            errors.append(
++                QcTicketImportRowError(row_number=row.row_number, message="Falta Clave de incidencia.")
++            )
++            continue
++        if issue_key in seen_keys:
++            errors.append(
++                QcTicketImportRowError(
++                    issue_key=issue_key,
++                    row_number=row.row_number,
++                    message=f"'{issue_key}' está duplicado dentro del archivo (fila {seen_keys[issue_key]}).",
++                )
++            )
++            continue
++        seen_keys[issue_key] = row.row_number
++
++        created_raw = row.values.get("created_date", "")
++        created = _parse_jira_date(created_raw) if created_raw else None
++        if created is None:
++            errors.append(
++                QcTicketImportRowError(
++                    issue_key=issue_key,
++                    row_number=row.row_number,
++                    message=f"'{issue_key}': fecha 'Creada' inválida o vacía ('{created_raw}').",
++                )
++            )
++            continue
++
++        resolved_raw = row.values.get("resolved_date", "")
++        resolved = _parse_jira_date(resolved_raw) if resolved_raw else None
++
++        status_raw = row.values.get("status_raw", "")
++        status_upper = status_raw.strip().upper()
++        is_open = status_upper not in _CLOSED_STATUSES
++        if status_upper not in _CLOSED_STATUSES and status_upper not in _KNOWN_OPEN_STATUSES:
++            warnings.append(
++                QcTicketImportRowError(
++                    issue_key=issue_key,
++                    row_number=row.row_number,
++                    message=(
++                        f"'{issue_key}': estado '{status_raw}' no reconocido, se asumió ABIERTO "
++                        "por seguridad -- revisa si debería contarse como cerrado."
++                    ),
++                )
++            )
++
++        cluster_raw = row.values.get("cluster_raw", "")
++        cluster: str | None = None
++        if cluster_raw:
++            normalized = _CLUSTER_ALIASES.get(cluster_raw.strip().upper())
++            if normalized is None:
++                warnings.append(
++                    QcTicketImportRowError(
++                        issue_key=issue_key,
++                        row_number=row.row_number,
++                        message=f"'{issue_key}': Cluster '{cluster_raw}' no reconocido, se importó sin cluster.",
++                    )
++                )
++            else:
++                cluster = normalized
++                if cluster_raw.strip().upper() in _REGION_FOLDED_INTO_GLOBAL:
++                    warnings.append(
++                        QcTicketImportRowError(
++                            issue_key=issue_key,
++                            row_number=row.row_number,
++                            message=f"'{issue_key}': Cluster '{cluster_raw}' se agrupó bajo Global.",
++                        )
++                    )
++
++        valid.append(
++            QcTicketCreate(
++                issue_key=issue_key,
++                issue_type=row.values.get("issue_type") or None,
++                project_key=row.values.get("project_key") or None,
++                priority_bucket=_resolve_priority(row.values.get("priority_raw", "")),
++                status_raw=status_raw,
++                is_open=is_open,
++                source=source,
++                cluster=cluster,
++                affected_program=row.values.get("affected_program") or None,
++                created_date=created,
++                resolved_date=resolved,
++                summary=row.values.get("summary") or None,
++            )
++        )
++
++    return valid, errors, warnings
+diff --git a/backend/app/routers/qc_tickets.py b/backend/app/routers/qc_tickets.py
+new file mode 100644
+--- /dev/null
++++ b/backend/app/routers/qc_tickets.py
+@@ -0,0 +1,223 @@
++"""QcTicket endpoints: independent defect-radar import pipeline and KPIs aggregation.
++
++Same Import -> Validate -> Preview -> Approve -> Persist pattern already used for Test Cases,
++kept as a fully separate pipeline since QcTicket has no relationship to Release/TestCase/Defect.
++"""
++
++from collections import Counter
++
++from fastapi import APIRouter, Depends, Form, HTTPException, Query, UploadFile, status
++from sqlalchemy import select
++from sqlalchemy.exc import DataError, IntegrityError
++from sqlalchemy.orm import Session
++
++from app.db import get_db
++from app.models.qc_ticket import QcTicket, QcTicketSource
++from app.schemas.qc_tickets import (
++    QcTicketBulkCreateError,
++    QcTicketBulkCreateResult,
++    QcTicketCreate,
++    QcTicketImportPreviewResponse,
++    QcTicketImportRowError,
++    QcTicketRead,
++    QcTicketStats,
++)
++from app.services.qc_ticket_imports import QcTicketImportStructureError, parse_file, validate_rows
++from app.services import jira_client
++from app.services.jira_client import JiraApiError, JiraNotConfiguredError
++
++router = APIRouter(prefix="/api/v1/qc-tickets", tags=["qc-tickets"])
++
++
++@router.post("/import/preview", response_model=QcTicketImportPreviewResponse)
++async def preview_qc_ticket_import(
++    file: UploadFile,
++    source: QcTicketSource = Form(...),
++    db: Session = Depends(get_db),
++) -> QcTicketImportPreviewResponse:
++    if file.filename is None:
++        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="No se recibió ningún archivo.")
++
++    content = await file.read()
++    try:
++        rows = parse_file(file.filename, content)
++    except QcTicketImportStructureError as exc:
++        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="; ".join(exc.messages)) from exc
++
++    valid, errors, warnings = validate_rows(rows, source)
++
++    existing_keys = set(db.execute(select(QcTicket.issue_key)).scalars())
++    still_valid = []
++    for ticket in valid:
++        if ticket.issue_key in existing_keys:
++            errors.append(
++                QcTicketImportRowError(
++                    issue_key=ticket.issue_key, message=f"'{ticket.issue_key}' ya existe en CaseForge."
++                )
++            )
++        else:
++            still_valid.append(ticket)
++
++    return QcTicketImportPreviewResponse(
++        valid=still_valid,
++        errors=errors,
++        warnings=warnings,
++        total_rows=len(rows),
++        valid_count=len(still_valid),
++        error_count=len(errors),
++    )
++
++
++@router.post("/bulk", response_model=QcTicketBulkCreateResult, status_code=status.HTTP_201_CREATED)
++def bulk_create_qc_tickets(
++    payload: list[QcTicketCreate], db: Session = Depends(get_db)
++) -> QcTicketBulkCreateResult:
++    """Transactional, same contract as the Test Case bulk endpoint: any row failing rolls back
++    the whole batch."""
++    tentative: list[QcTicket] = []
++    errors: list[QcTicketBulkCreateError] = []
++
++    for ticket in payload:
++        savepoint = db.begin_nested()
++        row = QcTicket(**ticket.model_dump())
++        db.add(row)
++        try:
++            db.flush()
++        except (IntegrityError, DataError) as exc:
++            savepoint.rollback()
++            errors.append(
++                QcTicketBulkCreateError(
++                    issue_key=ticket.issue_key,
++                    message=f"'{ticket.issue_key}': no se pudo guardar ({exc.__class__.__name__}).",
++                )
++            )
++            continue
++        tentative.append(row)
++
++    if errors:
++        db.rollback()
++        return QcTicketBulkCreateResult(created=[], errors=errors)
++
++    db.commit()
++    for row in tentative:
++        db.refresh(row)
++
++    return QcTicketBulkCreateResult(created=tentative, errors=[])
++
++
++@router.get("", response_model=list[QcTicketRead])
++def list_qc_tickets(
++    cluster: str | None = Query(default=None),
++    source: QcTicketSource | None = Query(default=None),
++    is_open: bool | None = Query(default=None),
++    db: Session = Depends(get_db),
++) -> list[QcTicket]:
++    stmt = select(QcTicket).order_by(QcTicket.created_date.desc())
++    if cluster is not None:
++        stmt = stmt.where(QcTicket.cluster == cluster)
++    if source is not None:
++        stmt = stmt.where(QcTicket.source == source)
++    if is_open is not None:
++        stmt = stmt.where(QcTicket.is_open == is_open)
++    return list(db.execute(stmt).scalars().all())
++
++
++@router.get("/stats", response_model=QcTicketStats)
++def get_qc_ticket_stats(
++    cluster: str | None = Query(default=None),
++    db: Session = Depends(get_db),
++) -> QcTicketStats:
++    stmt = select(QcTicket)
++    if cluster is not None:
++        stmt = stmt.where(QcTicket.cluster == cluster)
++    tickets = list(db.execute(stmt).scalars().all())
++
++    total = len(tickets)
++    blocker = sum(1 for t in tickets if t.priority_bucket.value == "BLOCKER")
++    critical = sum(1 for t in tickets if t.priority_bucket.value == "CRITICAL")
++    other = sum(1 for t in tickets if t.priority_bucket.value == "OTHER")
++    open_count = sum(1 for t in tickets if t.is_open)
++    qc_detected = sum(1 for t in tickets if t.source == QcTicketSource.QC_DETECTED)
++    leaked = sum(1 for t in tickets if t.source == QcTicketSource.LEAKED)
++    leak_rate = round((leaked / (leaked + qc_detected)) * 100, 1) if (leaked + qc_detected) else 0.0
++
++    by_cluster = Counter(t.cluster or "Sin cluster" for t in tickets)
++    by_month = Counter(f"{t.created_date.year:04d}-{t.created_date.month:02d}" for t in tickets)
++
++    return QcTicketStats(
++        total=total,
++        blocker_count=blocker,
++        critical_count=critical,
++        other_count=other,
++        open_count=open_count,
++        qc_detected_count=qc_detected,
++        leaked_count=leaked,
++        leak_rate_percent=leak_rate,
++        by_cluster=dict(by_cluster),
++        by_month=dict(sorted(by_month.items())),
++    )
++
++
++# ---------------------------------------------------------------------------
++# Jira sync (experimental, unvalidated against a real Jira instance -- see
++# services/jira_client.py). Reuses the exact same preview/bulk contract as the CSV path.
++# ---------------------------------------------------------------------------
++
++
++@router.get("/jira/fields")
++def list_jira_fields() -> list[dict[str, str]]:
++    """Safe first step: lists every Jira field with its real ID, so you can tell us which
++    customfield_XXXXX is 'Cluster' without us guessing."""
++    try:
++        return jira_client.list_fields()
++    except JiraNotConfiguredError as exc:
++        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
++    except JiraApiError as exc:
++        raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
++
++
++@router.post("/jira/sync-preview", response_model=QcTicketImportPreviewResponse)
++def preview_jira_sync(
++    filter_id: str = Query(...),
++    source: QcTicketSource = Query(...),
++    cluster_field_id: str | None = Query(default=None),
++    db: Session = Depends(get_db),
++) -> QcTicketImportPreviewResponse:
++    """Same preview contract as the CSV path: fetches from Jira, validates, but does NOT
++    persist. Approve by POSTing the returned `valid` list to /qc-tickets/bulk, same as CSV."""
++    try:
++        tickets, skipped = jira_client.fetch_tickets_by_filter(filter_id, source, cluster_field_id)
++    except JiraNotConfiguredError as exc:
++        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
++    except JiraApiError as exc:
++        raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
++
++    errors = [
++        QcTicketImportRowError(issue_key=key, message=f"'{key}': no se pudo interpretar su fecha de creación.")
++        for key in skipped
++    ]
++
++    existing_keys = set(db.execute(select(QcTicket.issue_key)).scalars())
++    seen_in_batch: set[str] = set()
++    valid: list[QcTicketCreate] = []
++    for ticket in tickets:
++        if ticket.issue_key in existing_keys:
++            errors.append(
++                QcTicketImportRowError(issue_key=ticket.issue_key, message=f"'{ticket.issue_key}' ya existe en CaseForge.")
++            )
++        elif ticket.issue_key in seen_in_batch:
++            errors.append(
++                QcTicketImportRowError(issue_key=ticket.issue_key, message=f"'{ticket.issue_key}' duplicado en el resultado de Jira.")
++            )
++        else:
++            seen_in_batch.add(ticket.issue_key)
++            valid.append(ticket)
++
++    return QcTicketImportPreviewResponse(
++        valid=valid,
++        errors=errors,
++        warnings=[],
++        total_rows=len(tickets) + len(skipped),
++        valid_count=len(valid),
++        error_count=len(errors),
++    )
+diff --git a/backend/app/main.py b/backend/app/main.py
+--- a/backend/app/main.py
++++ b/backend/app/main.py
+@@ -7,6 +7,7 @@
+ from app.routers.health import router as health_router
+ from app.routers.imports import router as imports_router
+ from app.routers.operational_windows import router as operational_windows_router
++from app.routers.qc_tickets import router as qc_tickets_router
+ from app.routers.release_windows import router as release_windows_router
+ from app.routers.releases import router as releases_router
+ from app.routers.test_cases import router as test_cases_router
+@@ -27,4 +28,5 @@
+ app.include_router(operational_windows_router)
+ app.include_router(release_windows_router)
+ app.include_router(defects_router)
++app.include_router(qc_tickets_router)
+ app.include_router(dashboard_router)
+diff --git a/backend/app/config.py b/backend/app/config.py
+--- a/backend/app/config.py
++++ b/backend/app/config.py
+@@ -11,6 +11,11 @@
+     database_name: str = os.getenv("DATABASE_NAME", "caseforge")
+     database_user: str = os.getenv("DATABASE_USER", "caseforge_user")
+     database_password: str = os.getenv("DATABASE_PASSWORD", "")
++    # Optional: only needed for the Jira sync feature. Never required for the app to start,
++    # unlike DATABASE_* -- most environments won't set these yet.
++    jira_base_url: str = os.getenv("JIRA_BASE_URL", "")
++    jira_email: str = os.getenv("JIRA_EMAIL", "")
++    jira_api_token: str = os.getenv("JIRA_API_TOKEN", "")
+ 
+ 
+ settings = Settings()
+diff --git a/backend/requirements.txt b/backend/requirements.txt
+--- a/backend/requirements.txt
++++ b/backend/requirements.txt
+@@ -5,3 +5,4 @@
+ alembic==1.14.0
+ openpyxl==3.1.5
+ python-multipart==0.0.20
++httpx==0.28.1
+diff --git a/backend/app/services/jira_client.py b/backend/app/services/jira_client.py
+new file mode 100644
+--- /dev/null
++++ b/backend/app/services/jira_client.py
+@@ -0,0 +1,156 @@
++"""Jira Cloud API client for the QcTicket sync feature.
++
++IMPORTANT: this module has NOT been validated against a real Jira instance -- this sandbox has
++no network access to atlassian.net. It was written directly against Jira Cloud's documented
++REST API v3 (Basic Auth via email + API token, standard for Jira Cloud), but you are the first
++one who can actually run it end to end. Report back the exact error if something doesn't work;
++the field-discovery endpoint below is the safest starting point since it requires no guessing.
++
++Auth: HTTP Basic with (email, api_token) -- this is the documented method for Jira Cloud.
++Server/Data Center instances use a different auth scheme (personal access token as a Bearer
++header) and would need a small change here if that's what dlatvarg.atlassian.net turns out to
++need (the .atlassian.net domain strongly suggests Cloud, so Basic Auth should be correct).
++"""
++
++from datetime import date, datetime
++from typing import Any
++
++import httpx
++
++from app.config import settings
++from app.models.qc_ticket import QcTicketPriority, QcTicketSource
++from app.schemas.qc_tickets import QcTicketCreate
++
++_REQUEST_TIMEOUT_SECONDS = 15.0
++_CLOSED_STATUS_CATEGORIES = {"done"}  # Jira's own statusCategory.key for "closed-like" statuses
++
++
++class JiraNotConfiguredError(Exception):
++    """Raised when JIRA_BASE_URL/EMAIL/API_TOKEN aren't set."""
++
++
++class JiraApiError(Exception):
++    def __init__(self, status_code: int, detail: str) -> None:
++        super().__init__(f"Jira API error {status_code}: {detail}")
++        self.status_code = status_code
++        self.detail = detail
++
++
++def _require_config() -> tuple[str, str, str]:
++    if not (settings.jira_base_url and settings.jira_email and settings.jira_api_token):
++        raise JiraNotConfiguredError(
++            "JIRA_BASE_URL, JIRA_EMAIL y JIRA_API_TOKEN deben estar configurados (ver .env)."
++        )
++    return settings.jira_base_url.rstrip("/"), settings.jira_email, settings.jira_api_token
++
++
++def _client() -> httpx.Client:
++    base_url, email, token = _require_config()
++    return httpx.Client(
++        base_url=base_url,
++        auth=(email, token),
++        timeout=_REQUEST_TIMEOUT_SECONDS,
++        headers={"Accept": "application/json"},
++    )
++
++
++def list_fields() -> list[dict[str, str]]:
++    """Returns [{id, name}] for every field in the Jira instance -- use this to find which
++    customfield_XXXXX corresponds to 'Cluster' without guessing."""
++    with _client() as client:
++        response = client.get("/rest/api/3/field")
++    if response.status_code != 200:
++        raise JiraApiError(response.status_code, response.text[:500])
++    return [{"id": f["id"], "name": f["name"]} for f in response.json()]
++
++
++def _resolve_priority(raw: str | None) -> QcTicketPriority:
++    if not raw:
++        return QcTicketPriority.OTHER
++    lowered = raw.lower()
++    if "impedimento" in lowered or "blocker" in lowered:
++        return QcTicketPriority.BLOCKER
++    if "crítica" in lowered or "critica" in lowered or "critical" in lowered:
++        return QcTicketPriority.CRITICAL
++    return QcTicketPriority.OTHER
++
++
++def _parse_jira_timestamp(raw: str | None) -> date | None:
++    if not raw:
++        return None
++    try:
++        # Jira Cloud timestamps look like "2026-08-25T15:45:00.000-0600"
++        return datetime.fromisoformat(raw.replace("Z", "+00:00")).date()
++    except ValueError:
++        return None
++
++
++def _map_issue(issue: dict[str, Any], cluster_field_id: str | None, source: QcTicketSource) -> QcTicketCreate:
++    fields = issue.get("fields", {})
++    priority = fields.get("priority") or {}
++    status = fields.get("status") or {}
++    status_category = (status.get("statusCategory") or {}).get("key", "")
++    project = fields.get("project") or {}
++    issue_type = fields.get("issuetype") or {}
++
++    cluster_raw = fields.get(cluster_field_id) if cluster_field_id else None
++    if isinstance(cluster_raw, dict):
++        cluster_raw = cluster_raw.get("value") or cluster_raw.get("name")
++
++    created = _parse_jira_timestamp(fields.get("created"))
++    if created is None:
++        # Jira always sets "created"; if this ever fails, surfacing today's date would silently
++        # mislabel the ticket's timeline, so this issue is skipped by the caller instead.
++        raise ValueError(f"No se pudo parsear la fecha de creación de {issue.get('key')}")
++
++    return QcTicketCreate(
++        issue_key=issue["key"],
++        issue_type=issue_type.get("name"),
++        project_key=project.get("key"),
++        priority_bucket=_resolve_priority(priority.get("name")),
++        status_raw=status.get("name", ""),
++        is_open=status_category not in _CLOSED_STATUS_CATEGORIES,
++        source=source,
++        cluster=str(cluster_raw) if cluster_raw else None,
++        affected_program=None,
++        created_date=created,
++        resolved_date=_parse_jira_timestamp(fields.get("resolutiondate")),
++        summary=fields.get("summary"),
++    )
++
++
++def fetch_tickets_by_filter(
++    filter_id: str, source: QcTicketSource, cluster_field_id: str | None
++) -> tuple[list[QcTicketCreate], list[str]]:
++    """Returns (mapped tickets, skipped-issue-keys with unparseable dates)."""
++    tickets: list[QcTicketCreate] = []
++    skipped: list[str] = []
++
++    with _client() as client:
++        start_at = 0
++        page_size = 100
++        while True:
++            response = client.get(
++                "/rest/api/3/search",
++                params={
++                    "jql": f"filter={filter_id}",
++                    "startAt": start_at,
++                    "maxResults": page_size,
++                    "fields": "*all",
++                },
++            )
++            if response.status_code != 200:
++                raise JiraApiError(response.status_code, response.text[:500])
++
++            payload = response.json()
++            for issue in payload.get("issues", []):
++                try:
++                    tickets.append(_map_issue(issue, cluster_field_id, source))
++                except ValueError:
++                    skipped.append(issue.get("key", "?"))
++
++            start_at += page_size
++            if start_at >= payload.get("total", 0):
++                break
++
++    return tickets, skipped
+diff --git a/backend/tests/test_qc_tickets.py b/backend/tests/test_qc_tickets.py
+new file mode 100644
+--- /dev/null
++++ b/backend/tests/test_qc_tickets.py
+@@ -0,0 +1,106 @@
++CSV_HEADER = (
++    "Clave de incidencia,Tipo de Incidencia,Clave del proyecto,Prioridad,Estado,Creada,Resuelta,"
++    "Resumen,\"Campo personalizado (Cluster)\",\"Campo personalizado (Programa Afectado)\"\n"
++)
++
++
++def _upload(client, csv_text: str, source: str = "QC_DETECTED"):
++    return client.post(
++        "/api/v1/qc-tickets/import/preview",
++        files={"file": ("export.csv", csv_text.encode("utf-8"), "text/csv")},
++        data={"source": source},
++    )
++
++
++def test_preview_parses_real_jira_export_format(client) -> None:
++    csv_text = CSV_HEADER + (
++        "OPE-1234,QC Bug,WEBCL,Impedimento,To Develop,25/ago/26 03:45 PM,,"
++        "Crash on play,AUP,Claro Video Web\n"
++    )
++    response = _upload(client, csv_text)
++
++    assert response.status_code == 200
++    body = response.json()
++    assert body["valid_count"] == 1
++    assert body["error_count"] == 0
++    ticket = body["valid"][0]
++    assert ticket["issue_key"] == "OPE-1234"
++    assert ticket["priority_bucket"] == "BLOCKER"
++    assert ticket["is_open"] is True
++    assert ticket["cluster"] == "AUP"
++    assert ticket["created_date"] == "2026-08-25"
++
++
++def test_preview_folds_mexico_into_global_with_warning(client) -> None:
++    csv_text = CSV_HEADER + (
++        "OPE-1,Bug,PROJ,Critical,Finalizada,10/ene/26 10:00 AM,,,"
++        "Mexico,Player\n"
++    )
++    body = _upload(client, csv_text).json()
++
++    assert body["valid_count"] == 1
++    assert body["valid"][0]["cluster"] == "Global"
++    assert body["valid"][0]["is_open"] is False  # Finalizada -> closed
++    assert any("agrupó bajo Global" in w["message"] for w in body["warnings"])
++
++
++def test_preview_flags_unrecognized_status_as_open_with_warning(client) -> None:
++    csv_text = CSV_HEADER + "OPE-2,Bug,PROJ,Otros,Weird Status,10/ene/26 10:00 AM,,,,\n"
++    body = _upload(client, csv_text).json()
++
++    assert body["valid_count"] == 1
++    assert body["valid"][0]["is_open"] is True
++    assert body["valid"][0]["priority_bucket"] == "OTHER"
++    assert any("no reconocido" in w["message"] for w in body["warnings"])
++
++
++def test_preview_rejects_missing_required_columns(client) -> None:
++    csv_text = "Clave de incidencia,Prioridad\nOPE-1,Critical\n"
++    response = _upload(client, csv_text)
++    assert response.status_code == 422
++    assert "status_raw" in response.json()["detail"]
++
++
++def test_preview_flags_duplicate_issue_key_within_file(client) -> None:
++    csv_text = CSV_HEADER + (
++        "OPE-1,Bug,PROJ,Critical,Finalizada,10/ene/26 10:00 AM,,,,\n"
++        "OPE-1,Bug,PROJ,Critical,Finalizada,11/ene/26 10:00 AM,,,,\n"
++    )
++    body = _upload(client, csv_text).json()
++    assert body["valid_count"] == 1
++    assert body["error_count"] == 1
++
++
++def test_bulk_create_is_transactional_and_source_is_set_by_upload_choice(client) -> None:
++    csv_text = CSV_HEADER + "OPE-5,Bug,PROJ,Critical,Finalizada,10/ene/26 10:00 AM,,,,\n"
++    preview = _upload(client, csv_text, source="LEAKED").json()
++    assert preview["valid"][0]["source"] == "LEAKED"
++
++    persist = client.post("/api/v1/qc-tickets/bulk", json=preview["valid"])
++    assert persist.status_code == 201
++    body = persist.json()
++    assert len(body["created"]) == 1
++    assert body["created"][0]["source"] == "LEAKED"
++
++
++def test_stats_computes_leak_rate_and_breakdowns(client) -> None:
++    detected_csv = CSV_HEADER + (
++        "OPE-10,Bug,PROJ,Critical,Finalizada,10/ene/26 10:00 AM,,,AUP,\n"
++        "OPE-11,Bug,PROJ,Impedimento,Finalizada,15/ene/26 10:00 AM,,,AUP,\n"
++    )
++    leaked_csv = CSV_HEADER + "OPE-12,Bug,PROJ,Critical,Finalizada,10/feb/26 10:00 AM,,,CENAM,\n"
++
++    detected_preview = _upload(client, detected_csv, source="QC_DETECTED").json()
++    client.post("/api/v1/qc-tickets/bulk", json=detected_preview["valid"])
++    leaked_preview = _upload(client, leaked_csv, source="LEAKED").json()
++    client.post("/api/v1/qc-tickets/bulk", json=leaked_preview["valid"])
++
++    stats = client.get("/api/v1/qc-tickets/stats").json()
++    assert stats["total"] == 3
++    assert stats["qc_detected_count"] == 2
++    assert stats["leaked_count"] == 1
++    assert stats["leak_rate_percent"] == 33.3
++    assert stats["by_cluster"]["AUP"] == 2
++    assert stats["by_cluster"]["CENAM"] == 1
++    assert stats["by_month"]["2026-01"] == 2
++    assert stats["by_month"]["2026-02"] == 1
+diff --git a/backend/tests/test_jira_client.py b/backend/tests/test_jira_client.py
+new file mode 100644
+--- /dev/null
++++ b/backend/tests/test_jira_client.py
+@@ -0,0 +1,16 @@
++def test_jira_fields_returns_400_when_not_configured(client) -> None:
++    """We have no live Jira to test against in this environment, so this confirms only what we
++    can: the app fails safely and clearly when JIRA_* env vars aren't set, instead of crashing
++    or silently returning nothing."""
++    response = client.get("/api/v1/qc-tickets/jira/fields")
++    assert response.status_code == 400
++    assert "JIRA_BASE_URL" in response.json()["detail"]
++
++
++def test_jira_sync_preview_returns_400_when_not_configured(client) -> None:
++    response = client.post(
++        "/api/v1/qc-tickets/jira/sync-preview",
++        params={"filter_id": "112929", "source": "QC_DETECTED"},
++    )
++    assert response.status_code == 400
++    assert "JIRA_BASE_URL" in response.json()["detail"]
+diff --git a/frontend/lib/types.ts b/frontend/lib/types.ts
+--- a/frontend/lib/types.ts
++++ b/frontend/lib/types.ts
+@@ -198,3 +198,54 @@
+   detail?: string;
+   message?: string;
+ }
++
++export type QcTicketPriority = "BLOCKER" | "CRITICAL" | "OTHER";
++export type QcTicketSource = "QC_DETECTED" | "LEAKED";
++
++export interface QcTicketCreate {
++  issue_key: string;
++  issue_type: string | null;
++  project_key: string | null;
++  priority_bucket: QcTicketPriority;
++  status_raw: string;
++  is_open: boolean;
++  source: QcTicketSource;
++  cluster: string | null;
++  affected_program: string | null;
++  created_date: string;
++  resolved_date: string | null;
++  summary: string | null;
++}
++
++export interface QcTicketImportRowError {
++  issue_key: string | null;
++  row_number: number | null;
++  message: string;
++}
++
++export interface QcTicketImportPreviewResult {
++  valid: QcTicketCreate[];
++  errors: QcTicketImportRowError[];
++  warnings: QcTicketImportRowError[];
++  total_rows: number;
++  valid_count: number;
++  error_count: number;
++}
++
++export interface QcTicketBulkCreateResult {
++  created: (QcTicketCreate & { id: number; imported_at: string })[];
++  errors: { issue_key: string | null; message: string }[];
++}
++
++export interface QcTicketStats {
++  total: number;
++  blocker_count: number;
++  critical_count: number;
++  other_count: number;
++  open_count: number;
++  qc_detected_count: number;
++  leaked_count: number;
++  leak_rate_percent: number;
++  by_cluster: Record<string, number>;
++  by_month: Record<string, number>;
++}
+diff --git a/frontend/lib/api.ts b/frontend/lib/api.ts
+--- a/frontend/lib/api.ts
++++ b/frontend/lib/api.ts
+@@ -8,6 +8,11 @@
+   OperationalWindow,
+   QcDashboardSummary,
+   QcSummaryFilters,
++  QcTicketBulkCreateResult,
++  QcTicketCreate,
++  QcTicketImportPreviewResult,
++  QcTicketSource,
++  QcTicketStats,
+   Release,
+   ReleaseStatus,
+   ReleaseWindow,
+@@ -171,4 +176,27 @@
+     releaseId: number,
+     payload: { name: string; start_date: string; end_date: string; status?: "PLANNED" | "ACTIVE" | "CLOSED" },
+   ) => request<ReleaseWindow>(`/api/releases/${releaseId}/windows`, { method: "POST", body: JSON.stringify(payload) }),
++
++  // QcTicket: independent defect radar (Import -> Validate -> Preview -> Approve -> Persist).
++  previewQcTicketImport: async (file: File, source: QcTicketSource): Promise<QcTicketImportPreviewResult> => {
++    const formData = new FormData();
++    formData.append("file", file);
++    formData.append("source", source);
++    const response = await fetch("/api/qc-tickets/import/preview", {
++      method: "POST",
++      body: formData,
++      cache: "no-store",
++    });
++    const body = (await response.json().catch(() => ({}))) as QcTicketImportPreviewResult & ApiError;
++    if (!response.ok) {
++      throw new ApiRequestError(response.status, body?.detail ?? body?.message ?? "No se pudo procesar el archivo.");
++    }
++    return body;
++  },
++  bulkCreateQcTickets: (tickets: QcTicketCreate[]) =>
++    request<QcTicketBulkCreateResult>("/api/qc-tickets/bulk", { method: "POST", body: JSON.stringify(tickets) }),
++  getQcTicketStats: (cluster?: string) => {
++    const suffix = cluster ? `?cluster=${encodeURIComponent(cluster)}` : "";
++    return request<QcTicketStats>(`/api/qc-tickets/stats${suffix}`);
++  },
+ };
+diff --git a/frontend/app/api/qc-tickets/import/preview/route.ts b/frontend/app/api/qc-tickets/import/preview/route.ts
+new file mode 100644
+--- /dev/null
++++ b/frontend/app/api/qc-tickets/import/preview/route.ts
+@@ -0,0 +1,20 @@
++import { NextRequest, NextResponse } from "next/server";
++
++const backendUrl = process.env.BACKEND_URL ?? "http://backend:8000";
++const requestTimeoutMs = 15_000;
++
++export async function POST(request: NextRequest): Promise<NextResponse> {
++  try {
++    const incomingFormData = await request.formData();
++    const response = await fetch(`${backendUrl}/api/v1/qc-tickets/import/preview`, {
++      method: "POST",
++      body: incomingFormData,
++      cache: "no-store",
++      signal: AbortSignal.timeout(requestTimeoutMs),
++    });
++    const body = await response.json();
++    return NextResponse.json(body, { status: response.status });
++  } catch {
++    return NextResponse.json({ status: "error", message: "Backend unavailable" }, { status: 503 });
++  }
++}
+diff --git a/frontend/app/api/qc-tickets/bulk/route.ts b/frontend/app/api/qc-tickets/bulk/route.ts
+new file mode 100644
+--- /dev/null
++++ b/frontend/app/api/qc-tickets/bulk/route.ts
+@@ -0,0 +1,12 @@
++import { NextRequest, NextResponse } from "next/server";
++import { proxyToBackend } from "@/lib/backend";
++
++export async function POST(request: NextRequest): Promise<NextResponse> {
++  const payload = await request.json();
++  const response = await proxyToBackend("/api/v1/qc-tickets/bulk", {
++    method: "POST",
++    body: JSON.stringify(payload),
++  });
++  const body = await response.json();
++  return NextResponse.json(body, { status: response.status });
++}
+diff --git a/frontend/app/api/qc-tickets/stats/route.ts b/frontend/app/api/qc-tickets/stats/route.ts
+new file mode 100644
+--- /dev/null
++++ b/frontend/app/api/qc-tickets/stats/route.ts
+@@ -0,0 +1,8 @@
++import { NextRequest, NextResponse } from "next/server";
++import { proxyToBackend } from "@/lib/backend";
++
++export async function GET(request: NextRequest): Promise<NextResponse> {
++  const response = await proxyToBackend(`/api/v1/qc-tickets/stats${request.nextUrl.search}`);
++  const body = await response.json();
++  return NextResponse.json(body, { status: response.status });
++}
+diff --git a/frontend/app/components/Sidebar.tsx b/frontend/app/components/Sidebar.tsx
+--- a/frontend/app/components/Sidebar.tsx
++++ b/frontend/app/components/Sidebar.tsx
+@@ -10,7 +10,7 @@
+   { href: "/", label: "Dashboard", icon: LayoutDashboard, enabled: true },
+   { href: "/releases", label: "Release", icon: Package, enabled: true },
+   { href: "/operativa", label: "Operativa", icon: Activity, enabled: false },
+-  { href: "/kpis", label: "KPIs", icon: Gauge, enabled: false },
++  { href: "/kpis", label: "KPIs", icon: Gauge, enabled: true },
+   { href: "/defects", label: "Defectos", icon: Bug, enabled: false },
+ ] as const;
+ 
+diff --git a/frontend/app/components/QcTicketUploadCard.tsx b/frontend/app/components/QcTicketUploadCard.tsx
+new file mode 100644
+--- /dev/null
++++ b/frontend/app/components/QcTicketUploadCard.tsx
+@@ -0,0 +1,155 @@
++"use client";
++
++import { AlertTriangle, Upload } from "lucide-react";
++import { useRef, useState } from "react";
++import { api, ApiRequestError } from "@/lib/api";
++import type { QcTicketBulkCreateResult, QcTicketImportPreviewResult, QcTicketSource } from "@/lib/types";
++
++type Phase = "idle" | "analyzing" | "preview" | "importing" | "done";
++
++export function QcTicketUploadCard({
++  title,
++  source,
++  onImported,
++}: {
++  title: string;
++  source: QcTicketSource;
++  onImported: () => void;
++}): React.ReactElement {
++  const fileInputRef = useRef<HTMLInputElement>(null);
++  const [phase, setPhase] = useState<Phase>("idle");
++  const [dragActive, setDragActive] = useState(false);
++  const [preview, setPreview] = useState<QcTicketImportPreviewResult | null>(null);
++  const [result, setResult] = useState<QcTicketBulkCreateResult | null>(null);
++  const [error, setError] = useState<string | null>(null);
++
++  const handleFile = async (file: File): Promise<void> => {
++    setPhase("analyzing");
++    setError(null);
++    try {
++      const preview = await api.previewQcTicketImport(file, source);
++      setPreview(preview);
++      setPhase("preview");
++    } catch (err) {
++      setError(err instanceof ApiRequestError ? err.message : "No se pudo analizar el archivo.");
++      setPhase("idle");
++    }
++  };
++
++  const handleConfirm = async (): Promise<void> => {
++    if (!preview) return;
++    setPhase("importing");
++    setError(null);
++    try {
++      const result = await api.bulkCreateQcTickets(preview.valid);
++      setResult(result);
++      setPhase("done");
++      onImported();
++    } catch (err) {
++      setError(err instanceof ApiRequestError ? err.message : "No se pudo importar.");
++      setPhase("preview");
++    }
++  };
++
++  const reset = (): void => {
++    setPhase("idle");
++    setPreview(null);
++    setResult(null);
++    setError(null);
++  };
++
++  return (
++    <div className="panel">
++      <div className="panel-header"><h2>{title}</h2></div>
++      <div className="panel-body">
++        {error && <p className="error-text">{error}</p>}
++
++        {(phase === "idle" || phase === "analyzing") && (
++          <div
++            className={`dropzone${dragActive ? " active" : ""}`}
++            onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
++            onDragLeave={() => setDragActive(false)}
++            onDrop={(e) => {
++              e.preventDefault();
++              setDragActive(false);
++              const dropped = e.dataTransfer.files?.[0];
++              if (dropped) void handleFile(dropped);
++            }}
++          >
++            <Upload size={20} aria-hidden="true" />
++            {phase === "analyzing" ? (
++              <p>Analizando…</p>
++            ) : (
++              <>
++                <p className="muted" style={{ fontSize: "12.5px" }}>Export de Jira (.csv o .xlsx)</p>
++                <button type="button" className="secondary" onClick={() => fileInputRef.current?.click()}>
++                  Seleccionar archivo
++                </button>
++              </>
++            )}
++            <input
++              ref={fileInputRef}
++              type="file"
++              accept=".csv,.xlsx,.xlsm"
++              style={{ display: "none" }}
++              onChange={(e) => {
++                const selected = e.target.files?.[0];
++                if (selected) void handleFile(selected);
++                e.target.value = "";
++              }}
++            />
++          </div>
++        )}
++
++        {phase === "preview" && preview && (
++          <>
++            <div className="import-stats">
++              <div className="import-stat"><div className="import-stat-value">{preview.total_rows}</div><div className="import-stat-label">Detectados</div></div>
++              <div className="import-stat ok"><div className="import-stat-value">{preview.valid_count}</div><div className="import-stat-label">Válidos</div></div>
++              <div className="import-stat error"><div className="import-stat-value">{preview.error_count}</div><div className="import-stat-label">Con errores</div></div>
++              <div className="import-stat warning"><div className="import-stat-value">{preview.warnings.length}</div><div className="import-stat-label">Advertencias</div></div>
++            </div>
++            {preview.warnings.length > 0 && (
++              <div className="import-issues warning">
++                <div className="import-issues-title"><AlertTriangle size={13} aria-hidden="true" /> Advertencias</div>
++                <ul>
++                  {preview.warnings.slice(0, 6).map((w, i) => <li key={i}>{w.message}</li>)}
++                  {preview.warnings.length > 6 && <li className="muted">+{preview.warnings.length - 6} más</li>}
++                </ul>
++              </div>
++            )}
++            {preview.errors.length > 0 && (
++              <div className="import-issues error">
++                <div className="import-issues-title"><AlertTriangle size={13} aria-hidden="true" /> Errores</div>
++                <ul>
++                  {preview.errors.slice(0, 6).map((e, i) => <li key={i}>{e.message}</li>)}
++                  {preview.errors.length > 6 && <li className="muted">+{preview.errors.length - 6} más</li>}
++                </ul>
++              </div>
++            )}
++            <div className="form-actions">
++              <button type="button" onClick={handleConfirm} disabled={preview.valid_count === 0}>
++                Importar {preview.valid_count}
++              </button>
++              <button type="button" className="secondary" onClick={reset}>Cancelar</button>
++            </div>
++          </>
++        )}
++
++        {phase === "importing" && <p className="muted">Importando…</p>}
++
++        {phase === "done" && result && (
++          <>
++            <div className="import-stats">
++              <div className="import-stat ok"><div className="import-stat-value">{result.created.length}</div><div className="import-stat-label">Creados</div></div>
++              <div className="import-stat error"><div className="import-stat-value">{result.errors.length}</div><div className="import-stat-label">Con errores</div></div>
++            </div>
++            <div className="form-actions">
++              <button type="button" onClick={reset}>Cargar otro archivo</button>
++            </div>
++          </>
++        )}
++      </div>
++    </div>
++  );
++}
+diff --git a/frontend/app/kpis/page.tsx b/frontend/app/kpis/page.tsx
+new file mode 100644
+--- /dev/null
++++ b/frontend/app/kpis/page.tsx
+@@ -0,0 +1,78 @@
++"use client";
++
++import { useCallback, useEffect, useState } from "react";
++import { QcTicketUploadCard } from "@/app/components/QcTicketUploadCard";
++import { api } from "@/lib/api";
++import type { QcTicketStats } from "@/lib/types";
++
++export default function KpisPage(): React.ReactElement {
++  const [stats, setStats] = useState<QcTicketStats | null>(null);
++  const [error, setError] = useState<string | null>(null);
++
++  const load = useCallback((): void => {
++    api.getQcTicketStats().then(setStats).catch((err: unknown) => setError(err instanceof Error ? err.message : "Error"));
++  }, []);
++
++  useEffect(load, [load]);
++
++  return (
++    <div className="page page-wide">
++      <p className="eyebrow">KPIs</p>
++      <h1>Radar de Defectos</h1>
++      <p className="subtitle">Volumetría de tickets QC — independiente de Releases y Test Cases</p>
++
++      {error && <p className="error-text">{error}</p>}
++
++      {stats && (
++        <>
++          <div className="metrics-row metrics-row-compact" style={{ gridTemplateColumns: "repeat(6, minmax(120px, 1fr))" }}>
++            <div className="metric-cell"><div className="metric-label">Total</div><div className="metric-value">{stats.total}</div></div>
++            <div className="metric-cell"><div className="metric-label">Blocker</div><div className="metric-value danger">{stats.blocker_count}</div></div>
++            <div className="metric-cell"><div className="metric-label">Critical</div><div className="metric-value">{stats.critical_count}</div></div>
++            <div className="metric-cell"><div className="metric-label">Backlog abierto</div><div className="metric-value">{stats.open_count}</div></div>
++            <div className="metric-cell"><div className="metric-label">Detectados QC</div><div className="metric-value">{stats.qc_detected_count}</div></div>
++            <div className="metric-cell"><div className="metric-label">Tasa de fuga</div><div className="metric-value accent">{stats.leak_rate_percent}%</div></div>
++          </div>
++
++          <div className="panel">
++            <div className="panel-header"><h2>Distribución por Cluster</h2></div>
++            <div className="panel-body">
++              <div className="cluster-list">
++                {Object.entries(stats.by_cluster).map(([cluster, count]) => (
++                  <div className="cluster-list-item" key={cluster}>
++                    <span>{cluster}</span>
++                    <span className="count">{count}</span>
++                  </div>
++                ))}
++                {Object.keys(stats.by_cluster).length === 0 && <p className="muted">Sin datos todavía.</p>}
++              </div>
++            </div>
++          </div>
++
++          <div className="panel">
++            <div className="panel-header"><h2>Detección por mes</h2></div>
++            <div className="panel-body">
++              <div className="cluster-list">
++                {Object.entries(stats.by_month).map(([month, count]) => (
++                  <div className="cluster-list-item" key={month}>
++                    <span>{month}</span>
++                    <span className="count">{count}</span>
++                  </div>
++                ))}
++                {Object.keys(stats.by_month).length === 0 && <p className="muted">Sin datos todavía.</p>}
++              </div>
++            </div>
++          </div>
++        </>
++      )}
++
++      <div className="section-header">
++        <h2>Cargar tickets</h2>
++      </div>
++      <div className="form-grid">
++        <QcTicketUploadCard title="Detección QC" source="QC_DETECTED" onImported={load} />
++        <QcTicketUploadCard title="Fuga de defectos" source="LEAKED" onImported={load} />
++      </div>
++    </div>
++  );
++}
+diff --git a/docker-compose.yml b/docker-compose.yml
+--- a/docker-compose.yml
++++ b/docker-compose.yml
+@@ -22,6 +22,9 @@
+       DATABASE_NAME: ${DATABASE_NAME:?Set DATABASE_NAME in .env}
+       DATABASE_USER: ${DATABASE_USER:?Set DATABASE_USER in .env}
+       DATABASE_PASSWORD: ${DATABASE_PASSWORD:?Set DATABASE_PASSWORD in .env}
++      JIRA_BASE_URL: ${JIRA_BASE_URL:-}
++      JIRA_EMAIL: ${JIRA_EMAIL:-}
++      JIRA_API_TOKEN: ${JIRA_API_TOKEN:-}
+     ports:
+       - "127.0.0.1:8000:8000"
+     depends_on:
+diff --git a/.env.example b/.env.example
+--- a/.env.example
++++ b/.env.example
+@@ -12,3 +12,9 @@
+ 
+ # Frontend-to-backend connection on the Docker network
+ BACKEND_URL=http://backend:8000
++
++# Jira sync for the QC Tickets radar (OPTIONAL -- leave unset if not using this feature yet).
++# Generate the API token at https://id.atlassian.com/manage-profile/security/api-tokens
++# JIRA_BASE_URL=https://dlatvarg.atlassian.net
++# JIRA_EMAIL=your-email@example.com
++# JIRA_API_TOKEN=your-api-token-here

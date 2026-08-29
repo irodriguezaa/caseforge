@@ -2,15 +2,11 @@ import type {
   ApiError,
   BulkCreateResult,
   DashboardSummary,
-  Deliverable,
-  DeliverableReleaseSummary,
-  DeliverableWithMetrics,
   ImportCandidateTestCase,
   ImportPreviewResult,
   ImportSheetsResult,
   OperationalWindow,
   QcDashboardSummary,
-  QcRadarConfigResponse,
   QcSummaryFilters,
   QcTicketBulkCreateResult,
   QcTicketCreate,
@@ -19,10 +15,7 @@ import type {
   QcTicketStats,
   QcTicketView,
   Release,
-  ReleaseAnalysis,
-  ReleaseNoteAnalyzeResponse,
   ReleaseStatus,
-  ReleaseType,
   ReleaseWindow,
   ReleaseWithCounts,
   TestCase,
@@ -73,9 +66,6 @@ export interface ReleaseInput {
   validation_type?: string | null;
   jira_issue_filter?: string | null;
   analysis_data?: ReleaseAnalysis | null;
-  deliverable_name?: string | null;
-  release_type?: ReleaseType | null;
-  parent_release_id?: number | null;
 }
 
 export interface TestStepInput {
@@ -127,14 +117,7 @@ export const api = {
   getReleaseAnalysis: (releaseId: number) =>
     request<ReleaseAnalysis>(`/api/releases/${releaseId}/analysis`),
   generateCasesFromRN: (releaseId: number) =>
-    request<{
-      status: string;
-      message: string;
-      release_id: number;
-      release_name: string;
-      validation_type: string;
-      has_analysis: boolean;
-    }>(`/api/releases/${releaseId}/generate-cases`, {
+    request<{ status: string; message: string; release_id: number }>(`/api/releases/${releaseId}/generate-cases`, {
       method: "POST",
     }),
 
@@ -250,13 +233,4 @@ export const api = {
     return request<QcTicketStats>(`/api/qc-tickets/stats?${params.toString()}`);
   },
   getQcRadarConfig: () => request<QcRadarConfigResponse>("/api/qc-tickets/filters"),
-
-  // Deliverable: read-focused (creation is implicit via get-or-create in createRelease above).
-  listDeliverables: (name?: string) => {
-    const suffix = name ? `?name=${encodeURIComponent(name)}` : "";
-    return request<Deliverable[]>(`/api/deliverables${suffix}`);
-  },
-  getDeliverable: (id: number) => request<DeliverableWithMetrics>(`/api/deliverables/${id}`),
-  listDeliverableReleases: (id: number) =>
-    request<DeliverableReleaseSummary[]>(`/api/deliverables/${id}/releases`),
 };

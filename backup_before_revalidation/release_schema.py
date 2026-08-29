@@ -3,7 +3,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models.release import ReleaseStatus, ReleaseType
+from app.models.release import ReleaseStatus
 
 
 class ReleaseAnalysisBase(BaseModel):
@@ -16,7 +16,6 @@ class ReleaseAnalysisBase(BaseModel):
     features_count: int = 0
     qa_qc_issues_count: int = 0
     nco_issues_count: int = 0
-    tri_issues_count: int = 0
     detected_devices: str | None = None
     proposed_coverage: int | None = None
     estimation_text: str | None = None
@@ -60,11 +59,6 @@ class ReleaseBase(BaseModel):
 class ReleaseCreate(ReleaseBase):
     status: ReleaseStatus = ReleaseStatus.DRAFT
     analysis_data: ReleaseAnalysisBase | None = None
-    # Entregable: free text, pre-filled from the RN analyzer's detected_name but always
-    # user-editable. Backend resolves this to a Deliverable via get-or-create by name.
-    deliverable_name: str | None = None
-    release_type: ReleaseType | None = None
-    parent_release_id: int | None = None
 
 
 class ReleaseUpdate(BaseModel):
@@ -80,10 +74,6 @@ class ReleaseUpdate(BaseModel):
     execution_days: int | None = None
     validation_type: str | None = None
     jira_issue_filter: str | None = None
-    # DRAFT-only per product decision -- enforced in the router, not here.
-    deliverable_name: str | None = None
-    release_type: ReleaseType | None = None
-    parent_release_id: int | None = None
 
 
 class ReleaseRead(ReleaseBase):
@@ -91,9 +81,6 @@ class ReleaseRead(ReleaseBase):
 
     id: int
     status: ReleaseStatus
-    deliverable_id: int | None = None
-    release_type: ReleaseType | None = None
-    parent_release_id: int | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -101,6 +88,3 @@ class ReleaseRead(ReleaseBase):
 class ReleaseWithCounts(ReleaseRead):
     test_case_count: int = 0
     latest_analysis: ReleaseAnalysisRead | None = None
-    # Denormalized (populated manually in the router, same pattern as latest_analysis) so list
-    # views can show "which Deliverable" without an extra round trip per row.
-    deliverable_name: str | None = None

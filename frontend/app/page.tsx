@@ -89,6 +89,12 @@ export default function DashboardPage(): React.ReactElement {
 
   const activeItems = summary?.active_items ?? [];
 
+  // "Agosto 2026" when a month is picked; "Todos los periodos" when the filter is "Todos" --
+  // purely descriptive, does not change test_cases_planned's formula at all.
+  const totalCasesPeriodLabel = month
+    ? `${MONTHS.find((m) => m.value === month)?.label} ${CURRENT_YEAR}`
+    : "Todos los periodos";
+
   return (
     <div className="page page-wide">
       <div className="dashboard-header">
@@ -136,6 +142,7 @@ export default function DashboardPage(): React.ReactElement {
             <div className="metric-cell">
               <div className="metric-label"><ListChecks size={12} aria-hidden="true" />Total de Cases</div>
               <div className="metric-value">{summary.test_cases_planned}</div>
+              <div className="metric-caption">{totalCasesPeriodLabel}</div>
             </div>
           </div>
 
@@ -199,7 +206,20 @@ export default function DashboardPage(): React.ReactElement {
                 return (
                   <div className="exec-release-block" key={item.release_id}>
                     <div className="exec-release-title">
-                      {item.release_name} v{item.release_version}
+                      <span>
+                        {item.release_name} v{item.release_version}
+                        {item.deliverable_name && (
+                          <span className="exec-release-deliverable">
+                            {" "}· {item.deliverable_name}
+                            {item.release_type === "REVALIDACION" ? " · Revalidación" : item.release_type === "EVOLUTIVO" ? " · Evolutivo" : ""}
+                            {item.deliverable_release_ordinal != null && item.deliverable_total_versions != null && (
+                              <> (v{item.deliverable_release_ordinal} de {item.deliverable_total_versions}
+                                {item.deliverable_total_revalidaciones ? ` · ${item.deliverable_total_revalidaciones} revalidacion${item.deliverable_total_revalidaciones === 1 ? "" : "es"}` : ""})
+                              </>
+                            )}
+                          </span>
+                        )}
+                      </span>
                       <span className="exec-release-pct">{item.percent_avance.toFixed(0)}% ejecutado</span>
                     </div>
                     <div className="exec-numbers">

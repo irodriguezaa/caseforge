@@ -1,0 +1,589 @@
+diff --git a/frontend/lib/types.ts b/frontend/lib/types.ts
+--- a/frontend/lib/types.ts
++++ b/frontend/lib/types.ts
+@@ -23,12 +23,25 @@
+ export interface ImportPreviewResult {
+   valid: ImportCandidateTestCase[];
+   errors: ImportRowError[];
++  warnings: ImportRowError[];
++  format: "FLAT" | "EMBEDDED";
++  sheet_name: string;
+   total_rows: number;
+   total_test_cases: number;
+   valid_count: number;
+   error_count: number;
+ }
+ 
++export interface ImportSheetInfo {
++  name: string;
++  format: "FLAT" | "EMBEDDED" | "UNKNOWN";
++}
++
++export interface ImportSheetsResult {
++  sheets: ImportSheetInfo[];
++  recommended_sheet: string | null;
++}
++
+ export interface BulkCreateError {
+   index: number;
+   test_case_id: string | null;
+diff --git a/frontend/lib/api.ts b/frontend/lib/api.ts
+--- a/frontend/lib/api.ts
++++ b/frontend/lib/api.ts
+@@ -4,6 +4,7 @@
+   DashboardSummary,
+   ImportCandidateTestCase,
+   ImportPreviewResult,
++  ImportSheetsResult,
+   OperationalWindow,
+   QcDashboardSummary,
+   QcSummaryFilters,
+@@ -119,9 +120,24 @@
+ 
+   // Bulk-import pipeline: Import -> Validate -> Preview happen here; Approve -> Persist reuses
+   // bulkCreateTestCases below, which calls the exact same endpoint as any other bulk creation.
+-  previewImport: async (releaseId: number, file: File): Promise<ImportPreviewResult> => {
++  listImportSheets: async (releaseId: number, file: File): Promise<ImportSheetsResult> => {
+     const formData = new FormData();
+     formData.append("file", file);
++    const response = await fetch(`/api/releases/${releaseId}/test-cases/import/sheets`, {
++      method: "POST",
++      body: formData,
++      cache: "no-store",
++    });
++    const body = (await response.json().catch(() => ({}))) as ImportSheetsResult & ApiError;
++    if (!response.ok) {
++      throw new ApiRequestError(response.status, body?.detail ?? body?.message ?? "No se pudo leer el archivo.");
++    }
++    return body;
++  },
++  previewImport: async (releaseId: number, file: File, sheetName?: string): Promise<ImportPreviewResult> => {
++    const formData = new FormData();
++    formData.append("file", file);
++    if (sheetName) formData.append("sheet_name", sheetName);
+     const response = await fetch(`/api/releases/${releaseId}/test-cases/import/preview`, {
+       method: "POST",
+       body: formData,
+diff --git a/frontend/app/releases/[id]/page.tsx b/frontend/app/releases/[id]/page.tsx
+--- a/frontend/app/releases/[id]/page.tsx
++++ b/frontend/app/releases/[id]/page.tsx
+@@ -1,8 +1,10 @@
+ "use client";
+ 
++import { Plus, Upload } from "lucide-react";
+ import Link from "next/link";
+ import { useParams, useRouter } from "next/navigation";
+ import { useEffect, useState } from "react";
++import { ImportTestCasesPanel } from "@/app/components/ImportTestCasesPanel";
+ import { StatusBadge } from "@/app/components/StatusBadge";
+ import { api, ApiRequestError } from "@/lib/api";
+ import type { Release, ReleaseStatus, TestCase } from "@/lib/types";
+@@ -32,6 +34,9 @@
+   const [form, setForm] = useState(emptyForm);
+   const [submitting, setSubmitting] = useState(false);
+ 
++  const [showImport, setShowImport] = useState(false);
++  const [showManualForm, setShowManualForm] = useState(false);
++
+   const load = (): void => {
+     setLoadError(null);
+     Promise.all([api.getRelease(releaseId), api.listTestCases(releaseId)])
+@@ -71,6 +76,7 @@
+     try {
+       await api.createTestCase(releaseId, form);
+       setForm(emptyForm);
++      setShowManualForm(false);
+       load();
+     } catch (err) {
+       setActionError(err instanceof ApiRequestError ? err.message : "No se pudo crear el test case.");
+@@ -137,77 +143,100 @@
+         )}
+       </div>
+ 
+-      <div className="card">
+-        <h2>Nuevo Test Case</h2>
+-        <form onSubmit={handleCreateTestCase}>
+-          <div className="form-grid">
+-            <div className="form-field">
+-              <label htmlFor="test_case_id">Test Case ID</label>
+-              <input
+-                id="test_case_id"
+-                required
+-                placeholder="QC-001"
+-                value={form.test_case_id}
+-                onChange={(e) => setForm({ ...form, test_case_id: e.target.value })}
+-              />
+-            </div>
+-            <div className="form-field">
+-              <label htmlFor="component">Componente</label>
+-              <input
+-                id="component"
+-                required
+-                value={form.component}
+-                onChange={(e) => setForm({ ...form, component: e.target.value })}
+-              />
+-            </div>
+-            <div className="form-field full">
+-              <label htmlFor="test_case_name">Nombre</label>
+-              <input
+-                id="test_case_name"
+-                required
+-                value={form.test_case_name}
+-                onChange={(e) => setForm({ ...form, test_case_name: e.target.value })}
+-              />
+-            </div>
+-            <div className="form-field">
+-              <label htmlFor="priority">Prioridad</label>
+-              <select
+-                id="priority"
+-                value={form.priority}
+-                onChange={(e) => setForm({ ...form, priority: e.target.value as TestCase["priority"] })}
+-              >
+-                <option value="BLOCKER">BLOCKER</option>
+-                <option value="CRITICAL">CRITICAL</option>
+-              </select>
+-            </div>
+-            <div className="form-field">
+-              <label htmlFor="test_type">Tipo</label>
+-              <select
+-                id="test_type"
+-                value={form.test_type}
+-                onChange={(e) => setForm({ ...form, test_type: e.target.value as TestCase["test_type"] })}
+-              >
+-                <option value="FUNCTIONAL">FUNCTIONAL</option>
+-                <option value="REGRESSION">REGRESSION</option>
+-                <option value="SMOKE">SMOKE</option>
+-                <option value="UI">UI</option>
+-                <option value="PERFORMANCE">PERFORMANCE</option>
+-                <option value="OTHER">OTHER</option>
+-              </select>
+-            </div>
+-          </div>
+-          <div className="form-actions">
+-            <button type="submit" disabled={submitting}>
+-              {submitting ? "Creando…" : "Crear Test Case"}
+-            </button>
+-          </div>
+-        </form>
+-      </div>
+-
+       <div className="section-header">
+         <h2>Test Cases ({testCases.length})</h2>
++        <div className="form-actions" style={{ margin: 0 }}>
++          <button type="button" onClick={() => { setShowImport((v) => !v); setShowManualForm(false); }}>
++            <Upload size={14} aria-hidden="true" style={{ verticalAlign: "-2px", marginRight: "6px" }} />
++            Importar Test Cases
++          </button>
++          <button type="button" className="secondary" onClick={() => { setShowManualForm((v) => !v); setShowImport(false); }}>
++            <Plus size={14} aria-hidden="true" style={{ verticalAlign: "-2px", marginRight: "6px" }} />
++            Nuevo Test Case
++          </button>
++        </div>
+       </div>
+ 
++      {showImport && (
++        <ImportTestCasesPanel
++          releaseId={releaseId}
++          onClose={() => setShowImport(false)}
++          onImported={load}
++        />
++      )}
++
++      {showManualForm && (
++        <div className="card">
++          <h2>Nuevo Test Case</h2>
++          <p className="muted" style={{ fontSize: "12.5px", marginTop: "-6px" }}>
++            Alta manual — para cargas masivas usa &quot;Importar Test Cases&quot;.
++          </p>
++          <form onSubmit={handleCreateTestCase}>
++            <div className="form-grid">
++              <div className="form-field">
++                <label htmlFor="test_case_id">Test Case ID</label>
++                <input
++                  id="test_case_id"
++                  required
++                  placeholder="QC-001"
++                  value={form.test_case_id}
++                  onChange={(e) => setForm({ ...form, test_case_id: e.target.value })}
++                />
++              </div>
++              <div className="form-field">
++                <label htmlFor="component">Componente</label>
++                <input
++                  id="component"
++                  required
++                  value={form.component}
++                  onChange={(e) => setForm({ ...form, component: e.target.value })}
++                />
++              </div>
++              <div className="form-field full">
++                <label htmlFor="test_case_name">Nombre</label>
++                <input
++                  id="test_case_name"
++                  required
++                  value={form.test_case_name}
++                  onChange={(e) => setForm({ ...form, test_case_name: e.target.value })}
++                />
++              </div>
++              <div className="form-field">
++                <label htmlFor="priority">Prioridad</label>
++                <select
++                  id="priority"
++                  value={form.priority}
++                  onChange={(e) => setForm({ ...form, priority: e.target.value as TestCase["priority"] })}
++                >
++                  <option value="BLOCKER">BLOCKER</option>
++                  <option value="CRITICAL">CRITICAL</option>
++                </select>
++              </div>
++              <div className="form-field">
++                <label htmlFor="test_type">Tipo</label>
++                <select
++                  id="test_type"
++                  value={form.test_type}
++                  onChange={(e) => setForm({ ...form, test_type: e.target.value as TestCase["test_type"] })}
++                >
++                  <option value="FUNCTIONAL">FUNCTIONAL</option>
++                  <option value="REGRESSION">REGRESSION</option>
++                  <option value="SMOKE">SMOKE</option>
++                  <option value="UI">UI</option>
++                  <option value="PERFORMANCE">PERFORMANCE</option>
++                  <option value="OTHER">OTHER</option>
++                </select>
++              </div>
++            </div>
++            <div className="form-actions">
++              <button type="submit" disabled={submitting}>
++                {submitting ? "Creando…" : "Crear Test Case"}
++              </button>
++            </div>
++          </form>
++        </div>
++      )}
++
+       <table>
+         <thead>
+           <tr>
+diff --git a/frontend/app/styles.css b/frontend/app/styles.css
+--- a/frontend/app/styles.css
++++ b/frontend/app/styles.css
+@@ -166,3 +166,27 @@
+ .step-number { font-weight: 800; color: var(--accent); }
+ .step-actions { display: flex; gap: .4rem; }
+ .step-actions button { padding: .35rem .55rem; font-size: 12px; }
++
++/* Import panel */
++.import-panel { margin-bottom: 1.25rem; }
++.import-panel .icon-close { background: transparent; border: 0; padding: 4px; color: var(--text-dim); }
++.import-panel .icon-close:hover { color: var(--text); background: transparent; }
++.dropzone { border: 1.5px dashed var(--border-strong); border-radius: 10px; padding: 2rem 1rem; display: flex; flex-direction: column; align-items: center; gap: 10px; color: var(--text-muted); text-align: center; transition: border-color .15s, background .15s; }
++.dropzone.active { border-color: var(--accent); background: var(--accent-dim); }
++.import-preview-meta { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; font-size: 12.5px; }
++.import-preview-meta select { font-size: 12px; }
++.import-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 12px; }
++.import-stat { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; text-align: center; }
++.import-stat .import-stat-value { font-size: 18px; font-weight: 600; }
++.import-stat .import-stat-label { font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .03em; margin-top: 2px; }
++.import-stat.ok .import-stat-value { color: var(--success); }
++.import-stat.error .import-stat-value { color: var(--danger); }
++.import-stat.warning .import-stat-value { color: var(--warning); }
++.import-issues { border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; font-size: 12.5px; }
++.import-issues.warning { background: var(--warning-bg); }
++.import-issues.error { background: var(--danger-bg); }
++.import-issues-title { display: flex; align-items: center; gap: 6px; font-weight: 600; margin-bottom: 6px; }
++.import-issues.warning .import-issues-title { color: var(--warning); }
++.import-issues.error .import-issues-title { color: var(--danger); }
++.import-issues ul { margin: 0; padding-left: 18px; }
++.import-issues li { margin-bottom: 3px; }
+diff --git a/frontend/app/components/ImportTestCasesPanel.tsx b/frontend/app/components/ImportTestCasesPanel.tsx
+new file mode 100644
+--- /dev/null
++++ b/frontend/app/components/ImportTestCasesPanel.tsx
+@@ -0,0 +1,249 @@
++"use client";
++
++import { AlertTriangle, FileSpreadsheet, Upload, X } from "lucide-react";
++import { useRef, useState } from "react";
++import { api, ApiRequestError } from "@/lib/api";
++import type { BulkCreateResult, ImportPreviewResult, ImportSheetInfo } from "@/lib/types";
++
++type Phase = "dropzone" | "analyzing" | "preview" | "importing" | "done";
++
++const ACCEPTED_EXTENSIONS = [".xlsx", ".xlsm", ".csv"];
++
++function isSpreadsheet(file: File): boolean {
++  const name = file.name.toLowerCase();
++  return name.endsWith(".xlsx") || name.endsWith(".xlsm");
++}
++
++export function ImportTestCasesPanel({
++  releaseId,
++  onClose,
++  onImported,
++}: {
++  releaseId: number;
++  onClose: () => void;
++  onImported: () => void;
++}): React.ReactElement {
++  const fileInputRef = useRef<HTMLInputElement>(null);
++
++  const [phase, setPhase] = useState<Phase>("dropzone");
++  const [dragActive, setDragActive] = useState(false);
++  const [file, setFile] = useState<File | null>(null);
++  const [sheets, setSheets] = useState<ImportSheetInfo[]>([]);
++  const [selectedSheet, setSelectedSheet] = useState<string | null>(null);
++  const [preview, setPreview] = useState<ImportPreviewResult | null>(null);
++  const [importResult, setImportResult] = useState<BulkCreateResult | null>(null);
++  const [error, setError] = useState<string | null>(null);
++
++  const runPreview = async (targetFile: File, sheetName: string | null): Promise<void> => {
++    setPhase("analyzing");
++    setError(null);
++    try {
++      const result = await api.previewImport(releaseId, targetFile, sheetName ?? undefined);
++      setPreview(result);
++      setSelectedSheet(result.sheet_name);
++      setPhase("preview");
++    } catch (err) {
++      setError(err instanceof ApiRequestError ? err.message : "No se pudo analizar el archivo.");
++      setPhase("dropzone");
++    }
++  };
++
++  const handleFile = async (selected: File): Promise<void> => {
++    setFile(selected);
++    setError(null);
++
++    if (!isSpreadsheet(selected)) {
++      await runPreview(selected, null);
++      return;
++    }
++
++    setPhase("analyzing");
++    try {
++      const sheetsResult = await api.listImportSheets(releaseId, selected);
++      setSheets(sheetsResult.sheets);
++      const recommended = sheetsResult.recommended_sheet;
++      if (!recommended) {
++        setError("No se detectó ninguna hoja con un formato reconocido en este archivo.");
++        setPhase("dropzone");
++        return;
++      }
++      await runPreview(selected, recommended);
++    } catch (err) {
++      setError(err instanceof ApiRequestError ? err.message : "No se pudo leer el archivo.");
++      setPhase("dropzone");
++    }
++  };
++
++  const handleSheetChange = async (sheetName: string): Promise<void> => {
++    if (!file) return;
++    setSelectedSheet(sheetName);
++    await runPreview(file, sheetName);
++  };
++
++  const handleDrop = (event: React.DragEvent<HTMLDivElement>): void => {
++    event.preventDefault();
++    setDragActive(false);
++    const dropped = event.dataTransfer.files?.[0];
++    if (dropped) void handleFile(dropped);
++  };
++
++  const handleConfirmImport = async (): Promise<void> => {
++    if (!preview) return;
++    setPhase("importing");
++    setError(null);
++    try {
++      const result = await api.bulkCreateTestCases(releaseId, preview.valid);
++      setImportResult(result);
++      setPhase("done");
++      onImported();
++    } catch (err) {
++      setError(err instanceof ApiRequestError ? err.message : "No se pudo importar.");
++      setPhase("preview");
++    }
++  };
++
++  const reset = (): void => {
++    setPhase("dropzone");
++    setFile(null);
++    setSheets([]);
++    setSelectedSheet(null);
++    setPreview(null);
++    setImportResult(null);
++    setError(null);
++  };
++
++  return (
++    <div className="panel import-panel">
++      <div className="panel-header">
++        <h2>Importar Test Cases</h2>
++        <button type="button" className="icon-close" onClick={onClose} aria-label="Cerrar importador">
++          <X size={16} />
++        </button>
++      </div>
++      <div className="panel-body">
++        {error && <p className="error-text">{error}</p>}
++
++        {(phase === "dropzone" || phase === "analyzing") && (
++          <div
++            className={`dropzone${dragActive ? " active" : ""}`}
++            onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
++            onDragLeave={() => setDragActive(false)}
++            onDrop={handleDrop}
++          >
++            <Upload size={22} aria-hidden="true" />
++            {phase === "analyzing" ? (
++              <p>Analizando archivo…</p>
++            ) : (
++              <>
++                <p>Arrastra tu archivo .xlsx o .csv aquí</p>
++                <button type="button" className="secondary" onClick={() => fileInputRef.current?.click()}>
++                  Seleccionar archivo
++                </button>
++              </>
++            )}
++            <input
++              ref={fileInputRef}
++              type="file"
++              accept={ACCEPTED_EXTENSIONS.join(",")}
++              style={{ display: "none" }}
++              onChange={(e) => {
++                const selected = e.target.files?.[0];
++                if (selected) void handleFile(selected);
++                e.target.value = "";
++              }}
++            />
++          </div>
++        )}
++
++        {phase === "preview" && preview && (
++          <div className="import-preview">
++            <div className="import-preview-meta">
++              <span className="muted">
++                <FileSpreadsheet size={13} aria-hidden="true" style={{ verticalAlign: "-2px", marginRight: "4px" }} />
++                {file?.name}
++              </span>
++              {sheets.length > 1 && (
++                <select value={selectedSheet ?? ""} onChange={(e) => void handleSheetChange(e.target.value)}>
++                  {sheets.map((s) => (
++                    <option key={s.name} value={s.name} disabled={s.format === "UNKNOWN"}>
++                      {s.name}{s.format === "UNKNOWN" ? " (no reconocida)" : ""}
++                    </option>
++                  ))}
++                </select>
++              )}
++              <button type="button" className="secondary" onClick={reset}>Cambiar archivo</button>
++            </div>
++
++            <div className="import-stats">
++              <div className="import-stat"><div className="import-stat-value">{preview.total_test_cases}</div><div className="import-stat-label">Detectados</div></div>
++              <div className="import-stat ok"><div className="import-stat-value">{preview.valid_count}</div><div className="import-stat-label">Válidos</div></div>
++              <div className="import-stat error"><div className="import-stat-value">{preview.error_count}</div><div className="import-stat-label">Con errores</div></div>
++              <div className="import-stat warning"><div className="import-stat-value">{preview.warnings.length}</div><div className="import-stat-label">Advertencias</div></div>
++            </div>
++
++            {preview.warnings.length > 0 && (
++              <div className="import-issues warning">
++                <div className="import-issues-title"><AlertTriangle size={13} aria-hidden="true" /> Advertencias de calidad de datos</div>
++                <ul>
++                  {preview.warnings.slice(0, 8).map((w, i) => <li key={i}>{w.message}</li>)}
++                  {preview.warnings.length > 8 && <li className="muted">+{preview.warnings.length - 8} más</li>}
++                </ul>
++              </div>
++            )}
++
++            {preview.errors.length > 0 && (
++              <div className="import-issues error">
++                <div className="import-issues-title"><AlertTriangle size={13} aria-hidden="true" /> Errores (no se importarán)</div>
++                <ul>
++                  {preview.errors.slice(0, 8).map((e, i) => <li key={i}>{e.message}</li>)}
++                  {preview.errors.length > 8 && <li className="muted">+{preview.errors.length - 8} más</li>}
++                </ul>
++              </div>
++            )}
++
++            {preview.valid.length > 0 && (
++              <table className="activity" style={{ marginTop: "10px" }}>
++                <thead><tr><th>ID</th><th>Nombre</th><th>Prioridad</th><th>Steps</th></tr></thead>
++                <tbody>
++                  {preview.valid.slice(0, 5).map((tc) => (
++                    <tr key={tc.test_case_id}>
++                      <td>{tc.test_case_id}</td><td>{tc.test_case_name}</td><td className="muted">{tc.priority}</td><td className="muted">{tc.steps.length}</td>
++                    </tr>
++                  ))}
++                </tbody>
++              </table>
++            )}
++            {preview.valid.length > 5 && <p className="muted" style={{ fontSize: "12px", marginTop: "6px" }}>+{preview.valid.length - 5} más…</p>}
++
++            <div className="form-actions">
++              <button type="button" onClick={handleConfirmImport} disabled={preview.valid_count === 0}>
++                Importar {preview.valid_count} Test Case{preview.valid_count === 1 ? "" : "s"}
++              </button>
++              <button type="button" className="secondary" onClick={reset}>Cancelar</button>
++            </div>
++          </div>
++        )}
++
++        {phase === "importing" && <p className="muted">Importando…</p>}
++
++        {phase === "done" && importResult && (
++          <div className="import-preview">
++            <div className="import-stats">
++              <div className="import-stat ok"><div className="import-stat-value">{importResult.created.length}</div><div className="import-stat-label">Creados</div></div>
++              <div className="import-stat error"><div className="import-stat-value">{importResult.errors.length}</div><div className="import-stat-label">Con errores</div></div>
++            </div>
++            {importResult.errors.length > 0 && (
++              <div className="import-issues error">
++                <div className="import-issues-title"><AlertTriangle size={13} aria-hidden="true" /> No se pudieron crear</div>
++                <ul>{importResult.errors.map((e, i) => <li key={i}>{e.message}</li>)}</ul>
++              </div>
++            )}
++            <div className="form-actions">
++              <button type="button" onClick={onClose}>Listo</button>
++            </div>
++          </div>
++        )}
++      </div>
++    </div>
++  );
++}
+diff --git a/frontend/app/api/releases/[id]/test-cases/import/sheets/route.ts b/frontend/app/api/releases/[id]/test-cases/import/sheets/route.ts
+new file mode 100644
+--- /dev/null
++++ b/frontend/app/api/releases/[id]/test-cases/import/sheets/route.ts
+@@ -0,0 +1,33 @@
++import { NextRequest, NextResponse } from "next/server";
++
++const backendUrl = process.env.BACKEND_URL ?? "http://backend:8000";
++const requestTimeoutMs = 15_000;
++
++interface RouteParams {
++  params: Promise<{ id: string }>;
++}
++
++/**
++ * Like the sibling import/preview route, this forwards multipart/form-data as-is -- it must
++ * NOT use lib/backend.ts's proxyToBackend helper, which always sets a JSON content-type.
++ */
++export async function POST(request: NextRequest, { params }: RouteParams): Promise<NextResponse> {
++  const { id } = await params;
++
++  try {
++    const incomingFormData = await request.formData();
++    const response = await fetch(`${backendUrl}/api/v1/releases/${id}/test-cases/import/sheets`, {
++      method: "POST",
++      body: incomingFormData,
++      cache: "no-store",
++      signal: AbortSignal.timeout(requestTimeoutMs),
++    });
++    const body = await response.json();
++    return NextResponse.json(body, { status: response.status });
++  } catch {
++    return NextResponse.json(
++      { status: "error", message: "Backend unavailable" },
++      { status: 503 },
++    );
++  }
++}

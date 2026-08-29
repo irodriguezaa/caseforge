@@ -1,0 +1,72 @@
+diff --git a/frontend/app/page.tsx b/frontend/app/page.tsx
+--- a/frontend/app/page.tsx
++++ b/frontend/app/page.tsx
+@@ -19,7 +19,6 @@
+ 
+ const healthCheckTimeoutMs = 5_000;
+ const CURRENT_YEAR = new Date().getFullYear();
+-const CURRENT_MONTH = String(new Date().getMonth() + 1).padStart(2, "0");
+ 
+ function formatDate(iso: string): string {
+   const [y, m, d] = iso.split("-");
+@@ -33,11 +32,10 @@
+   const [summaryError, setSummaryError] = useState<string | null>(null);
+   const [releases, setReleases] = useState<Release[]>([]);
+ 
+-  // No "todos" catch-all per product decision this round -- these always hold one concrete
+-  // value. Defaults below (current month, first cluster/release) are an assumption; flagged
+-  // to the user as worth confirming since there's no longer a neutral "show everything" state.
+-  const [month, setMonth] = useState<string>(CURRENT_MONTH);
+-  const [cluster, setCluster] = useState<string>(CLUSTERS[0]);
++  // "" means "Todos" (no filter applied) for all three -- this is the default on load, so the
++  // Dashboard shows the global view immediately instead of an arbitrarily narrow slice.
++  const [month, setMonth] = useState<string>("");
++  const [cluster, setCluster] = useState<string>("");
+   const [releaseId, setReleaseId] = useState<string>("");
+ 
+   const [system, setSystem] = useState<{ backend: CheckStatus; database: CheckStatus }>({
+@@ -46,14 +44,13 @@
+   });
+ 
+   useEffect(() => {
+-    api.listReleases().then((data) => {
+-      setReleases(data);
+-      if (data.length > 0) setReleaseId((current) => current || String(data[0].id));
+-    }).catch(() => setReleases([]));
++    api.listReleases().then(setReleases).catch(() => setReleases([]));
+   }, []);
+ 
+   const loadSummary = useCallback((): void => {
+-    const filters: QcSummaryFilters = { month: `${CURRENT_YEAR}-${month}`, cluster };
++    const filters: QcSummaryFilters = {};
++    if (month) filters.month = `${CURRENT_YEAR}-${month}`;
++    if (cluster) filters.cluster = cluster;
+     if (releaseId) filters.release_id = Number(releaseId);
+     api
+       .getQcSummary(filters)
+@@ -98,21 +95,24 @@
+         <div className="page-header" style={{ marginBottom: 0 }}>
+           <h1>Actividades QC en curso</h1>
+           <p className="subtitle">
+-            {releases.find((r) => String(r.id) === releaseId)?.name ?? ""} · {cluster} · {MONTHS.find((m) => m.value === month)?.label}
++            {(releases.find((r) => String(r.id) === releaseId)?.name) ?? "Todos"} · {cluster || "Todos"} · {MONTHS.find((m) => m.value === month)?.label ?? "Todos"}
+           </p>
+         </div>
+         <div className="filter-bar">
+           <select value={month} onChange={(e) => setMonth(e.target.value)}>
++            <option value="">Todos</option>
+             {MONTHS.map((m) => (
+               <option key={m.value} value={m.value}>{m.label}</option>
+             ))}
+           </select>
+           <select value={cluster} onChange={(e) => setCluster(e.target.value)}>
++            <option value="">Todos</option>
+             {CLUSTERS.map((c) => (
+               <option key={c} value={c}>{c}</option>
+             ))}
+           </select>
+           <select value={releaseId} onChange={(e) => setReleaseId(e.target.value)}>
++            <option value="">Todos</option>
+             {releases.map((r) => (
+               <option key={r.id} value={r.id}>{r.name} v{r.version}</option>
+             ))}
