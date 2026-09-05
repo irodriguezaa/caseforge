@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from "react";
 import { ReleaseAnalysisCard } from "@/app/components/ReleaseAnalysisCard";
 import { StatusBadge } from "@/app/components/StatusBadge";
 import { api, ApiRequestError } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import { DEVICE_OPTIONS, RELEASE_CLUSTER_OPTIONS, VALIDATION_TYPE_OPTIONS } from "@/lib/constants";
 import { calculateBusinessDays } from "@/lib/dateUtils";
 import type { DeliverableReleaseSummary, ReleaseAnalysis, ReleaseType, ReleaseWithCounts } from "@/lib/types";
@@ -23,13 +24,25 @@ const emptyForm = {
   validationType: "Smoke",
   jiraIssueFilter: "",
   deliverableName: "",
-  releaseType: "EVOLUTIVO" as ReleaseType,
+  releaseType: "NUEVO" as ReleaseType,
   parentReleaseId: "",
 };
+
+function needsReleaseOrigin(releaseType: ReleaseType): boolean {
+  return releaseType === "EVOLUTIVO" || releaseType === "REVALIDACION";
+}
+
+function releaseTypeLabel(releaseType: ReleaseType | null | undefined): string {
+  if (releaseType === "NUEVO") return "Nuevo";
+  if (releaseType === "EVOLUTIVO") return "Evolutivo";
+  if (releaseType === "REVALIDACION") return "Revalidación";
+  return "—";
+}
 
 export default function ReleasesPage(): React.ReactElement {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { canLoadRn, canSeeDashboard } = useAuth();
 
   const [releases, setReleases] = useState<ReleaseWithCounts[]>([]);
   const [loading, setLoading] = useState(true);
@@ -47,16 +60,10 @@ export default function ReleasesPage(): React.ReactElement {
   const [analysisResult, setAnalysisResult] = useState<ReleaseAnalysis | null>(null);
   const [generateMessage, setGenerateMessage] = useState<string | null>(null);
 
-  // Guards the "Analizar Release Note" button's disabled value against a hydration mismatch
-  // caused by browser extensions mutating the button's DOM attributes before React hydrates
-  // (a known Next.js class of warning, unrelated to the disabled expression itself, which is
-  // already a plain boolean on both server and client). Forces SSR and the first client render
-  // to compute the exact same value; normal behavior resumes after mount.
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
-  // Release origen (Revalidación) candidates -- looked up by Entregable name, since the
-  // Deliverable itself may not exist yet (get-or-create happens on submit).
+  // Release origen: resolve the Entregable entity, then list versions by deliverable_id.
   const [originCandidates, setOriginCandidates] = useState<DeliverableReleaseSummary[]>([]);
   const [loadingOrigins, setLoadingOrigins] = useState(false);
 
@@ -77,16 +84,19 @@ export default function ReleasesPage(): React.ReactElement {
   // Look up "Release origen" candidates whenever the typed Entregable + Revalidación combo
   // could resolve to an existing Deliverable. Debounced so we don't fire on every keystroke.
   useEffect(() => {
-    if (form.releaseType !== "REVALIDACION" || !form.deliverableName.trim()) {
+    if (!needsReleaseOrigin(form.releaseType) || !form.deliverableName.trim()) {
       setOriginCandidates([]);
       return;
     }
     const handle = setTimeout(() => {
+      const typedName = form.deliverableName.trim();
       setLoadingOrigins(true);
       api
-        .listDeliverables(form.deliverableName.trim())
+        .listDeliverables(typedName)
         .then((deliverables) => {
-          const match = deliverables[0];
+          const match = deliverables.find(
+            (row) => row.name.trim().toLowerCase() === typedName.toLowerCase(),
+          );
           if (!match) {
             setOriginCandidates([]);
             return Promise.resolve();
@@ -166,7 +176,7 @@ export default function ReleasesPage(): React.ReactElement {
         analysis_data: analysisResult || undefined,
         deliverable_name: form.deliverableName || null,
         release_type: form.releaseType,
-        parent_release_id: form.releaseType === "REVALIDACION" && form.parentReleaseId ? Number(form.parentReleaseId) : null,
+        parent_release_id: needsReleaseOrigin(form.releaseType) && form.parentReleaseId ? Number(form.parentReleaseId) : null,
       });
 
       // Also create an initial ReleaseWindow if dates were provided
@@ -201,6 +211,7 @@ export default function ReleasesPage(): React.ReactElement {
       <p className="subtitle">Gestión de releases y ciclo de calidad QC</p>
 
       {/* Structured 5-Block Creation Form */}
+      {canLoadRn && (
       <form onSubmit={handleSubmit} style={{ marginTop: "1.5rem" }}>
         
         {/* BLOQUE 1: Release Note PDF */}
@@ -256,7 +267,7 @@ export default function ReleasesPage(): React.ReactElement {
             <button
               type="button"
               className="secondary"
-              disabled={!mounted || !pdfFile || analyzing}
+              disabled={mounted ? !pdfFile || analyzing : false}
               onClick={handleAnalyzePdf}
             >
               <FileText size={14} style={{ verticalAlign: "-2px", marginRight: "6px" }} />
@@ -266,6 +277,7 @@ export default function ReleasesPage(): React.ReactElement {
         </div>
 
         {/* BLOQUE 2: Información de la Release */}
+        {analysisResult && (
         <div className="step-card">
           <div className="step-card-header">
             <h2>
@@ -284,6 +296,9 @@ export default function ReleasesPage(): React.ReactElement {
               />
               <span className="muted" style={{ fontSize: "11px" }}>
                 Propuesto desde el Release Note; edítalo si no quedó claro. Releases con el mismo Entregable quedan agrupadas como versiones del mismo trabajo.
+              </span>
+              <span className="muted" style={{ fontSize: "11px", display: "block", marginTop: "3px" }}>
+                Sugerencia: poner al inicio el nombre del Proyecto. Ej.: HBO, PayPal, Splash, TDC CENAM, etc.
               </span>
             </div>
             <div className="form-field">
@@ -333,8 +348,10 @@ export default function ReleasesPage(): React.ReactElement {
             </div>
           </div>
         </div>
+        )}
 
         {/* BLOQUE 3: Configuración QC */}
+        {analysisResult && (
         <div className="step-card">
           <div className="step-card-header">
             <h2>
@@ -352,11 +369,12 @@ export default function ReleasesPage(): React.ReactElement {
                   setForm({ ...form, releaseType: e.target.value as ReleaseType, parentReleaseId: "" })
                 }
               >
+                <option value="NUEVO">Nuevo</option>
                 <option value="EVOLUTIVO">Evolutivo</option>
                 <option value="REVALIDACION">Revalidación</option>
               </select>
             </div>
-            {form.releaseType === "REVALIDACION" && (
+            {needsReleaseOrigin(form.releaseType) && (
               <div className="form-field">
                 <label htmlFor="parentReleaseId">Release origen</label>
                 <select
@@ -370,12 +388,12 @@ export default function ReleasesPage(): React.ReactElement {
                   </option>
                   {originCandidates.map((r) => (
                     <option key={r.id} value={r.id}>
-                      {r.name} v{r.version} ({r.release_type === "EVOLUTIVO" ? "Evolutivo" : "Revalidación"})
+                      {r.name} v{r.version} ({releaseTypeLabel(r.release_type)})
                     </option>
                   ))}
                 </select>
                 <span className="muted" style={{ fontSize: "11px" }}>
-                  Solo aparecen Releases del mismo Entregable escrito arriba.
+                  Solo aparecen versiones previas del mismo Entregable (deliverable_id), aunque el nombre del Release sea distinto.
                 </span>
               </div>
             )}
@@ -429,7 +447,7 @@ export default function ReleasesPage(): React.ReactElement {
               </div>
             </div>
             <div className="form-field">
-              <label htmlFor="qcResources">Recursos QC</label>
+              <label htmlFor="qcResources">Recursos asignados QC</label>
               <input
                 id="qcResources"
                 type="number"
@@ -464,6 +482,7 @@ export default function ReleasesPage(): React.ReactElement {
             </div>
           </div>
         </div>
+        )}
 
         {/* BLOQUE 4: Resultados del Análisis (si existe análisis) */}
         {analysisResult && (
@@ -477,7 +496,6 @@ export default function ReleasesPage(): React.ReactElement {
               analysis={analysisResult}
               qcResources={form.qcResources}
               executionDays={businessDays}
-              onGenerateClick={handleGenerateClick}
             />
           </div>
         )}
@@ -495,6 +513,7 @@ export default function ReleasesPage(): React.ReactElement {
         {formError && <p className="error-text">{formError}</p>}
 
         {/* BLOQUE 5: Acciones y Creación */}
+        {analysisResult && (
         <div className="step-card">
           <div className="step-card-header">
             <h2>
@@ -507,7 +526,9 @@ export default function ReleasesPage(): React.ReactElement {
             </button>
           </div>
         </div>
+        )}
       </form>
+      )}
 
       {/* Listado de Releases existentes */}
       <div className="section-header">
@@ -544,7 +565,15 @@ export default function ReleasesPage(): React.ReactElement {
                   <td className="muted">{release.cluster ?? "—"}</td>
                   <td className="muted">
                     {release.deliverable_name
-                      ? `${release.deliverable_name}${release.release_type === "REVALIDACION" ? " · Revalidación" : ""}`
+                      ? `${release.deliverable_name}${
+                          release.release_type === "REVALIDACION"
+                            ? " · Revalidación"
+                            : release.release_type === "EVOLUTIVO"
+                              ? " · Evolutivo"
+                              : release.release_type === "NUEVO"
+                                ? " · Nuevo"
+                                : ""
+                        }`
                       : "—"}
                   </td>
                   <td><StatusBadge status={release.status} /></td>
@@ -563,11 +592,13 @@ export default function ReleasesPage(): React.ReactElement {
         </div>
       )}
 
+      {canSeeDashboard && (
       <p style={{ marginTop: "1.5rem" }}>
         <Link href="/" className="back-link">
           ← Volver al Dashboard
         </Link>
       </p>
+      )}
     </div>
   );
 }

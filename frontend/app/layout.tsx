@@ -1,20 +1,20 @@
 import type { Metadata } from "next";
 import "./styles.css";
-import { Sidebar } from "./components/Sidebar";
+import { AppShell } from "./components/AppShell";
+import { AuthProvider } from "@/lib/auth";
 
 export const metadata: Metadata = {
-  title: "CaseForge",
-  description: "QC Intelligence Platform",
+  title: "QC Pulse",
+  description: "QC Pulse Platform",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>): React.ReactElement {
   return (
     <html lang="es">
       <body>
-        <div className="app-shell">
-          <Sidebar />
-          <div className="app-main">{children}</div>
-        </div>
+        <AuthProvider>
+          <AppShell>{children}</AppShell>
+        </AuthProvider>
       </body>
     </html>
   );

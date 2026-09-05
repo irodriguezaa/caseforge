@@ -1,0 +1,70 @@
+=== CONFLUENCE BRF-17442 ===
+Historia(s) de negocio
+
+HN001
+- Iniciar el flujo de contratación
+Yo como negocio de Claro Uruguay Quiero habilitar el inicio del flujo de contratación Norte-Sur al add on Sony One
+Criterios de aceptación
+Se debe asegurar que el usuario pueda iniciar el flujo transaccional desde las siguientes secciones de la plataforma:
+Plan selector
+Landing comercial
+vCard
+Home del add on
+Mi cuenta/Suscripción.
+
+HN002 - Implementar logos del add on Sony One
+Criterios de aceptación
+Se deben implementar los logos del add on Sony One en las siguientes secciones de la plataforma:
+Plan selector
+Landing Comercial
+Checkout
+Ticket
+
+HN003 - Implementar tarjeta en Plan Selector
+Criterios de aceptación
+Cuando el usuario ingrese al plan selector, se debe visualizar la tarjeta correspondiente al add on Sony One.
+La tarjeta de Sony One debe ocupar la posición 10 del Plan Selector
+
+HN004 - Implementar Superdestacado en Landing Comercial
+Criterios de aceptación
+Cuando el usuario acceda a la landing comercial del add on, se debe visualizar el superdestacado compartido.
+
+HN005 - Integrar imágenes secundarias en Landing Comercial
+Criterios de aceptación
+Las 4 imágenes secundarias se visualizan en la posición indicada en la Landing Comercial.
+
+HN006 - Implementar imagen de contenido en la pantalla Checkout
+Criterios de aceptación
+Cuando el usuario acceda a Checkout del add on Sony One se visualiza la imagen Alert: Unidad De Personas Desaparecidas.
+
+HN007 - Implementar imagen de contenido en la pantalla Ticket
+Criterios de aceptación
+Cuando el usuario acceda a Ticket del add on Sony One se visualiza la imagen Alert: Unidad De Personas Desaparecidas.
+
+HN008 - Implementar imagen en Carrusel Premium
+Criterios de aceptación
+Cuando el usuario acceda al carrusel de Canales Premium y seleccione la imagen del add on Sony One, dirige a la home del add on.
+
+HN009 - Habilitar home del add on Sony One
+Criterios de aceptación
+La home del add on habilita Header, Superdestacado, Categorías y Carruseles VOD.
+
+HN010 - Habilitar brand header
+Criterios de aceptación
+El brand header se visualiza correctamente en la home del add on Sony One.
+
+HN011 - Incluir contenido Superdestacado del add on Sony One
+Criterios de aceptación
+Los contenidos de Sony One se visualizan en el carrusel de Superdestacados.
+
+HN012 - Habilitar categorías en la home del add on Sony One
+Criterios de aceptación
+La botonera de categorías muestra Acción, Comedia, Drama, Series, Suspenso, Familia en el orden indicado.
+
+HN013 - Implementar chapitas
+Criterios de aceptación
+Los contenidos del add on Sony One muestran la chapita identificadora correspondiente.
+
+HN014 - Implementar el logo en correo de bienvenida
+Criterios de aceptación
+El correo de bienvenida incluye el logotipo del add on Sony One.

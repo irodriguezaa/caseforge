@@ -25,6 +25,32 @@ class TestCaseBase(BaseModel):
     user_type: str | None = Field(default=None, max_length=100)
     priority: TestCasePriority = TestCasePriority.CRITICAL
     test_type: TestCaseType = TestCaseType.FUNCTIONAL
+    test_data: str | None = None
+    requires_condition: bool = False
+    evidence: str | None = None
+    justification: str | None = None
+    technical_epic: str | None = Field(default=None, max_length=250)
+    technical_story: str | None = Field(default=None, max_length=500)
+    scenario_origin: str | None = None
+    related_rn: str | None = Field(default=None, max_length=250)
+    confidence: str | None = Field(default=None, max_length=16)
+    complexity: str | None = Field(default=None, max_length=16)
+    estimation_hours: float | None = None
+    generated_by_engine: bool = False
+    ecosystem: str | None = Field(default=None, max_length=16)
+    device: str | None = Field(default=None, max_length=80)
+    device_source: str | None = Field(default=None, max_length=250)
+    applicability_reason: str | None = None
+    duplicate_status: str | None = Field(default=None, max_length=32)
+    group_id: str | None = Field(default=None, max_length=80)
+    hn_source: str | None = Field(default=None, max_length=32)
+
+    @field_validator("estimation_hours", mode="before")
+    @classmethod
+    def _coerce_hours(cls, value: object) -> float | None:
+        if value is None or value == "":
+            return None
+        return float(value)
 
     @field_validator("test_case_id")
     @classmethod

@@ -65,6 +65,22 @@ class QcTicketBulkCreateResult(BaseModel):
     errors: list[QcTicketBulkCreateError]
 
 
+class QcTicketJiraRefreshFilterResult(BaseModel):
+    filter_id: str
+    source: str
+    jira_count: int
+    mapped: int
+    skipped: int
+
+
+class QcTicketJiraRefreshResult(BaseModel):
+    created: int
+    updated: int
+    skipped: int
+    filter_ids: list[str]
+    filters: list[QcTicketJiraRefreshFilterResult] = Field(default_factory=list)
+
+
 class QcTicketStats(BaseModel):
     """Backs the KPIs -> Radar de Defectos screen. Split by view (Operativas/Release), since
     they use different backlog-closed rules and different SWF derivations."""
@@ -82,19 +98,16 @@ class QcTicketStats(BaseModel):
     by_swf: dict[str, int] = Field(default_factory=dict)
     by_month: dict[str, int] = Field(default_factory=dict)  # "YYYY-MM" -> count
 
-
-class QcRadarFilterItem(BaseModel):
-    filter_id: str
-    label: str
-    description: str
-    tag: str
-
-
-class QcRadarViewConfig(BaseModel):
-    detected: QcRadarFilterItem
-    leaked: QcRadarFilterItem
-
-
-class QcRadarConfigResponse(BaseModel):
-    OPERATIVAS: QcRadarViewConfig
-    RELEASE: QcRadarViewConfig
+    # Added for the expanded dashboard (all derived from fields already stored per ticket --
+    # no new ingestion, no new business rule).
+    by_month_priority: dict[str, dict[str, int]] = Field(default_factory=dict)  # month -> {BLOCKER/CRITICAL/OTHER: n}
+    open_by_priority: dict[str, int] = Field(default_factory=dict)  # backlog abierto, desglosado por prioridad
+    by_status: dict[str, int] = Field(default_factory=dict)  # backlog abierto, desglosado por status_raw
+    by_device: dict[str, int] = Field(default_factory=dict)  # por dispositivo/programa (ya agrupado CL+PR en import)
+    by_program: dict[str, int] = Field(default_factory=dict)  # Operativas: por affected_program crudo
+    by_quarter: dict[str, int] = Field(default_factory=dict)  # Release: "YYYY-QN" -> count
+    severity_by_swf: dict[str, dict[str, int]] = Field(default_factory=dict)  # swf -> {BLOCKER/CRITICAL/OTHER: n}
+    swf_by_month: dict[str, dict[str, int]] = Field(default_factory=dict)  # month -> {swf: count}
+    leak_by_month: dict[str, dict[str, float]] = Field(default_factory=dict)  # month -> {"leaked": n, "rate": pct}
+    leak_by_swf: dict[str, int] = Field(default_factory=dict)  # Release: fuga por SWF
+    leak_by_project: dict[str, int] = Field(default_factory=dict)  # Release: fuga por project_key crudo (sin mapeo)

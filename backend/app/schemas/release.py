@@ -94,6 +94,13 @@ class ReleaseRead(ReleaseBase):
     deliverable_id: int | None = None
     release_type: ReleaseType | None = None
     parent_release_id: int | None = None
+    parent_release_name: str | None = None
+    operativa_release_id: int | None = None
+    be_release_id: int | None = None
+    deliverable_name: str | None = None
+    swf: str | None = None
+    regresivo_scope: str | None = None
+    affected_component: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -101,6 +108,4 @@ class ReleaseRead(ReleaseBase):
 class ReleaseWithCounts(ReleaseRead):
     test_case_count: int = 0
     latest_analysis: ReleaseAnalysisRead | None = None
-    # Denormalized (populated manually in the router, same pattern as latest_analysis) so list
-    # views can show "which Deliverable" without an extra round trip per row.
-    deliverable_name: str | None = None
+    # deliverable_name is inherited from ReleaseRead (populated in the list/get routers).

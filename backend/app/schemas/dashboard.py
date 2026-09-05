@@ -28,6 +28,7 @@ class ActivityItem(BaseModel):
     release_version: str
     platform: str
     cluster: str | None
+    origin_kind: str = "APP"  # "APP" | "BE" | "OPERATIVA"
     window_name: str | None
     window_start_date: date | None = None
     window_end_date: date | None = None
@@ -80,3 +81,8 @@ class QcDashboardSummary(BaseModel):
     defects_critical: int = 0
     at_risk: list[AtRiskItem] = Field(default_factory=list)
     active_items: list[ActivityItem] = Field(default_factory=list)
+    execution_items: list[ActivityItem] = Field(default_factory=list)
+    in_progress_app: int = 0
+    in_progress_be: int = 0
+    in_progress_operativa: int = 0
+    in_progress_total: int = 0

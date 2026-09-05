@@ -10,7 +10,10 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db import Base
 
 if TYPE_CHECKING:
+    from app.models.be_release import BeRelease
     from app.models.deliverable import Deliverable
+    from app.models.epc import Epc
+    from app.models.operativa_release import OperativaRelease
     from app.models.release_analysis import ReleaseAnalysis
     from app.models.test_case import TestCase
 
@@ -36,6 +39,7 @@ class ReleaseType(str, enum.Enum):
     tracks *why* the cycle exists at all. Nullable at the DB level so existing Releases that
     predate this concept aren't forced into a classification nobody made."""
 
+    NUEVO = "NUEVO"
     EVOLUTIVO = "EVOLUTIVO"
     REVALIDACION = "REVALIDACION"
 
@@ -78,6 +82,13 @@ class Release(Base):
     parent_release_id: Mapped[int | None] = mapped_column(
         ForeignKey("releases.id", ondelete="SET NULL"), nullable=True
     )
+    # Set when this QC Release was created from an Operativa (one Operativa → one Release).
+    operativa_release_id: Mapped[int | None] = mapped_column(
+        ForeignKey("operativa_releases.id", ondelete="SET NULL"), nullable=True, unique=True
+    )
+    be_release_id: Mapped[int | None] = mapped_column(
+        ForeignKey("be_releases.id", ondelete="SET NULL"), nullable=True, unique=True
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -101,3 +112,6 @@ class Release(Base):
     deliverable: Mapped["Deliverable | None"] = relationship(back_populates="releases")
     parent: Mapped["Release | None"] = relationship(remote_side=[id], back_populates="children")
     children: Mapped[list["Release"]] = relationship(back_populates="parent")
+    operativa_release: Mapped["OperativaRelease | None"] = relationship(back_populates="qc_release")
+    included_epcs: Mapped[list["Epc"]] = relationship(back_populates="release")
+    be_release: Mapped["BeRelease | None"] = relationship(back_populates="qc_release")

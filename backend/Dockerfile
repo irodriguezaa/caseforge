@@ -42,7 +42,9 @@ COPY --chown=caseforge:caseforge app ./app
 COPY --chown=caseforge:caseforge alembic ./alembic
 COPY --chown=caseforge:caseforge alembic.ini ./alembic.ini
 COPY --chown=caseforge:caseforge entrypoint.sh ./entrypoint.sh
-RUN chmod +x ./entrypoint.sh
+RUN chmod +x ./entrypoint.sh \
+    && mkdir -p /app/data/release_notes \
+    && chown caseforge:caseforge /app/data/release_notes
 
 EXPOSE 8000
 

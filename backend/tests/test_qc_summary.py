@@ -172,6 +172,19 @@ def test_qc_summary_active_items_excludes_completed_and_cancelled_releases(clien
     assert completed["id"] not in release_ids
 
 
+def test_qc_summary_execution_items_include_completed_releases(client) -> None:
+    completed = _create_release(client, name="Completed Exec")
+    client.patch(f"/api/v1/releases/{completed['id']}", json={"status": "IN_PROGRESS"})
+    client.patch(f"/api/v1/releases/{completed['id']}", json={"status": "COMPLETED"})
+
+    body = client.get("/api/v1/dashboard/qc-summary").json()
+
+    execution_ids = [item["release_id"] for item in body["execution_items"]]
+    assert completed["id"] in execution_ids
+    item = next(row for row in body["execution_items"] if row["release_id"] == completed["id"])
+    assert item["status"] == "COMPLETED"
+
+
 def test_qc_summary_active_items_exposes_status_and_per_status_counts(client) -> None:
     release = _create_release(client)
     client.patch(f"/api/v1/releases/{release['id']}", json={"status": "IN_PROGRESS"})
@@ -220,7 +233,7 @@ def test_qc_summary_active_items_exposes_deliverable_context(client) -> None:
         "/api/v1/releases",
         json={
             "name": "CV WEB", "version": "1.0.0", "platform": "WEB",
-            "deliverable_name": "WEB - Funcionalidad X", "release_type": "EVOLUTIVO",
+            "deliverable_name": "WEB - Funcionalidad X", "release_type": "NUEVO",
         },
     ).json()
     v2 = client.post(
@@ -255,3 +268,48 @@ def test_qc_summary_active_items_deliverable_fields_are_none_without_deliverable
     assert item["deliverable_release_ordinal"] is None
     assert item["deliverable_total_versions"] is None
     assert item["deliverable_total_revalidaciones"] is None
+    assert item["origin_kind"] == "APP"
+
+
+def test_qc_summary_origin_kinds_and_in_progress_counts(client, db_session) -> None:
+    from app.models.operativa_release import OperativaRelease
+    from app.models.release import Release, ReleaseStatus
+
+    app = _create_release(client, name="App Cycle", version="1.0")
+    client.patch(f"/api/v1/releases/{app['id']}", json={"status": "IN_PROGRESS"})
+
+    be_draft = client.post("/api/v1/releases-be").json()
+    client.patch(
+        f"/api/v1/releases-be/{be_draft['id']}",
+        json={"name": "BE Cycle", "regresivo_scope": "SMOKE"},
+    )
+    be = client.post(f"/api/v1/releases-be/{be_draft['id']}/create-release").json()
+    client.patch(f"/api/v1/releases/{be['id']}", json={"status": "IN_PROGRESS"})
+
+    ope_row = OperativaRelease(name="OPE Cycle", pdf_filename="ope.pdf")
+    db_session.add(ope_row)
+    db_session.commit()
+    ope = Release(
+        name="OPE Cycle",
+        version="OPE",
+        platform="Operativa",
+        cluster="AUP",
+        operativa_release_id=ope_row.id,
+        status=ReleaseStatus.IN_PROGRESS,
+    )
+    db_session.add(ope)
+    db_session.commit()
+
+    body = client.get("/api/v1/dashboard/qc-summary").json()
+    assert body["in_progress_app"] == 1
+    assert body["in_progress_be"] == 1
+    assert body["in_progress_operativa"] == 1
+    assert body["in_progress_total"] == 3
+    assert body["in_progress_total"] == (
+        body["in_progress_app"] + body["in_progress_be"] + body["in_progress_operativa"]
+    )
+
+    by_id = {item["release_id"]: item for item in body["active_items"]}
+    assert by_id[app["id"]]["origin_kind"] == "APP"
+    assert by_id[be["id"]]["origin_kind"] == "BE"
+    assert by_id[ope.id]["origin_kind"] == "OPERATIVA"

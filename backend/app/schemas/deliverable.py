@@ -25,6 +25,7 @@ class DeliverableReleaseSummary(BaseModel):
     status: ReleaseStatus
     release_type: ReleaseType | None
     parent_release_id: int | None
+    deliverable_id: int | None
     created_at: datetime
 
 

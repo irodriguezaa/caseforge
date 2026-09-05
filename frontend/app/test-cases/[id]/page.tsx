@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { StatusBadge } from "@/app/components/StatusBadge";
 import { api, ApiRequestError } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import type { TestCase, TestCaseWithSteps, TestStep } from "@/lib/types";
 
 const emptyStepForm = { step_number: 1, test_step: "", expected_result: "" };
@@ -12,6 +13,7 @@ const emptyStepForm = { step_number: 1, test_step: "", expected_result: "" };
 export default function TestCaseDetailPage(): React.ReactElement {
   const params = useParams<{ id: string }>();
   const testCaseId = Number(params.id);
+  const { canExecuteCases } = useAuth();
 
   const [testCase, setTestCase] = useState<TestCaseWithSteps | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -104,16 +106,43 @@ export default function TestCaseDetailPage(): React.ReactElement {
       <p className="eyebrow">Test Case</p>
       <h1>{testCase.test_case_id}</h1>
       <p className="subtitle">
-        {testCase.test_case_name} · {testCase.component}
+        {testCase.test_case_name}
       </p>
       <p>
         <StatusBadge status={testCase.priority} /> <StatusBadge status={testCase.test_type} />{" "}
         <StatusBadge status={testCase.status} />
       </p>
       {testCase.description && <p>{testCase.description}</p>}
+      <div className="muted" style={{ fontSize: "13px", marginTop: "8px" }}>
+        {testCase.complexity ? (
+          <span>
+            Complejidad IA: <strong>{testCase.complexity}</strong>
+            {testCase.confidence ? ` · Confianza: ${testCase.confidence}` : ""}
+          </span>
+        ) : null}
+      </div>
+      {testCase.requires_condition ? <p className="muted">Requiere condición especial.</p> : null}
+      {testCase.test_data ? (
+        <div className="card" style={{ marginTop: "12px" }}>
+          <h2>Datos de Prueba</h2>
+          <p style={{ whiteSpace: "pre-wrap", margin: 0 }}>{testCase.test_data}</p>
+        </div>
+      ) : null}
+      {(testCase.technical_epic || testCase.technical_story || testCase.scenario_origin) && (
+        <div className="card" style={{ marginTop: "12px" }}>
+          <h2>Trazabilidad</h2>
+          {testCase.technical_epic ? <p>Technical Epic: {testCase.technical_epic}</p> : null}
+          {testCase.technical_story ? <p>Technical Story: {testCase.technical_story}</p> : null}
+          {testCase.scenario_origin ? (
+            <p style={{ whiteSpace: "pre-wrap" }}>Scenario / origen: {testCase.scenario_origin}</p>
+          ) : null}
+          {testCase.justification ? <p style={{ whiteSpace: "pre-wrap" }}>{testCase.justification}</p> : null}
+        </div>
+      )}
 
       {actionError && <p className="error-text">{actionError}</p>}
 
+      {canExecuteCases && (
       <div className="card">
         <h2>Cambiar estado de ejecución</h2>
         <div className="form-actions">
@@ -129,6 +158,7 @@ export default function TestCaseDetailPage(): React.ReactElement {
           ))}
         </div>
       </div>
+      )}
 
       <div className="section-header">
         <h2>Steps</h2>
@@ -145,6 +175,8 @@ export default function TestCaseDetailPage(): React.ReactElement {
               </p>
             </div>
             <div className="step-actions">
+              {canExecuteCases && (
+              <>
               <button
                 type="button"
                 className="secondary"
@@ -164,12 +196,15 @@ export default function TestCaseDetailPage(): React.ReactElement {
               <button type="button" className="danger" onClick={() => handleDeleteStep(step.id)}>
                 Eliminar
               </button>
+              </>
+              )}
             </div>
           </li>
         ))}
         {testCase.steps.length === 0 && <p className="muted">Sin steps todavía.</p>}
       </ul>
 
+      {canExecuteCases && (
       <div className="card" style={{ marginTop: "1.5rem" }}>
         <h2>Agregar Step</h2>
         <form onSubmit={handleAddStep}>
@@ -211,6 +246,7 @@ export default function TestCaseDetailPage(): React.ReactElement {
           </div>
         </form>
       </div>
+      )}
 
       <p style={{ marginTop: "1.5rem" }}>
         <Link href={`/releases/${testCase.release_id}`} className="back-link">

@@ -1,0 +1,1232 @@
+validation_pattern,BRF,EPCs,HN/CA,behavior,behavior_reason,surfaces,channel,ecosystem,applicable_devices,relevant_users,transactional,MDP,test_data,origin,source,hn_source,scope_status,reasoning,duplicate_risk,duplicate_with,QC_REVIEW,evidence
+HN_CONFLUENCE,BRF-17442,EPC-21813; EPC-21842,HN001,Iniciar el flujo de contratación,"HN001 describe un comportamiento funcional verificable (HN ≠ TC). Los EPC del BRF se conservan como trazabilidad; no multiplican esta fila. Las superficies listadas son dimensión de cobertura, no un comportamiento por superficie. Transaccional porque el título/HN declara inicio o flujo de contratación/pago.",Landing Comercial; Plan Selector; Home del add-on; Mi cuenta/Suscripción; vCard,,OTT,WEB; AAF; Android; iOS; tvOS; Windows/XBOX; Consolas; Roku; Fire TV; Android TV STV,,True,,"BRF: BRF-17442
+HN: HN001
+Superficies: Landing Comercial, Plan Selector, Home del add-on, Mi cuenta/Suscripción, vCard",directo,Confluence,CONFLUENCE,IN_SCOPE,"Fuente HN001 (Iniciar el flujo de contratación). EPC consolidado: EPC-21813, EPC-21842. Superficies/canal de cobertura: Landing Comercial, Plan Selector, Home del add-on, Mi cuenta/Suscripción, vCard. Dispositivos aplicables: WEB, AAF, Android, iOS, tvOS, Windows/XBOX, Consolas, Roku, Fire TV, Android TV STV. Sin split de usuario: la HN no diferencia tipos de usuario. Transaccional sin MDP explícito en la HN: no se inventa catálogo de pago.",UNIQUE,,False,"BRF: BRF-17442
+HN: HN001
+Comportamiento: BRF-17442:HN001:iniciar-el-flujo-de-contrataci-n
+Fuente HN: CONFLUENCE
+Confluence: pageId=6399164496
+Extracto: Iniciar el flujo de contratación
+
+ Historia de negocio
+ Yo como negocio de Claro Uruguay
+ Quiero habilitar el inicio del flujo de contratación Norte-Sur al add on Sony One
+ Para permitir al usuario realizar la contratación desde la plataforma.
+
+ Criterios de aceptación
+ Se debe asegurar que el usuario pueda iniciar el flujo transaccional desde las siguientes secciones de la plataforma:
+ Plan selec"
+HN_CONFLUENCE,BRF-17442,EPC-21813; EPC-21842,HN002,Implementar logos del add on Sony One,"HN002 describe un comportamiento funcional verificable (HN ≠ TC). Los EPC del BRF se conservan como trazabilidad; no multiplican esta fila. Las superficies listadas son dimensión de cobertura, no un comportamiento por superficie.",Landing Comercial; Plan Selector; Checkout; Ticket,,OTT,WEB; AAF; Android; iOS; tvOS; Windows/XBOX; Consolas; Roku; Fire TV; Android TV STV,,False,,"BRF: BRF-17442
+HN: HN002
+Superficies: Landing Comercial, Plan Selector, Checkout, Ticket
+Figma: figma.com/design/psrFkITfuRUxSgEif2Nha1/Assets-AddOns_SonyOne?node-id=0-1&t=RAGOYreNOv9JGXAc-1; figma.com/design/psrFkITfuRUxSgEif2Nha1/Assets-AddOns_SonyOne?node-id=1-1796&t=IPYorOPcwsg2xgI8-1",directo,Confluence,CONFLUENCE,IN_SCOPE,"Fuente HN002 (Implementar logos del add on Sony One). EPC consolidado: EPC-21813, EPC-21842. Superficies/canal de cobertura: Landing Comercial, Plan Selector, Checkout, Ticket. Dispositivos aplicables: WEB, AAF, Android, iOS, tvOS, Windows/XBOX, Consolas, Roku, Fire TV, Android TV STV. Sin split de usuario: la HN no diferencia tipos de usuario.",UNIQUE,,False,"BRF: BRF-17442
+HN: HN002
+Comportamiento: BRF-17442:HN002:implementar-logos-del-add-on-sony-one
+Fuente HN: CONFLUENCE
+Confluence: pageId=6399164496
+Extracto: Implementar logos del add on Sony One
+
+ Historia de negocio
+ Yo como negocio de Claro Uruguay
+ Quiero implementar los logos del add on Sony One en todas las secciones de la plataforma
+ Para identificar el add on entre las ofertas comerciales que tiene la operación.
+
+ Criterios de aceptación
+ Se deben implementar los logos del add on Sony One en las siguientes secciones de la plataforma:
+ Plan sele"
+HN_CONFLUENCE,BRF-17442,EPC-21813; EPC-21842,HN003,Implementar tarjeta en Plan Selector,"HN003 describe un comportamiento funcional verificable (HN ≠ TC). Los EPC del BRF se conservan como trazabilidad; no multiplican esta fila. Las superficies listadas son dimensión de cobertura, no un comportamiento por superficie.",Plan Selector,,OTT,WEB; AAF; Android; iOS; tvOS; Windows/XBOX; Consolas; Roku; Fire TV; Android TV STV,,False,,"BRF: BRF-17442
+HN: HN003
+Superficies: Plan Selector
+Figma: figma.com/design/psrFkITfuRUxSgEif2Nha1/Assets-AddOns_SonyOne?node-id=1601-5",directo,Confluence,CONFLUENCE,IN_SCOPE,"Fuente HN003 (Implementar tarjeta en Plan Selector). EPC consolidado: EPC-21813, EPC-21842. Superficies/canal de cobertura: Plan Selector. Dispositivos aplicables: WEB, AAF, Android, iOS, tvOS, Windows/XBOX, Consolas, Roku, Fire TV, Android TV STV. Sin split de usuario: la HN no diferencia tipos de usuario.",UNIQUE,,False,"BRF: BRF-17442
+HN: HN003
+Comportamiento: BRF-17442:HN003:implementar-tarjeta-en-plan-selector
+Fuente HN: CONFLUENCE
+Confluence: pageId=6399164496
+Extracto: Implementar tarjeta en Plan Selector
+
+ Historia de negocio
+ Yo como negocio de Claro Uruguay
+ Quiero implementar la tarjeta del add on Sony One en el Plan Selector
+ Para mostrar al usuario el add on como una oferta comercial disponible para contratación.
+
+ Criterios de aceptación
+ Cuando el usuario ingrese al plan selector, se debe visualizar la siguiente tarjeta correspondiente al add on: https:/"
+HN_CONFLUENCE,BRF-17442,EPC-21813; EPC-21842,HN004,Implementar Superdestacado en Landing Comercial,"HN004 describe un comportamiento funcional verificable (HN ≠ TC). Los EPC del BRF se conservan como trazabilidad; no multiplican esta fila. Las superficies listadas son dimensión de cobertura, no un comportamiento por superficie.",Landing Comercial; Superdestacado,,OTT,WEB; AAF; Android; iOS; tvOS; Windows/XBOX; Consolas; Roku; Fire TV; Android TV STV,,False,,"BRF: BRF-17442
+HN: HN004
+Superficies: Landing Comercial, Superdestacado
+Figma: figma.com/design/psrFkITfuRUxSgEif2Nha1/Assets-AddOns_SonyOne?node-id=1601-29",directo,Confluence,CONFLUENCE,IN_SCOPE,"Fuente HN004 (Implementar Superdestacado en Landing Comercial). EPC consolidado: EPC-21813, EPC-21842. Superficies/canal de cobertura: Landing Comercial, Superdestacado. Dispositivos aplicables: WEB, AAF, Android, iOS, tvOS, Windows/XBOX, Consolas, Roku, Fire TV, Android TV STV. Sin split de usuario: la HN no diferencia tipos de usuario.",UNIQUE,,False,"BRF: BRF-17442
+HN: HN004
+Comportamiento: BRF-17442:HN004:implementar-superdestacado-en-landing-comercial
+Fuente HN: CONFLUENCE
+Confluence: pageId=6399164496
+Extracto: Implementar Superdestacado en Landing Comercial
+
+ Historia de negocio
+ Yo como negocio de Claro Uruguay
+ Quiero implementar la imagen del Superdestacado del add on Sony One en la landing comercial
+ Para promocionar los contenidos indicados por el proveedor.
+
+ Criterios de aceptación
+ Cuando el usuario acceda a la landing comercial del add on, se debe visualizar el superdestacado compartido en: htt"
+HN_CONFLUENCE,BRF-17442,EPC-21813; EPC-21842,HN005,Integrar imágenes secundarias en Landing Comercial,"HN005 describe un comportamiento funcional verificable (HN ≠ TC). Los EPC del BRF se conservan como trazabilidad; no multiplican esta fila. Las superficies listadas son dimensión de cobertura, no un comportamiento por superficie.",Landing Comercial,,OTT,WEB; AAF; Android; iOS; tvOS; Windows/XBOX; Consolas; Roku; Fire TV; Android TV STV,,False,,"BRF: BRF-17442
+HN: HN005
+Superficies: Landing Comercial",directo,Confluence,CONFLUENCE,IN_SCOPE,"Fuente HN005 (Integrar imágenes secundarias en Landing Comercial). EPC consolidado: EPC-21813, EPC-21842. Superficies/canal de cobertura: Landing Comercial. Dispositivos aplicables: WEB, AAF, Android, iOS, tvOS, Windows/XBOX, Consolas, Roku, Fire TV, Android TV STV. Sin split de usuario: la HN no diferencia tipos de usuario.",UNIQUE,,False,"BRF: BRF-17442
+HN: HN005
+Comportamiento: BRF-17442:HN005:integrar-im-genes-secundarias-en-landing-comercial
+Fuente HN: CONFLUENCE
+Confluence: pageId=6399164496
+Extracto: Integrar imágenes secundarias en Landing Comercial
+
+ Historia de negocio
+ Yo como negocio de Claro Uruguay
+ Quiero integrar las imágenes secundarias en la Landing Comercial
+ Para promocionar el add on con los contenidos indicados por el proveedor.
+
+ Criterios de aceptación
+ Se deben implementar las imágenes secundarias de acuerdo a la posición indicada:
+ Horizontal (1): L.A.s FINEST
+
+ Horizontal ("
+HN_CONFLUENCE,BRF-17442,EPC-21813; EPC-21842,HN006,Implementar imagen de contenido en la pantalla Checkout,"HN006 describe un comportamiento funcional verificable (HN ≠ TC). Los EPC del BRF se conservan como trazabilidad; no multiplican esta fila. Las superficies listadas son dimensión de cobertura, no un comportamiento por superficie.",Checkout,,OTT,tvOS; Android TV STV; Roku; Fire TV,,False,,"BRF: BRF-17442
+HN: HN006
+Superficies: Checkout",directo,Confluence,CONFLUENCE,IN_SCOPE,"Fuente HN006 (Implementar imagen de contenido en la pantalla Checkout). EPC consolidado: EPC-21813, EPC-21842. Superficies/canal de cobertura: Checkout. Dispositivos aplicables: tvOS, Android TV STV, Roku, Fire TV. Sin split de usuario: la HN no diferencia tipos de usuario.",UNIQUE,,False,"BRF: BRF-17442
+HN: HN006
+Comportamiento: BRF-17442:HN006:implementar-imagen-de-contenido-en-la-pantalla-checkout
+Fuente HN: CONFLUENCE
+Confluence: pageId=6399164496
+Extracto: Implementar imagen de contenido en la pantalla Checkout
+
+ Historia de negocio
+ Yo como negocio de Claro Uruguay
+ Quiero implementar la imagen de contenido del add on Sony One en la pantalla Checkout
+ Para mostrar al usuario la imagen correspondiente durante el proceso de suscripción.
+
+ Criterios de aceptación
+ Aplica para dispositivos con experiencia de tele.
+
+ En la pantalla Checkout del add on S"
+HN_CONFLUENCE,BRF-17442,EPC-21813; EPC-21842,HN007,Implementar imagen de contenido en la pantalla Ticket,"HN007 describe un comportamiento funcional verificable (HN ≠ TC). Los EPC del BRF se conservan como trazabilidad; no multiplican esta fila. Las superficies listadas son dimensión de cobertura, no un comportamiento por superficie.",Ticket,,OTT,tvOS; Android TV STV; Roku; Fire TV,,False,,"BRF: BRF-17442
+HN: HN007
+Superficies: Ticket",directo,Confluence,CONFLUENCE,IN_SCOPE,"Fuente HN007 (Implementar imagen de contenido en la pantalla Ticket). EPC consolidado: EPC-21813, EPC-21842. Superficies/canal de cobertura: Ticket. Dispositivos aplicables: tvOS, Android TV STV, Roku, Fire TV. Sin split de usuario: la HN no diferencia tipos de usuario.",UNIQUE,,False,"BRF: BRF-17442
+HN: HN007
+Comportamiento: BRF-17442:HN007:implementar-imagen-de-contenido-en-la-pantalla-ticket
+Fuente HN: CONFLUENCE
+Confluence: pageId=6399164496
+Extracto: Implementar imagen de contenido en la pantalla Ticket
+
+ Historia de negocio
+ Yo como negocio de Claro Uruguay
+ Quiero implementar la imagen de contenido del add on Sony One en la pantalla Ticket
+ Para mostrar al usuario la imagen correspondiente durante el proceso de suscripción.
+
+ Criterios de aceptación
+ Aplica para dispositivos con experiencia de tele.
+
+ En la pantalla Checkout del add on Sony "
+HN_CONFLUENCE,BRF-17442,EPC-21813; EPC-21842,HN008,Implementar imagen en Carrusel Premium,"HN008 describe un comportamiento funcional verificable (HN ≠ TC). Los EPC del BRF se conservan como trazabilidad; no multiplican esta fila. Las superficies listadas son dimensión de cobertura, no un comportamiento por superficie.",Carrusel Premium; Home del add-on,,OTT,WEB; AAF; Android; iOS; tvOS; Windows/XBOX; Consolas; Roku; Fire TV; Android TV STV,,False,,"BRF: BRF-17442
+HN: HN008
+Superficies: Carrusel Premium, Home del add-on
+Figma: figma.com/design/psrFkITfuRUxSgEif2Nha1/Assets-AddOns_SonyOne?node-id=1-1843&t=IPYorOPcwsg2xgI8-1",directo,Confluence,CONFLUENCE,IN_SCOPE,"Fuente HN008 (Implementar imagen en Carrusel Premium). EPC consolidado: EPC-21813, EPC-21842. Superficies/canal de cobertura: Carrusel Premium, Home del add-on. Dispositivos aplicables: WEB, AAF, Android, iOS, tvOS, Windows/XBOX, Consolas, Roku, Fire TV, Android TV STV. Sin split de usuario: la HN no diferencia tipos de usuario.",UNIQUE,,False,"BRF: BRF-17442
+HN: HN008
+Comportamiento: BRF-17442:HN008:implementar-imagen-en-carrusel-premium
+Fuente HN: CONFLUENCE
+Confluence: pageId=6399164496
+Extracto: Implementar imagen en Carrusel Premium
+
+ Historia de negocio
+ Yo como negocio de Claro Uruguay
+ Quiero implementar la imagen comercial del add on Sony One en el carrusel de Canales Premium
+ Para dirigir al usuario a la home del add on.
+
+ Criterios de aceptación
+ Se debe implementar la imagen compartida en: https://www.figma.com/design/psrFkITfuRUxSgEif2Nha1/Assets-AddOns_SonyOne?node-id=1-1843&t=I"
+HN_CONFLUENCE,BRF-17442,EPC-21813; EPC-21842,HN009,Habilitar home del add on Sony One,"HN009 describe un comportamiento funcional verificable (HN ≠ TC). Los EPC del BRF se conservan como trazabilidad; no multiplican esta fila. Las superficies listadas son dimensión de cobertura, no un comportamiento por superficie.",Home del add-on; Superdestacado,,OTT,WEB; AAF; Android; iOS; tvOS; Windows/XBOX; Consolas; Roku; Fire TV; Android TV STV,,False,,"BRF: BRF-17442
+HN: HN009
+Superficies: Home del add-on, Superdestacado",directo,Confluence,CONFLUENCE,IN_SCOPE,"Fuente HN009 (Habilitar home del add on Sony One). EPC consolidado: EPC-21813, EPC-21842. Superficies/canal de cobertura: Home del add-on, Superdestacado. Dispositivos aplicables: WEB, AAF, Android, iOS, tvOS, Windows/XBOX, Consolas, Roku, Fire TV, Android TV STV. Sin split de usuario: la HN no diferencia tipos de usuario.",UNIQUE,,False,"BRF: BRF-17442
+HN: HN009
+Comportamiento: BRF-17442:HN009:habilitar-home-del-add-on-sony-one
+Fuente HN: CONFLUENCE
+Confluence: pageId=6399164496
+Extracto: Habilitar home del add on Sony One
+
+ Historia de negocio
+ Yo como negocio de Claro Uruguay
+ Quiero habilitar home del add on Sony One
+ Para permitir a los usuarios visualizar el contenido incluido en esta oferta.
+
+ Criterios de aceptación
+ Se deben habilitar las siguientes secciones en la home del add on:
+ Header
+
+ Superdestacado
+
+ Categorías para los contenidos del add on
+
+ Carruseles de contenid"
+HN_CONFLUENCE,BRF-17442,EPC-21813; EPC-21842,HN010,Habilitar brand header,"HN010 describe un comportamiento funcional verificable (HN ≠ TC). Los EPC del BRF se conservan como trazabilidad; no multiplican esta fila. Las superficies listadas son dimensión de cobertura, no un comportamiento por superficie.",Home del add-on; Brand header,,OTT,WEB; AAF; Android; iOS; tvOS; Windows/XBOX; Consolas; Roku; Fire TV; Android TV STV,,False,,"BRF: BRF-17442
+HN: HN010
+Superficies: Home del add-on, Brand header
+Figma: figma.com/design/psrFkITfuRUxSgEif2Nha1/Assets-AddOns_SonyOne?node-id=1-1706&t=IPYorOPcwsg2xgI8-1",directo,Confluence,CONFLUENCE,IN_SCOPE,"Fuente HN010 (Habilitar brand header). EPC consolidado: EPC-21813, EPC-21842. Superficies/canal de cobertura: Home del add-on, Brand header. Dispositivos aplicables: WEB, AAF, Android, iOS, tvOS, Windows/XBOX, Consolas, Roku, Fire TV, Android TV STV. Sin split de usuario: la HN no diferencia tipos de usuario.",UNIQUE,,False,"BRF: BRF-17442
+HN: HN010
+Comportamiento: BRF-17442:HN010:habilitar-brand-header
+Fuente HN: CONFLUENCE
+Confluence: pageId=6399164496
+Extracto: Habilitar brand header
+
+ Historia de negocio
+ Yo como negocio de Claro Uruguay
+ Quiero habilitar el header del add on Sony One
+ Para mostrar a los usuarios la imagen comercial en la home del add on.
+
+ Criterios de aceptación
+ Cuando el usuario ingrese a la home del add on, se debe visualizar el brandheader compartido en: https://www.figma.com/design/psrFkITfuRUxSgEif2Nha1/Assets-AddOns_SonyOne?nod"
+HN_CONFLUENCE,BRF-17442,EPC-21813; EPC-21842,HN011,Incluir contenido Superdestacado,"HN011 describe un comportamiento funcional verificable (HN ≠ TC). Los EPC del BRF se conservan como trazabilidad; no multiplican esta fila. Las superficies listadas son dimensión de cobertura, no un comportamiento por superficie.",Superdestacado,,OTT,WEB; AAF; Android; iOS; tvOS; Windows/XBOX; Consolas; Roku; Fire TV; Android TV STV,,False,,"BRF: BRF-17442
+HN: HN011
+Superficies: Superdestacado",directo,Confluence,CONFLUENCE,IN_SCOPE,"Fuente HN011 (Incluir contenido Superdestacado). EPC consolidado: EPC-21813, EPC-21842. Superficies/canal de cobertura: Superdestacado. Dispositivos aplicables: WEB, AAF, Android, iOS, tvOS, Windows/XBOX, Consolas, Roku, Fire TV, Android TV STV. Sin split de usuario: la HN no diferencia tipos de usuario.",UNIQUE,,False,"BRF: BRF-17442
+HN: HN011
+Comportamiento: BRF-17442:HN011:incluir-contenido-superdestacado
+Fuente HN: CONFLUENCE
+Confluence: pageId=6399164496
+Extracto: Incluir contenido Superdestacado
+
+ Historia de negocio
+ Yo como negocio de Claro Uruguay
+ Quiero incluir el contenido Superdestacado del nuevo add on Sony One
+ Para promocionar el contenido específico indicado por el proveedor.
+
+ Criterios de aceptación
+ Se debe habilitar la visualización de contenidos de Sony One en el carrusel de Superdestacados, conservando el comportamiento y funcionalidad act"
+HN_CONFLUENCE,BRF-17442,EPC-21813; EPC-21842,HN012,Habilitar categorías en la home del add on,"HN012 describe un comportamiento funcional verificable (HN ≠ TC). Los EPC del BRF se conservan como trazabilidad; no multiplican esta fila. Las superficies listadas son dimensión de cobertura, no un comportamiento por superficie.",Home del add-on,,OTT,WEB; AAF; Android; iOS; tvOS; Windows/XBOX; Consolas; Roku; Fire TV; Android TV STV,,False,,"BRF: BRF-17442
+HN: HN012
+Superficies: Home del add-on",directo,Confluence,CONFLUENCE,IN_SCOPE,"Fuente HN012 (Habilitar categorías en la home del add on). EPC consolidado: EPC-21813, EPC-21842. Superficies/canal de cobertura: Home del add-on. Dispositivos aplicables: WEB, AAF, Android, iOS, tvOS, Windows/XBOX, Consolas, Roku, Fire TV, Android TV STV. Sin split de usuario: la HN no diferencia tipos de usuario.",UNIQUE,,False,"BRF: BRF-17442
+HN: HN012
+Comportamiento: BRF-17442:HN012:habilitar-categor-as-en-la-home-del-add-on
+Fuente HN: CONFLUENCE
+Confluence: pageId=6399164496
+Extracto: Habilitar categorías en la home del add on
+
+ Historia de negocio
+ Yo como negocio de Claro Uruguay
+ Quiero habilitar botonera de categorías en la home del add on
+ Para permitir al usuario filtrar los contenidos VOD.
+
+ Criterios de aceptación
+ La botonera debe incluir las siguientes categorías en el orden indicado:
+ Acción
+
+ Comedia
+
+ Drama
+
+ Series
+
+ Suspenso
+
+ Familia
+
+ ID"
+HN_CONFLUENCE,BRF-17442,EPC-21813; EPC-21842,HN013,Implementar chapitas,"HN013 describe un comportamiento funcional verificable (HN ≠ TC). Los EPC del BRF se conservan como trazabilidad; no multiplican esta fila. Las superficies listadas son dimensión de cobertura, no un comportamiento por superficie.",Chapita en contenido,,OTT,WEB; AAF; Android; iOS; tvOS; Windows/XBOX; Consolas; Roku; Fire TV; Android TV STV,,False,,"BRF: BRF-17442
+HN: HN013
+Superficies: Chapita en contenido
+Figma: figma.com/design/psrFkITfuRUxSgEif2Nha1/Assets-AddOns_SonyOne?node-id=1-1856&t=IPYorOPcwsg2xgI8-1",directo,Confluence,CONFLUENCE,IN_SCOPE,"Fuente HN013 (Implementar chapitas). EPC consolidado: EPC-21813, EPC-21842. Superficies/canal de cobertura: Chapita en contenido. Dispositivos aplicables: WEB, AAF, Android, iOS, tvOS, Windows/XBOX, Consolas, Roku, Fire TV, Android TV STV. Sin split de usuario: la HN no diferencia tipos de usuario.",UNIQUE,,False,"BRF: BRF-17442
+HN: HN013
+Comportamiento: BRF-17442:HN013:implementar-chapitas
+Fuente HN: CONFLUENCE
+Confluence: pageId=6399164496
+Extracto: Implementar chapitas
+
+ Historia de negocio
+ Yo como negocio de Claro Uruguay
+ Quiero implementar las chapitas en los contenidos
+ Para identificar el contenido correspondiente al add on Sony One.
+
+ Criterios de aceptación
+ Los contenidos correspondientes al add on deben mostrar la chapita compartida en: https://www.figma.com/design/psrFkITfuRUxSgEif2Nha1/Assets-AddOns_SonyOne?node-id=1-1856&t=IPYor"
+HN_CONFLUENCE,BRF-17442,EPC-21813; EPC-21842,HN014,Implementar el logo en correo de bienvenida,"HN014 describe un comportamiento funcional verificable (HN ≠ TC). Los EPC del BRF se conservan como trazabilidad; no multiplican esta fila. Las superficies listadas son dimensión de cobertura, no un comportamiento por superficie. Canal Email: no es dispositivo OTT/IPTV.",Correo de bienvenida,Email,,,Registrado (tras alta),False,,"BRF: BRF-17442
+HN: HN014
+Superficies: Correo de bienvenida
+Canal: Email",directo,Confluence,CONFLUENCE,IN_SCOPE,"Fuente HN014 (Implementar el logo en correo de bienvenida). EPC consolidado: EPC-21813, EPC-21842. Superficies/canal de cobertura: Correo de bienvenida. Canal: Email (no se trata como dispositivo). Sin dispositivo OTT/IPTV aplicable. Usuarios relevantes (solo si cambia el comportamiento): Registrado (tras alta).",UNIQUE,,False,"BRF: BRF-17442
+HN: HN014
+Comportamiento: BRF-17442:HN014:implementar-el-logo-en-correo-de-bienvenida
+Fuente HN: CONFLUENCE
+Confluence: pageId=6399164496
+Extracto: Implementar el logo en correo de bienvenida
+
+ Historia de negocio
+ Yo como negocio de Claro Uruguay
+ Quiero implementar el logotipo del add on Sony One en el correo de bienvenida
+ Para mostrar al usuario todas las ofertas disponibles al registrarse en Claro video.
+
+ Criterios de aceptación
+ En el correo de bienvenida se debe visualizar el logo compartido en :"
+ALTA_COMPLEJA,BRF-16018,EPC-20553; EPC-20875,HN001,Integrar add on Crunchyroll,HN001 describe un comportamiento funcional verificable (HN ≠ TC). Los EPC del BRF se conservan como trazabilidad; no multiplican esta fila.,,,OTT,WEB; AAF; Android; iOS; tvOS; Windows/XBOX; Consolas; Roku; Fire TV; Android TV STV,,False,,"BRF: BRF-16018
+HN: HN001
+Valores declarados: $ 246.00; $ 189.23",directo,Confluence,CONFLUENCE,IN_SCOPE,"Fuente HN001 (Integrar add on Crunchyroll). EPC consolidado: EPC-20553, EPC-20875. Dispositivos aplicables: WEB, AAF, Android, iOS, tvOS, Windows/XBOX, Consolas, Roku, Fire TV, Android TV STV. Sin split de usuario: la HN no diferencia tipos de usuario.",UNIQUE,,False,"BRF: BRF-16018
+HN: HN001
+Comportamiento: BRF-16018:HN001:integrar-add-on-crunchyroll
+Fuente HN: CONFLUENCE
+Confluence: pageId=5319950351
+Extracto: Integrar add on Crunchyroll
+
+ Historia de negocio
+ Yo como negocio de Claro Dominicana
+ Quiero integrar en la plataforma el add on Crunchyroll
+ Para ampliar la oferta actual de contenido.
+
+ Criterios de aceptación
+ Se debe configurar el nuevo add on Crunchyroll en de la siguiente manera:
+ Nombre del add on: Crunchyroll
+
+ Precio con IVA: RD$ 246.00
+
+ Precio sin IVA: RD$ 189.23
+
+ VAT: % 30
+
+ Tier RO"
+ALTA_COMPLEJA,BRF-16018,EPC-20553; EPC-20875,HN002,Iniciar el flujo de contratación,"HN002 describe un comportamiento funcional verificable (HN ≠ TC). Los EPC del BRF se conservan como trazabilidad; no multiplican esta fila. Las superficies listadas son dimensión de cobertura, no un comportamiento por superficie. Transaccional porque el título/HN declara inicio o flujo de contratación/pago.",Landing Comercial; Plan Selector; Mi cuenta/Suscripción; vCard,,OTT,WEB; AAF; Android; iOS; tvOS; Windows/XBOX; Consolas; Roku; Fire TV; Android TV STV,,True,,"BRF: BRF-16018
+HN: HN002
+Superficies: Landing Comercial, Plan Selector, Mi cuenta/Suscripción, vCard",directo,Confluence,CONFLUENCE,IN_SCOPE,"Fuente HN002 (Iniciar el flujo de contratación). EPC consolidado: EPC-20553, EPC-20875. Superficies/canal de cobertura: Landing Comercial, Plan Selector, Mi cuenta/Suscripción, vCard. Dispositivos aplicables: WEB, AAF, Android, iOS, tvOS, Windows/XBOX, Consolas, Roku, Fire TV, Android TV STV. Sin split de usuario: la HN no diferencia tipos de usuario. Transaccional sin MDP explícito en la HN: no se inventa catálogo de pago.",UNIQUE,,False,"BRF: BRF-16018
+HN: HN002
+Comportamiento: BRF-16018:HN002:iniciar-el-flujo-de-contrataci-n
+Fuente HN: CONFLUENCE
+Confluence: pageId=5319950351
+Extracto: Iniciar el flujo de contratación
+
+ Historia de negocio
+ Yo como negocio de Claro Dominicana
+ Quiero habilitar el inicio del flujo de contratación Norte-Sur al add on Crunchyroll
+ Para permitir al usuario realizar la contratación desde la plataforma.
+
+ Criterios de aceptación
+ Se debe iniciar el flujo de contratación del add on desde las siguientes secciones de la plataforma:
+ Plan selector
+
+ Landi"
+ALTA_COMPLEJA,BRF-16018,EPC-20553; EPC-20875,HN003,Cancelación,HN003 describe un comportamiento funcional verificable (HN ≠ TC). Los EPC del BRF se conservan como trazabilidad; no multiplican esta fila.,,,OTT,WEB; AAF; Android; iOS; tvOS; Windows/XBOX; Consolas; Roku; Fire TV; Android TV STV,,False,,"BRF: BRF-16018
+HN: HN003",directo,Confluence,CONFLUENCE,IN_SCOPE,"Fuente HN003 (Cancelación). EPC consolidado: EPC-20553, EPC-20875. Dispositivos aplicables: WEB, AAF, Android, iOS, tvOS, Windows/XBOX, Consolas, Roku, Fire TV, Android TV STV. Sin split de usuario: la HN no diferencia tipos de usuario.",UNIQUE,,False,"BRF: BRF-16018
+HN: HN003
+Comportamiento: BRF-16018:HN003:cancelaci-n
+Fuente HN: CONFLUENCE
+Confluence: pageId=5319950351
+Extracto: Cancelación
+
+ Historia de negocio
+ Yo como negocio de Claro Dominicana
+ Quiero permitir a los usuarios cancelar la suscripción al add on Crunchyroll desde la plataforma
+ Para evitar que una vez finalizado el periodo contratado se realice el cobro mensual.
+
+ Criterios de aceptación
+ Se debe permitir cancelar la suscripción al add on Crunchyroll en cualquier momento desde la plataforma.
+
+ Una vez he"
+ALTA_COMPLEJA,BRF-16018,EPC-20553; EPC-20875,HN004,Implementar logos del add on Crunchyroll,"HN004 describe un comportamiento funcional verificable (HN ≠ TC). Los EPC del BRF se conservan como trazabilidad; no multiplican esta fila. Las superficies listadas son dimensión de cobertura, no un comportamiento por superficie.",Landing Comercial; Plan Selector; Checkout; Ticket,,OTT,WEB; AAF; Android; iOS; tvOS; Windows/XBOX; Consolas; Roku; Fire TV; Android TV STV,,False,,"BRF: BRF-16018
+HN: HN004
+Superficies: Landing Comercial, Plan Selector, Checkout, Ticket",directo,Confluence,CONFLUENCE,IN_SCOPE,"Fuente HN004 (Implementar logos del add on Crunchyroll). EPC consolidado: EPC-20553, EPC-20875. Superficies/canal de cobertura: Landing Comercial, Plan Selector, Checkout, Ticket. Dispositivos aplicables: WEB, AAF, Android, iOS, tvOS, Windows/XBOX, Consolas, Roku, Fire TV, Android TV STV. Sin split de usuario: la HN no diferencia tipos de usuario.",UNIQUE,,False,"BRF: BRF-16018
+HN: HN004
+Comportamiento: BRF-16018:HN004:implementar-logos-del-add-on-crunchyroll
+Fuente HN: CONFLUENCE
+Confluence: pageId=5319950351
+Extracto: Implementar logos del add on Crunchyroll
+
+ Historia de negocio
+ Yo como negocio de Claro Dominicana
+ Quiero implementar los logos del add on Crunchyroll en todas las secciones de la plataforma
+ Para identificar el add on entre las ofertas comerciales que tiene la operación.
+
+ Criterios de aceptación
+ Se deben implementar los logos del add on Crunchyroll en las siguientes secciones de la plataforma"
+ALTA_COMPLEJA,BRF-16018,EPC-20553; EPC-20875,HN005,Implementar tarjeta en Plan Selector,"HN005 describe un comportamiento funcional verificable (HN ≠ TC). Los EPC del BRF se conservan como trazabilidad; no multiplican esta fila. Las superficies listadas son dimensión de cobertura, no un comportamiento por superficie.",Plan Selector,,OTT,WEB; AAF; Android; iOS; tvOS; Windows/XBOX; Consolas; Roku; Fire TV; Android TV STV,,False,,"BRF: BRF-16018
+HN: HN005
+Superficies: Plan Selector",directo,Confluence,CONFLUENCE,IN_SCOPE,"Fuente HN005 (Implementar tarjeta en Plan Selector). EPC consolidado: EPC-20553, EPC-20875. Superficies/canal de cobertura: Plan Selector. Dispositivos aplicables: WEB, AAF, Android, iOS, tvOS, Windows/XBOX, Consolas, Roku, Fire TV, Android TV STV. Sin split de usuario: la HN no diferencia tipos de usuario.",UNIQUE,,False,"BRF: BRF-16018
+HN: HN005
+Comportamiento: BRF-16018:HN005:implementar-tarjeta-en-plan-selector
+Fuente HN: CONFLUENCE
+Confluence: pageId=5319950351
+Extracto: Implementar tarjeta en Plan Selector
+
+ Historia de negocio
+ Yo como negocio de Claro Dominicana
+ Quiero implementar la tarjeta del add on Crunchyroll en el Plan Selector
+ Para mostrar al usuario el add on como una oferta comercial disponible para contratación.
+
+ Criterios de aceptación
+ Se debe implementar la tarjeta del add on en la posición 7 del Plan Selector compartida en los siguientes insumo"
+ALTA_COMPLEJA,BRF-16018,EPC-20553; EPC-20875,HN006,Implementar Superdestacado en Landing Comercial,"HN006 describe un comportamiento funcional verificable (HN ≠ TC). Los EPC del BRF se conservan como trazabilidad; no multiplican esta fila. Las superficies listadas son dimensión de cobertura, no un comportamiento por superficie.",Landing Comercial; Superdestacado,,OTT,WEB; AAF; Android; iOS; tvOS; Windows/XBOX; Consolas; Roku; Fire TV; Android TV STV,,False,,"BRF: BRF-16018
+HN: HN006
+Superficies: Landing Comercial, Superdestacado",directo,Confluence,CONFLUENCE,IN_SCOPE,"Fuente HN006 (Implementar Superdestacado en Landing Comercial). EPC consolidado: EPC-20553, EPC-20875. Superficies/canal de cobertura: Landing Comercial, Superdestacado. Dispositivos aplicables: WEB, AAF, Android, iOS, tvOS, Windows/XBOX, Consolas, Roku, Fire TV, Android TV STV. Sin split de usuario: la HN no diferencia tipos de usuario.",UNIQUE,,False,"BRF: BRF-16018
+HN: HN006
+Comportamiento: BRF-16018:HN006:implementar-superdestacado-en-landing-comercial
+Fuente HN: CONFLUENCE
+Confluence: pageId=5319950351
+Extracto: Implementar Superdestacado en Landing Comercial
+
+ Historia de negocio
+ Yo como negocio de Claro Dominicana
+ Quiero implementar la imagen del Superdestacado del add on Crunchyroll en la Landing Comercial
+ Para promocionar los contenidos indicados por el proveedor.
+
+ Criterios de aceptación
+ Se debe visualizar la imagen del Superdestacado en la Landing Comercial del add on Crunchyroll, proporcionada"
+ALTA_COMPLEJA,BRF-16018,EPC-20553; EPC-20875,HN007,Integrar imágenes secundarias en Landing Comercial,"HN007 describe un comportamiento funcional verificable (HN ≠ TC). Los EPC del BRF se conservan como trazabilidad; no multiplican esta fila. Las superficies listadas son dimensión de cobertura, no un comportamiento por superficie.",Landing Comercial,,OTT,WEB; AAF; Android; iOS; tvOS; Windows/XBOX; Consolas; Roku; Fire TV; Android TV STV,,False,,"BRF: BRF-16018
+HN: HN007
+Superficies: Landing Comercial",directo,Confluence,CONFLUENCE,IN_SCOPE,"Fuente HN007 (Integrar imágenes secundarias en Landing Comercial). EPC consolidado: EPC-20553, EPC-20875. Superficies/canal de cobertura: Landing Comercial. Dispositivos aplicables: WEB, AAF, Android, iOS, tvOS, Windows/XBOX, Consolas, Roku, Fire TV, Android TV STV. Sin split de usuario: la HN no diferencia tipos de usuario.",UNIQUE,,False,"BRF: BRF-16018
+HN: HN007
+Comportamiento: BRF-16018:HN007:integrar-im-genes-secundarias-en-landing-comercial
+Fuente HN: CONFLUENCE
+Confluence: pageId=5319950351
+Extracto: Integrar imágenes secundarias en Landing Comercial
+
+ Historia de negocio
+ Yo como negocio de Claro Dominicana
+ Quiero integrar las imágenes secundarias en la Landing Comercial
+ Para promocionar el add on con los contenidos indicados por el proveedor.
+
+ Criterios de aceptación
+ Se debe actualizar las imágenes secundarias de acuerdo a la posición indicada:
+ Horizontal (1): Attack on Titan
+
+ Horizont"
+ALTA_COMPLEJA,BRF-16018,EPC-20553; EPC-20875,HN008,Implementar imagen de contenido en la pantalla Checkout del add on Crunchyroll,"HN008 describe un comportamiento funcional verificable (HN ≠ TC). Los EPC del BRF se conservan como trazabilidad; no multiplican esta fila. Las superficies listadas son dimensión de cobertura, no un comportamiento por superficie.",Checkout,,OTT,tvOS; Android TV STV; Roku; Fire TV,,False,,"BRF: BRF-16018
+HN: HN008
+Superficies: Checkout",directo,Confluence,CONFLUENCE,IN_SCOPE,"Fuente HN008 (Implementar imagen de contenido en la pantalla Checkout del add on Crunchyroll). EPC consolidado: EPC-20553, EPC-20875. Superficies/canal de cobertura: Checkout. Dispositivos aplicables: tvOS, Android TV STV, Roku, Fire TV. Sin split de usuario: la HN no diferencia tipos de usuario.",UNIQUE,,False,"BRF: BRF-16018
+HN: HN008
+Comportamiento: BRF-16018:HN008:implementar-imagen-de-contenido-en-la-pantalla-checkout-del-
+Fuente HN: CONFLUENCE
+Confluence: pageId=5319950351
+Extracto: Implementar imagen de contenido en la pantalla Checkout del add on Crunchyroll
+
+ Historia de Negocio
+ Yo como negocio de Claro Dominicana
+ Quiero implementar la imagen del contenido en la pantalla Checkout del add on Crunchyroll
+ Para mostrar al usuario la imagen correspondiente al suscribirse.
+
+ Criterios de aceptación
+ En la pantalla Checkout del add on Crunchyroll se debe visualizar la imagen d"
+ALTA_COMPLEJA,BRF-16018,EPC-20553; EPC-20875,HN009,Implementar imagen de contenido en la pantalla Ticket del add on Crunchyroll,"HN009 describe un comportamiento funcional verificable (HN ≠ TC). Los EPC del BRF se conservan como trazabilidad; no multiplican esta fila. Las superficies listadas son dimensión de cobertura, no un comportamiento por superficie.",Ticket,,OTT,tvOS; Android TV STV; Roku; Fire TV,,False,,"BRF: BRF-16018
+HN: HN009
+Superficies: Ticket",directo,Confluence,CONFLUENCE,IN_SCOPE,"Fuente HN009 (Implementar imagen de contenido en la pantalla Ticket del add on Crunchyroll). EPC consolidado: EPC-20553, EPC-20875. Superficies/canal de cobertura: Ticket. Dispositivos aplicables: tvOS, Android TV STV, Roku, Fire TV. Sin split de usuario: la HN no diferencia tipos de usuario.",UNIQUE,,False,"BRF: BRF-16018
+HN: HN009
+Comportamiento: BRF-16018:HN009:implementar-imagen-de-contenido-en-la-pantalla-ticket-del-ad
+Fuente HN: CONFLUENCE
+Confluence: pageId=5319950351
+Extracto: Implementar imagen de contenido en la pantalla Ticket del add on Crunchyroll
+
+ Historia de Negocio
+ Yo como negocio de Claro video
+ Quiero implementar la imagen del contenido en la pantalla Ticket del add on Crunchyroll
+ Para mostrar al usuario la imagen correspondiente al suscribirse.
+
+ Criterios de aceptación
+ En la pantalla Ticket del add on Crunchyroll se debe visualizar la imagen del contenid"
+ALTA_COMPLEJA,BRF-16018,EPC-20553; EPC-20875,HN010,Implementar imagen en Carrusel Premium,"HN010 describe un comportamiento funcional verificable (HN ≠ TC). Los EPC del BRF se conservan como trazabilidad; no multiplican esta fila. Las superficies listadas son dimensión de cobertura, no un comportamiento por superficie.",Carrusel Premium; Home del add-on,,OTT,WEB; AAF; Android; iOS; tvOS; Windows/XBOX; Consolas; Roku; Fire TV; Android TV STV,,False,,"BRF: BRF-16018
+HN: HN010
+Superficies: Carrusel Premium, Home del add-on",directo,Confluence,CONFLUENCE,IN_SCOPE,"Fuente HN010 (Implementar imagen en Carrusel Premium). EPC consolidado: EPC-20553, EPC-20875. Superficies/canal de cobertura: Carrusel Premium, Home del add-on. Dispositivos aplicables: WEB, AAF, Android, iOS, tvOS, Windows/XBOX, Consolas, Roku, Fire TV, Android TV STV. Sin split de usuario: la HN no diferencia tipos de usuario.",UNIQUE,,False,"BRF: BRF-16018
+HN: HN010
+Comportamiento: BRF-16018:HN010:implementar-imagen-en-carrusel-premium
+Fuente HN: CONFLUENCE
+Confluence: pageId=5319950351
+Extracto: Implementar imagen en Carrusel Premium
+
+ Historia de negocio
+ Yo como negocio de Claro Dominicana
+ Quiero implementar la imagen comercial del add on Crunchyroll en el carrusel de Canales Premium
+ Para dirigir al usuario a la home del add on.
+
+ Criterios de aceptación
+ Se debe implementar la imagen en el carrusel premium en la posición 7 de acuerdo a los insumos compartidos en la HN021.
+
+ Cuando el"
+ALTA_COMPLEJA,BRF-16018,EPC-20553; EPC-20875,HN011,Habilitar sub nodo en el nodo Canales,"HN011 describe un comportamiento funcional verificable (HN ≠ TC). Los EPC del BRF se conservan como trazabilidad; no multiplican esta fila. Las superficies listadas son dimensión de cobertura, no un comportamiento por superficie.",Home del add-on,,OTT,WEB; AAF; Android; iOS; tvOS; Windows/XBOX; Consolas; Roku; Fire TV; Android TV STV,,False,,"BRF: BRF-16018
+HN: HN011
+Superficies: Home del add-on",directo,Confluence,CONFLUENCE,IN_SCOPE,"Fuente HN011 (Habilitar sub nodo en el nodo Canales). EPC consolidado: EPC-20553, EPC-20875. Superficies/canal de cobertura: Home del add-on. Dispositivos aplicables: WEB, AAF, Android, iOS, tvOS, Windows/XBOX, Consolas, Roku, Fire TV, Android TV STV. Sin split de usuario: la HN no diferencia tipos de usuario.",UNIQUE,,False,"BRF: BRF-16018
+HN: HN011
+Comportamiento: BRF-16018:HN011:habilitar-sub-nodo-en-el-nodo-canales
+Fuente HN: CONFLUENCE
+Confluence: pageId=5319950351
+Extracto: Habilitar sub nodo en el nodo Canales
+
+ Historia de negocio
+ Yo como negocio de Claro Dominicana
+ Quiero habilitar el sub nodo Crunchyroll en el nodo Canales
+ Para que el usuario pueda acceder fácilmente a los contenidos del proveedor desde cualquier sección de la plataforma.
+
+ Criterios de aceptación
+ Se debe habilitar el sub nodo del proveedor en el menú de segundo nivel del nodo Canales, donde:"
+ALTA_COMPLEJA,BRF-16018,EPC-20553; EPC-20875,HN012,Implementar imagen en nodo en nodo Canales/ Premium,"HN012 describe un comportamiento funcional verificable (HN ≠ TC). Los EPC del BRF se conservan como trazabilidad; no multiplican esta fila. Las superficies listadas son dimensión de cobertura, no un comportamiento por superficie.",Home del add-on,,OTT,WEB; AAF; Android; iOS; tvOS; Windows/XBOX; Consolas; Roku; Fire TV; Android TV STV,,False,,"BRF: BRF-16018
+HN: HN012
+Superficies: Home del add-on",directo,Confluence,CONFLUENCE,IN_SCOPE,"Fuente HN012 (Implementar imagen en nodo en nodo Canales/ Premium). EPC consolidado: EPC-20553, EPC-20875. Superficies/canal de cobertura: Home del add-on. Dispositivos aplicables: WEB, AAF, Android, iOS, tvOS, Windows/XBOX, Consolas, Roku, Fire TV, Android TV STV. Sin split de usuario: la HN no diferencia tipos de usuario.",UNIQUE,,False,"BRF: BRF-16018
+HN: HN012
+Comportamiento: BRF-16018:HN012:implementar-imagen-en-nodo-en-nodo-canales-premium
+Fuente HN: CONFLUENCE
+Confluence: pageId=5319950351
+Extracto: Implementar imagen en nodo en nodo Canales/ Premium
+
+ Historia de negocio
+ Yo como negocio de Claro Dominicana
+ Quiero implementar la imagen del add on Crunchyroll en el nodo Canales/ Premium
+ Para dirigir al usuario a la home del add on desde este nodo.
+
+ Criterios de aceptación
+ Se debe implementar la imagen de acuerdo a los insumos compartidos en la HN021.
+
+ Cuando el usuario seleccione la imag"
+ALTA_COMPLEJA,BRF-16018,EPC-20553; EPC-20875,HN013,Habilitar la pantalla home del add on Crunchyroll,"HN013 describe un comportamiento funcional verificable (HN ≠ TC). Los EPC del BRF se conservan como trazabilidad; no multiplican esta fila. Las superficies listadas son dimensión de cobertura, no un comportamiento por superficie.",Home del add-on; Superdestacado,,OTT,WEB; AAF; Android; iOS; tvOS; Windows/XBOX; Consolas; Roku; Fire TV; Android TV STV,,False,,"BRF: BRF-16018
+HN: HN013
+Superficies: Home del add-on, Superdestacado",directo,Confluence,CONFLUENCE,IN_SCOPE,"Fuente HN013 (Habilitar la pantalla home del add on Crunchyroll). EPC consolidado: EPC-20553, EPC-20875. Superficies/canal de cobertura: Home del add-on, Superdestacado. Dispositivos aplicables: WEB, AAF, Android, iOS, tvOS, Windows/XBOX, Consolas, Roku, Fire TV, Android TV STV. Sin split de usuario: la HN no diferencia tipos de usuario.",UNIQUE,,False,"BRF: BRF-16018
+HN: HN013
+Comportamiento: BRF-16018:HN013:habilitar-la-pantalla-home-del-add-on-crunchyroll
+Fuente HN: CONFLUENCE
+Confluence: pageId=5319950351
+Extracto: Habilitar la pantalla home del add on Crunchyroll
+
+ Historia de negocio
+ Yo como negocio de Claro Dominicana
+ Quiero habilitar la pantalla home del add on Crunchyroll
+ Para permitir a los usuarios visualizar el contenido exclusivo ofrecido por el add on.
+
+ Criterios de aceptación
+ Se debe habilitar las siguientes secciones en la home del add on:
+ Header
+
+ Superdestacado
+
+ Categorías para los conte"
+ALTA_COMPLEJA,BRF-16018,EPC-20553; EPC-20875,HN014,Habilitar brand header,"HN014 describe un comportamiento funcional verificable (HN ≠ TC). Los EPC del BRF se conservan como trazabilidad; no multiplican esta fila. Las superficies listadas son dimensión de cobertura, no un comportamiento por superficie.",Home del add-on; Brand header,,OTT,WEB; AAF; Android; iOS; tvOS; Windows/XBOX; Consolas; Roku; Fire TV; Android TV STV,,False,,"BRF: BRF-16018
+HN: HN014
+Superficies: Home del add-on, Brand header",directo,Confluence,CONFLUENCE,IN_SCOPE,"Fuente HN014 (Habilitar brand header). EPC consolidado: EPC-20553, EPC-20875. Superficies/canal de cobertura: Home del add-on, Brand header. Dispositivos aplicables: WEB, AAF, Android, iOS, tvOS, Windows/XBOX, Consolas, Roku, Fire TV, Android TV STV. Sin split de usuario: la HN no diferencia tipos de usuario.",UNIQUE,,False,"BRF: BRF-16018
+HN: HN014
+Comportamiento: BRF-16018:HN014:habilitar-brand-header
+Fuente HN: CONFLUENCE
+Confluence: pageId=5319950351
+Extracto: Habilitar brand header
+
+ Historia de negocio
+ Yo como negocio de Claro Dominicana
+ Quiero habilitar el header del add on Crunchyroll
+ Para mostrar a los usuarios la imagen comercial en la home del add on.
+
+ Criterios de aceptación
+ Aplica para dispositivos con rediseño.
+
+ Se debe habilitar el header de acuerdo a los insumos compartidos en la HN021.
+
+ ID"
+ALTA_COMPLEJA,BRF-16018,EPC-20553; EPC-20875,HN015,Incluir contenido Superdestacado,"HN015 describe un comportamiento funcional verificable (HN ≠ TC). Los EPC del BRF se conservan como trazabilidad; no multiplican esta fila. Las superficies listadas son dimensión de cobertura, no un comportamiento por superficie.",Home del add-on; Superdestacado,,OTT,WEB; AAF; Android; iOS; tvOS; Windows/XBOX; Consolas; Roku; Fire TV; Android TV STV,,False,,"BRF: BRF-16018
+HN: HN015
+Superficies: Home del add-on, Superdestacado",directo,Confluence,CONFLUENCE,IN_SCOPE,"Fuente HN015 (Incluir contenido Superdestacado). EPC consolidado: EPC-20553, EPC-20875. Superficies/canal de cobertura: Home del add-on, Superdestacado. Dispositivos aplicables: WEB, AAF, Android, iOS, tvOS, Windows/XBOX, Consolas, Roku, Fire TV, Android TV STV. Sin split de usuario: la HN no diferencia tipos de usuario.",UNIQUE,,False,"BRF: BRF-16018
+HN: HN015
+Comportamiento: BRF-16018:HN015:incluir-contenido-superdestacado
+Fuente HN: CONFLUENCE
+Confluence: pageId=5319950351
+Extracto: Incluir contenido Superdestacado
+
+ Historia de negocio
+ Yo como negocio de Claro Dominicana
+ Quiero incluir el contenido Superdestacado del nuevo add on Crunchyroll
+ Para promocionar el contenido específico indicado por el proveedor.
+
+ Criterios de aceptación
+ Se debe visualizar en el carrusel de Superdestacados de la home de inicio, la imagen destacada de Crunchyroll .
+
+ Se debe visualizar en el "
+ALTA_COMPLEJA,BRF-16018,EPC-20553; EPC-20875,HN016,Habilitar botonera de categorías en la home del add on,"HN016 describe un comportamiento funcional verificable (HN ≠ TC). Los EPC del BRF se conservan como trazabilidad; no multiplican esta fila. Las superficies listadas son dimensión de cobertura, no un comportamiento por superficie.",Home del add-on,,OTT,WEB; AAF; Android; iOS; tvOS; Windows/XBOX; Consolas; Roku; Fire TV; Android TV STV,,False,,"BRF: BRF-16018
+HN: HN016
+Superficies: Home del add-on",directo,Confluence,CONFLUENCE,IN_SCOPE,"Fuente HN016 (Habilitar botonera de categorías en la home del add on). EPC consolidado: EPC-20553, EPC-20875. Superficies/canal de cobertura: Home del add-on. Dispositivos aplicables: WEB, AAF, Android, iOS, tvOS, Windows/XBOX, Consolas, Roku, Fire TV, Android TV STV. Sin split de usuario: la HN no diferencia tipos de usuario.",UNIQUE,,False,"BRF: BRF-16018
+HN: HN016
+Comportamiento: BRF-16018:HN016:habilitar-botonera-de-categor-as-en-la-home-del-add-on
+Fuente HN: CONFLUENCE
+Confluence: pageId=5319950351
+Extracto: Habilitar botonera de categorías en la home del add on
+
+ Historia de negocio
+ Yo como negocio de Claro Dominicana
+ Quiero habilitar botonera de categorías en la home del add on
+ Para permitir al usuario filtrar los contenidos VOD.
+
+ Criterios de aceptación
+ Aplica para los dispositivos con rediseño.
+
+ Se deben habilitar en la home del add on Crunchyroll la botonera de las categorías en el orden in"
+ALTA_COMPLEJA,BRF-16018,EPC-20553; EPC-20875,HN017,Implementar imágenes de nivel,"HN017 describe un comportamiento funcional verificable (HN ≠ TC). Los EPC del BRF se conservan como trazabilidad; no multiplican esta fila. Las superficies listadas son dimensión de cobertura, no un comportamiento por superficie.",Home del add-on,,OTT,WEB; AAF; Android; iOS; tvOS; Windows/XBOX; Consolas; Roku; Fire TV; Android TV STV,,False,,"BRF: BRF-16018
+HN: HN017
+Superficies: Home del add-on",directo,Confluence,CONFLUENCE,IN_SCOPE,"Fuente HN017 (Implementar imágenes de nivel). EPC consolidado: EPC-20553, EPC-20875. Superficies/canal de cobertura: Home del add-on. Dispositivos aplicables: WEB, AAF, Android, iOS, tvOS, Windows/XBOX, Consolas, Roku, Fire TV, Android TV STV. Sin split de usuario: la HN no diferencia tipos de usuario.",UNIQUE,,False,"BRF: BRF-16018
+HN: HN017
+Comportamiento: BRF-16018:HN017:implementar-im-genes-de-nivel
+Fuente HN: CONFLUENCE
+Confluence: pageId=5319950351
+Extracto: Implementar imágenes de nivel
+
+ Historia de negocio
+ Yo como negocio de Claro Dominicana
+ Quiero implementar las imágenes de nivel del add on Crunchyroll
+ Para permitir al usuario filtrar los contenidos VOD.
+
+ Criterios de aceptación
+ Se debe habilitar en dispositivos Web y tvOS en la imagen de nivel del add on Crunchyroll .
+
+ Se deben visualizar en dispositivos Web las imágenes de nivel de catego"
+ALTA_COMPLEJA,BRF-16018,EPC-20553; EPC-20875,HN018,Implementar chapitas,"HN018 describe un comportamiento funcional verificable (HN ≠ TC). Los EPC del BRF se conservan como trazabilidad; no multiplican esta fila. Las superficies listadas son dimensión de cobertura, no un comportamiento por superficie.",Chapita en contenido,,OTT,WEB; AAF; Android; iOS; tvOS; Windows/XBOX; Consolas; Roku; Fire TV; Android TV STV,,False,,"BRF: BRF-16018
+HN: HN018
+Superficies: Chapita en contenido",directo,Confluence,CONFLUENCE,IN_SCOPE,"Fuente HN018 (Implementar chapitas). EPC consolidado: EPC-20553, EPC-20875. Superficies/canal de cobertura: Chapita en contenido. Dispositivos aplicables: WEB, AAF, Android, iOS, tvOS, Windows/XBOX, Consolas, Roku, Fire TV, Android TV STV. Sin split de usuario: la HN no diferencia tipos de usuario.",UNIQUE,,False,"BRF: BRF-16018
+HN: HN018
+Comportamiento: BRF-16018:HN018:implementar-chapitas
+Fuente HN: CONFLUENCE
+Confluence: pageId=5319950351
+Extracto: Implementar chapitas
+
+ Historia de negocio
+ Yo como negocio de Claro Dominicana
+ Quiero implementar las chapitas en los contenidos del add on Crunchyroll
+ Para identificar el contenido correspondiente al add on.
+
+ Criterios de aceptación
+ Se deben implementar las chapitas del add on de acuerdo a los insumos compartidos en la HN021.
+
+ ID"
+ALTA_COMPLEJA,BRF-16018,EPC-20553; EPC-20875,HN019,Matriz de comunicación,"HN019 describe un comportamiento funcional verificable (HN ≠ TC). Los EPC del BRF se conservan como trazabilidad; no multiplican esta fila. Las superficies listadas son dimensión de cobertura, no un comportamiento por superficie. Canal Email: no es dispositivo OTT/IPTV.",Correo de bienvenida,Email,,,Registrado (tras alta),False,,"BRF: BRF-16018
+HN: HN019
+Superficies: Correo de bienvenida
+Canal: Email",directo,Confluence,CONFLUENCE,IN_SCOPE,"Fuente HN019 (Matriz de comunicación). EPC consolidado: EPC-20553, EPC-20875. Superficies/canal de cobertura: Correo de bienvenida. Canal: Email (no se trata como dispositivo). Sin dispositivo OTT/IPTV aplicable. Usuarios relevantes (solo si cambia el comportamiento): Registrado (tras alta).",OVERLAP,BRF-16018:HN020:implementar-el-logotipo-en-el-correo-de-bienvenida-a-claro-v,False,"BRF: BRF-16018
+HN: HN019
+Comportamiento: BRF-16018:HN019:matriz-de-comunicaci-n
+Fuente HN: CONFLUENCE
+Confluence: pageId=5319950351
+Extracto: Matriz de comunicación
+
+ Historia de negocio
+ Yo como negocio de Claro Dominicana
+ Quiero implementar la comunicación correspondiente al add on Crunchyroll
+ Para su visualización en las diferentes pantallas de la plataforma.
+
+ Criterios de aceptación
+ Se deben implementar los textos compartidos en la matriz de comunicación adjunta , de acuerdo a las pestañas:
+ Contratación de Norte
+
+ Preguntas Fre"
+ALTA_COMPLEJA,BRF-16018,EPC-20553; EPC-20875,HN020,Implementar el logotipo en el correo de bienvenida a Claro video,"HN020 describe un comportamiento funcional verificable (HN ≠ TC). Los EPC del BRF se conservan como trazabilidad; no multiplican esta fila. Las superficies listadas son dimensión de cobertura, no un comportamiento por superficie. Canal Email: no es dispositivo OTT/IPTV.",Correo de bienvenida,Email,,,Registrado (tras alta),False,,"BRF: BRF-16018
+HN: HN020
+Superficies: Correo de bienvenida
+Canal: Email",directo,Confluence,CONFLUENCE,IN_SCOPE,"Fuente HN020 (Implementar el logotipo en el correo de bienvenida a Claro video). EPC consolidado: EPC-20553, EPC-20875. Superficies/canal de cobertura: Correo de bienvenida. Canal: Email (no se trata como dispositivo). Sin dispositivo OTT/IPTV aplicable. Usuarios relevantes (solo si cambia el comportamiento): Registrado (tras alta).",OVERLAP,BRF-16018:HN019:matriz-de-comunicaci-n,False,"BRF: BRF-16018
+HN: HN020
+Comportamiento: BRF-16018:HN020:implementar-el-logotipo-en-el-correo-de-bienvenida-a-claro-v
+Fuente HN: CONFLUENCE
+Confluence: pageId=5319950351
+Extracto: Implementar el logotipo en el correo de bienvenida a Claro video
+
+ Historia de negocio
+ Yo como negocio de Claro Dominicana
+ Quiero implementar el logotipo del add on Crunchyroll en los correos de bienvenida
+ Para mostrar al usuario la nueva oferta comercial al registrarse en Claro video.
+
+ Criterios de aceptación
+ Se debe implementar con el siguiente logotipo los correos de bienvenida en donde se"
+ALTA_COMPLEJA,BRF-16018,EPC-20553; EPC-20875,HN021,Compartir insumos de diseño del add on Crunchyroll,"HN021 describe un comportamiento funcional verificable (HN ≠ TC). Los EPC del BRF se conservan como trazabilidad; no multiplican esta fila. Las superficies listadas son dimensión de cobertura, no un comportamiento por superficie. QC_REVIEW: Insumo de diseño/dependencia: no hay criterio funcional user-facing suficiente.",Carrusel Premium; Plan Selector; Chapita en contenido,,OTT,,,False,,"BRF: BRF-16018
+HN: HN021
+Superficies: Carrusel Premium, Plan Selector, Chapita en contenido
+Figma: figma.com/design/6Zm2O3tqzck2KabsHyZi5X/Assets-AddOns_CrunchyRoll?node-id=0-1&t=dSXKwSXDgB0cSVOJ-1; figma.com/design/6Zm2O3tqzck2KabsHyZi5X/Assets-AddOns_CrunchyRoll?node-id=1-1796&t=dSXKwSXDgB0cSVOJ-1; figma.com/design/6Zm2O3tqzck2KabsHyZi5X/Assets-AddOns_CrunchyRoll?node-id=1-1335&t=dSXKwSXDgB0cSVOJ-1",QC_REVIEW,Confluence,CONFLUENCE,OUT_OF_SCOPE,"Fuente HN021 (Compartir insumos de diseño del add on Crunchyroll). EPC consolidado: EPC-20553, EPC-20875. Superficies/canal de cobertura: Carrusel Premium, Plan Selector, Chapita en contenido. Sin dispositivo OTT/IPTV aplicable. Sin split de usuario: la HN no diferencia tipos de usuario. QC_REVIEW: Insumo de diseño/dependencia: no hay criterio funcional user-facing suficiente. No se inventó el detalle faltante.",UNIQUE,,True,"BRF: BRF-16018
+HN: HN021
+Comportamiento: BRF-16018:HN021:compartir-insumos-de-dise-o-del-add-on-crunchyroll
+Fuente HN: CONFLUENCE
+Confluence: pageId=5319950351
+Extracto: Compartir insumos de diseño del add on Crunchyroll
+
+ Historia de negocio
+ Yo como negocio de Claro Dominicana
+ Quiero compartir los insumos de diseño del add on Crunchyroll
+ Para implementar de manera correcta la imagen comercial en todas las secciones.
+
+ Criterios de aceptación
+ Se comparten los logotipos a implementar (HN004):
+ Sección del plan selector: https://www.figma.com/design/6Zm2O3tqzck2"
+ALTA_COMPLEJA,BRF-16018,EPC-20553; EPC-20875,HN023,Habilitar medios de pago,HN023 describe un comportamiento funcional verificable (HN ≠ TC). Los EPC del BRF se conservan como trazabilidad; no multiplican esta fila. Transaccional porque el título/HN declara inicio o flujo de contratación/pago.,,,OTT,WEB; AAF; Android; iOS; tvOS; Windows/XBOX; Consolas; Roku; Fire TV; Android TV STV,,True,Matriz MDP del BRF,"BRF: BRF-16018
+HN: HN023",directo,Confluence,CONFLUENCE,IN_SCOPE,"Fuente HN023 (Habilitar medios de pago). EPC consolidado: EPC-20553, EPC-20875. Dispositivos aplicables: WEB, AAF, Android, iOS, tvOS, Windows/XBOX, Consolas, Roku, Fire TV, Android TV STV. Sin split de usuario: la HN no diferencia tipos de usuario. MDP: Matriz MDP del BRF.",UNIQUE,,False,"BRF: BRF-16018
+HN: HN023
+Comportamiento: BRF-16018:HN023:habilitar-medios-de-pago
+Fuente HN: CONFLUENCE
+Confluence: pageId=5319950351
+Extracto: Habilitar medios de pago
+
+ Historia de Negocio
+ Yo como negocio de Claro Dominicana
+ Quiero habilitar los métodos de pago correspondientes al add on Crunchyroll
+ Para permitir a los usuarios transaccionar en la plataforma.
+
+ Criterios de aceptación
+ Se deben habilitar los siguientes métodos de pago:
+ Fijo
+
+ Móvil
+
+ Pincodes
+
+ AMCO 
+
+ ROKU
+
+ ID"
+ALTA_COMPLEJA,BRF-16018,EPC-20553; EPC-20875,HN024,Habilitar carruseles de contenido,"HN024 describe un comportamiento funcional verificable (HN ≠ TC). Los EPC del BRF se conservan como trazabilidad; no multiplican esta fila. Las superficies listadas son dimensión de cobertura, no un comportamiento por superficie.",Home del add-on,,OTT,WEB; AAF; Android; iOS; tvOS; Windows/XBOX; Consolas; Roku; Fire TV; Android TV STV,,False,,"BRF: BRF-16018
+HN: HN024
+Superficies: Home del add-on",directo,Confluence,CONFLUENCE,IN_SCOPE,"Fuente HN024 (Habilitar carruseles de contenido). EPC consolidado: EPC-20553, EPC-20875. Superficies/canal de cobertura: Home del add-on. Dispositivos aplicables: WEB, AAF, Android, iOS, tvOS, Windows/XBOX, Consolas, Roku, Fire TV, Android TV STV. Sin split de usuario: la HN no diferencia tipos de usuario.",UNIQUE,,False,"BRF: BRF-16018
+HN: HN024
+Comportamiento: BRF-16018:HN024:habilitar-carruseles-de-contenido
+Fuente HN: CONFLUENCE
+Confluence: pageId=5319950351
+Extracto: Habilitar carruseles de contenido
+
+ Historia de negocio
+ Yo como negocio de Claro Dominicana
+ Quiero habilitar carruseles en la Home del add on de Crunchyroll
+ Para mostrar al usuario el contenido disponible de manera organizada y consistente.
+
+ Criterios de aceptación
+ Dentro de la Home del add on de Crunchyroll, deben habilitarse los mismos carruseles de contenido que actualmente se encuentran e"
+ALTA_COMPLEJA,BRF-16018,EPC-20553; EPC-20875,HN025,No liberar a producción el add on Crunchyroll,"HN025 describe un comportamiento funcional verificable (HN ≠ TC). Los EPC del BRF se conservan como trazabilidad; no multiplican esta fila. Expectativa negativa: ausencia/no publicación, no disponibilidad positiva. Contradicción de polaridad de liberación a producción en el mismo BRF; QC confirma cuál aplica. No se eliminó ninguna fila.",,,OTT,WEB; AAF; Android; iOS; tvOS; Windows/XBOX; Consolas; Roku; Fire TV; Android TV STV,,False,,"BRF: BRF-16018
+HN: HN025",QC_REVIEW,Confluence,CONFLUENCE,IN_SCOPE,"Fuente HN025 (No liberar a producción el add on Crunchyroll). EPC consolidado: EPC-20553, EPC-20875. Dispositivos aplicables: WEB, AAF, Android, iOS, tvOS, Windows/XBOX, Consolas, Roku, Fire TV, Android TV STV. Sin split de usuario: la HN no diferencia tipos de usuario. Cobertura negativa: validar ausencia/no disponibilidad. Contradicción de polaridad de liberación a producción en el mismo BRF; QC confirma cuál aplica. No se eliminó ninguna fila.",OVERLAP,BRF-16018:HN026:liberar-a-produccion-el-add-on-crunchyroll,True,"BRF: BRF-16018
+HN: HN025
+Comportamiento: BRF-16018:HN025:no-liberar-a-producci-n-el-add-on-crunchyroll
+Fuente HN: CONFLUENCE
+Confluence: pageId=5319950351
+Extracto: No liberar a producción el add on Crunchyroll
+
+ Historia de negocio
+ Yo como negocio de Claro Dominicana
+ Quiero que NO se libere a producción el add on Crunchyroll
+ Para cumplir con la regulación de la operación.
+
+ Criterios de aceptación
+ NO se debe liberar a producción el add on Crunchyroll en el presente Reléase Diciembre 2025.
+
+ ID"
+ALTA_COMPLEJA,BRF-16018,EPC-20553; EPC-20875,HN026,Liberar a produccion el add on Crunchyroll,HN026 describe un comportamiento funcional verificable (HN ≠ TC). Los EPC del BRF se conservan como trazabilidad; no multiplican esta fila. Contradicción de polaridad de liberación a producción en el mismo BRF; QC confirma cuál aplica. No se eliminó ninguna fila.,,,OTT,WEB; AAF; Android; iOS; tvOS; Windows/XBOX; Consolas; Roku; Fire TV; Android TV STV,,False,,"BRF: BRF-16018
+HN: HN026",QC_REVIEW,Confluence,CONFLUENCE,IN_SCOPE,"Fuente HN026 (Liberar a produccion el add on Crunchyroll). EPC consolidado: EPC-20553, EPC-20875. Dispositivos aplicables: WEB, AAF, Android, iOS, tvOS, Windows/XBOX, Consolas, Roku, Fire TV, Android TV STV. Sin split de usuario: la HN no diferencia tipos de usuario. Contradicción de polaridad de liberación a producción en el mismo BRF; QC confirma cuál aplica. No se eliminó ninguna fila.",OVERLAP,BRF-16018:HN025:no-liberar-a-producci-n-el-add-on-crunchyroll,True,"BRF: BRF-16018
+HN: HN026
+Comportamiento: BRF-16018:HN026:liberar-a-produccion-el-add-on-crunchyroll
+Fuente HN: CONFLUENCE
+Confluence: pageId=5319950351
+Extracto: Liberar a produccion el add on Crunchyroll
+
+ Historia de negocio
+ Yo como negocio de Claro Dominicana
+ Quiero liberar a producción el add on Crunchyroll
+ Para cumplir con lo solicitado por la operación.
+
+ Criterios de aceptación
+ Se debe liberar a producción el add on Crunchyroll en el proximo Reléase Enero 2026."
+FUNCIONAL_DEPTH,BRF-17834,EPC-22011,HN001,Actualizar el precio del Type EST EXC 39 UNI,HN001 describe un comportamiento funcional verificable (HN ≠ TC). Los EPC del BRF se conservan como trazabilidad; no multiplican esta fila.,,,OTT,WEB; AAF; Android; iOS; tvOS; Windows/XBOX; Consolas; Roku; Fire TV; Android TV STV,,False,,"BRF: BRF-17834
+HN: HN001
+Valores declarados: $ 33.62; $39.00",directo,Confluence,CONFLUENCE,IN_SCOPE,"Fuente HN001 (Actualizar el precio del Type EST EXC 39 UNI). EPC consolidado: EPC-22011. Dispositivos aplicables: WEB, AAF, Android, iOS, tvOS, Windows/XBOX, Consolas, Roku, Fire TV, Android TV STV. Sin split de usuario: la HN no diferencia tipos de usuario.",UNIQUE,,False,"BRF: BRF-17834
+HN: HN001
+Comportamiento: BRF-17834:HN001:actualizar-el-precio-del-type-est-exc-39-uni
+Fuente HN: CONFLUENCE
+Confluence: pageId=6640435259
+Extracto: Actualizar el precio del Type EST EXC 39 UNI
+
+ Historia de negocio
+ Yo como negocio de Claro video
+ Quiero actualizar el precio en producción del Type EST EXC 39 UNI
+ Para ofrecer a los usuarios nuevos contenidos.
+
+ Criterios de aceptación
+ El Type EST EXC 39 UNI debe quedar asociado al Type EST EXC 79 como oferta padre, heredando sus configuraciones, incluyendo el tipo de filtro (manual).
+
+ Se de"
+FUNCIONAL_DEPTH,BRF-17834,EPC-22011,HN002,Valores de configuración,HN002 describe un comportamiento funcional verificable (HN ≠ TC). Los EPC del BRF se conservan como trazabilidad; no multiplican esta fila. QC_REVIEW: Dato técnico/configuración: solo es comportamiento si QC confirma impacto funcional visible.,,,OTT,,,False,,"BRF: BRF-17834
+HN: HN002",QC_REVIEW,Confluence,CONFLUENCE,OUT_OF_SCOPE,Fuente HN002 (Valores de configuración). EPC consolidado: EPC-22011. Sin dispositivo OTT/IPTV aplicable. Sin split de usuario: la HN no diferencia tipos de usuario. QC_REVIEW: Dato técnico/configuración: solo es comportamiento si QC confirma impacto funcional visible. No se inventó el detalle faltante.,UNIQUE,,True,"BRF: BRF-17834
+HN: HN002
+Comportamiento: BRF-17834:HN002:valores-de-configuraci-n
+Fuente HN: CONFLUENCE
+Confluence: pageId=6640435259
+Extracto: Valores de configuración
+
+ Historia de negocio
+ Yo como negocio de Claro video
+ Quiero configurar los valores correspondientes a la oferta comercial de compra Type EST EXC 39 UNI
+ Para asegurar la correcta visualización del contenido.
+
+ Criterios de aceptación
+ Se deben configurar los valores del Type EST EXC 39 UNI con la siguiente información:
+ Modelo de negocio - Estreno
+
+ Precio - Configurado "
+FUNCIONAL_DEPTH,BRF-17834,EPC-22011,HN003,Habilitar medios de pago,HN003 describe un comportamiento funcional verificable (HN ≠ TC). Los EPC del BRF se conservan como trazabilidad; no multiplican esta fila. Transaccional porque el título/HN declara inicio o flujo de contratación/pago.,,,OTT,WEB; AAF; Android; iOS; tvOS; Windows/XBOX; Consolas; Roku; Fire TV; Android TV STV,,True,Matriz MDP del BRF,"BRF: BRF-17834
+HN: HN003",directo,Confluence,CONFLUENCE,IN_SCOPE,"Fuente HN003 (Habilitar medios de pago). EPC consolidado: EPC-22011. Dispositivos aplicables: WEB, AAF, Android, iOS, tvOS, Windows/XBOX, Consolas, Roku, Fire TV, Android TV STV. Sin split de usuario: la HN no diferencia tipos de usuario. MDP: Matriz MDP del BRF.",UNIQUE,,False,"BRF: BRF-17834
+HN: HN003
+Comportamiento: BRF-17834:HN003:habilitar-medios-de-pago
+Fuente HN: CONFLUENCE
+Confluence: pageId=6640435259
+Extracto: Habilitar medios de pago
+
+ Historia de negocio
+ Yo como negocio de Claro video
+ Quiero habilitar los métodos de pago disponibles en la oferta comercial de compra Type EST EXC 39 UNI
+ Para permitir que los usuarios tengan diferentes opciones para transaccionar.
+
+ Criterios de aceptación
+ La oferta comercial de compra Type EST EXC 39 UNI debe poder adquirirse con los siguientes medios de pago:
+ Fija"
+FUNCIONAL_DEPTH,BRF-17834,EPC-22011,HN004,Implementar comunicación,HN004 describe un comportamiento funcional verificable (HN ≠ TC). Los EPC del BRF se conservan como trazabilidad; no multiplican esta fila.,,,OTT,WEB; AAF; Android; iOS; tvOS; Windows/XBOX; Consolas; Roku; Fire TV; Android TV STV,,False,,"BRF: BRF-17834
+HN: HN004",directo,Confluence,CONFLUENCE,IN_SCOPE,"Fuente HN004 (Implementar comunicación). EPC consolidado: EPC-22011. Dispositivos aplicables: WEB, AAF, Android, iOS, tvOS, Windows/XBOX, Consolas, Roku, Fire TV, Android TV STV. Sin split de usuario: la HN no diferencia tipos de usuario.",UNIQUE,,False,"BRF: BRF-17834
+HN: HN004
+Comportamiento: BRF-17834:HN004:implementar-comunicaci-n
+Fuente HN: CONFLUENCE
+Confluence: pageId=6640435259
+Extracto: Implementar comunicación
+
+ Historia de negocio
+ Yo como negocio de Claro video
+ Quiero implementar la comunicación de la oferta comercial Type EST EXC 39 UNI
+ Para presentar a los usuarios la información del contenido de compra en la plataforma.
+
+ Criterios de aceptación
+ Se debe implementar la comunicación correspondiente a la oferta comercial Type EST EXC 39 UNI en la plataforma, con base en lo "
+CHANNEL_HIGH,BRF-17844,EPC-21986; EPC-2202,HN002; HN003; HN004; HN005; HN006; HN007; HN008; HN009; HN010,Implementar logotipo de canales declarados,"Mismo comportamiento de identidad visual. Los canales no duplican filas; quedan como datos funcionales. HN conservadas: HN002, HN003, HN004, HN005, HN006, HN007, HN008, HN009, HN010. Canales: Claro Sport UEFA1; Claro Sport UEFA2; Claro Sport UEFA3; Claro Sport UEFA4; Claro Sport UEFA5; Claro Sport UEFA6; Claro Sport UEFA7; Claro Sport UEFA8; Claro Sport UEFA9.",Player Live; Panel de opciones; Mosaico; Buscador,,OTT,WEB; AAF; Android; iOS; tvOS; Windows/XBOX; Consolas; Roku; Fire TV; Android TV STV,,False,,"BRF: BRF-17844
+HN: HN002
+Superficies: Player Live, Panel de opciones, Mosaico, Buscador
+Canales: Claro Sport UEFA1; Claro Sport UEFA2; Claro Sport UEFA3; Claro Sport UEFA4; Claro Sport UEFA5; Claro Sport UEFA6; Claro Sport UEFA7; Claro Sport UEFA8; Claro Sport UEFA9
+HN consolidadas: HN002, HN003, HN004, HN005, HN006, HN007, HN008, HN009, HN010",derivado,Confluence,CONFLUENCE,IN_SCOPE,"Fuente HN002 (Implementar el logotipo del canal Claro Sport UEFA1). EPC consolidado: EPC-21986, EPC-2202. Superficies/canal de cobertura: Player Live, Panel de opciones, Mosaico, Buscador. Dispositivos aplicables: WEB, AAF, Android, iOS, tvOS, Windows/XBOX, Consolas, Roku, Fire TV, Android TV STV. Sin split de usuario: la HN no diferencia tipos de usuario. Mismo comportamiento de identidad visual. Los canales no duplican filas; quedan como datos funcionales. HN conservadas: HN002, HN003, HN004, HN005, HN006, HN007, HN008, HN009, HN010. Canales: Claro Sport UEFA1; Claro Sport UEFA2; Claro Sport UEFA3; Claro Sport UEFA4; Claro Sport UEFA5; Claro Sport UEFA6; Claro Sport UEFA7; Claro Sport UEFA8; Claro Sport UEFA9.",UNIQUE,,False,"BRF: BRF-17844
+HN: HN002
+Comportamiento: BRF-17844:HN002:implementar-el-logotipo-del-canal-claro-sport-uefa1
+Fuente HN: CONFLUENCE
+Confluence: pageId=6648299585
+Extracto: Implementar el logotipo del canal Claro Sport UEFA1
+
+ Historia de negocio
+ Yo como negocio de Claro video
+ Quiero implementar el logotipo del canal Claro Sport UEFA1 en la plataforma
+ Para permitir que los usuarios identifiquen visualmente el canal.
+
+ Criterios de aceptación
+ El logotipo del canal Claro Sport UEFA1 debe visualizarse en todas las secciones de la plataforma donde se muestre el canal"
+CHANNEL_HIGH,BRF-17844,EPC-21986; EPC-2202,HN001,Realizar alta de los canales de Claro Sport UEFA,HN001 describe un comportamiento funcional verificable (HN ≠ TC). Los EPC del BRF se conservan como trazabilidad; no multiplican esta fila.,,,OTT,WEB; AAF; Android; iOS; tvOS; Windows/XBOX; Consolas; Roku; Fire TV; Android TV STV,,False,,"BRF: BRF-17844
+HN: HN001",directo,Confluence,CONFLUENCE,IN_SCOPE,"Fuente HN001 (Realizar alta de los canales de Claro Sport UEFA). EPC consolidado: EPC-21986, EPC-2202. Dispositivos aplicables: WEB, AAF, Android, iOS, tvOS, Windows/XBOX, Consolas, Roku, Fire TV, Android TV STV. Sin split de usuario: la HN no diferencia tipos de usuario.",UNIQUE,,False,"BRF: BRF-17844
+HN: HN001
+Comportamiento: BRF-17844:HN001:realizar-alta-de-los-canales-de-claro-sport-uefa
+Fuente HN: CONFLUENCE
+Confluence: pageId=6648299585
+Extracto: Realizar alta de los canales de Claro Sport UEFA
+
+ Historia de negocio
+ Yo como negocio de Claro video
+ Quiero realizar el alta de los canales Claro Sport UEFA dentro de la guía de programación
+ Para ampliar la oferta de contenido a los usuarios.
+
+ Criterios de aceptación
+ Los canales se deben configurar con las siguientes características marcadas en la Tabla 1. Señales de Claro Sport UEFA.
+
+ Solo"
+CHANNEL_HIGH,BRF-17844,EPC-21986; EPC-2202,HN011,Integrar URLs,HN011 describe un comportamiento funcional verificable (HN ≠ TC). Los EPC del BRF se conservan como trazabilidad; no multiplican esta fila.,,,OTT,WEB; AAF; Android; iOS; tvOS; Windows/XBOX; Consolas; Roku; Fire TV; Android TV STV,,False,,"BRF: BRF-17844
+HN: HN011",directo,Confluence,CONFLUENCE,IN_SCOPE,"Fuente HN011 (Integrar URLs). EPC consolidado: EPC-21986, EPC-2202. Dispositivos aplicables: WEB, AAF, Android, iOS, tvOS, Windows/XBOX, Consolas, Roku, Fire TV, Android TV STV. Sin split de usuario: la HN no diferencia tipos de usuario.",UNIQUE,,False,"BRF: BRF-17844
+HN: HN011
+Comportamiento: BRF-17844:HN011:integrar-urls
+Fuente HN: CONFLUENCE
+Confluence: pageId=6648299585
+Extracto: Integrar URLs
+
+ Historia de negocio
+ Yo como negocio de Claro video
+ Quiero configurar las URLs correspondientes a los canales de Claro Sport UEFA
+ Para asegurar la correcta disponibilidad y reproducción del canal en la plataforma.
+
+ Criterios de aceptación
+ Las URLs que se deben configurar deben ser las compartidas en el siguiente archivo:
+
+ BRF-17926 7036affd-a16f-3f04-b124-39295121e7ba System J"
+NEGATIVE,BRF-17465,EPC-216; EPC-21787,HN001,Realizar alta del canal América TV,HN001 describe un comportamiento funcional verificable (HN ≠ TC). Los EPC del BRF se conservan como trazabilidad; no multiplican esta fila.,,,OTT,WEB; AAF; Android; iOS; tvOS; Windows/XBOX; Consolas; Roku; Fire TV; Android TV STV,,False,,"BRF: BRF-17465
+HN: HN001",directo,Confluence,CONFLUENCE,IN_SCOPE,"Fuente HN001 (Realizar alta del canal América TV). EPC consolidado: EPC-216, EPC-21787. Dispositivos aplicables: WEB, AAF, Android, iOS, tvOS, Windows/XBOX, Consolas, Roku, Fire TV, Android TV STV. Sin split de usuario: la HN no diferencia tipos de usuario.",UNIQUE,,False,"BRF: BRF-17465
+HN: HN001
+Comportamiento: BRF-17465:HN001:realizar-alta-del-canal-am-rica-tv
+Fuente HN: CONFLUENCE
+Confluence: pageId=6418530353
+Extracto: Realizar alta del canal América TV
+
+ Historia de negocio
+ Yo como negocio de Claro Perú
+ Quiero realizar el alta del canal América TV con el número 4 en el line up
+ Para ampliar la oferta de contenido al usuario en los dispositivos OTT.
+
+ Criterios de aceptación
+ Se debe realizar el alta del canal con las siguientes características:
+ Nombre del canal: América TV
+
+ Número de canal: 4
+
+ El canal deb"
+NEGATIVE,BRF-17465,EPC-216; EPC-21787,HN003,Integrar URLs,HN003 describe un comportamiento funcional verificable (HN ≠ TC). Los EPC del BRF se conservan como trazabilidad; no multiplican esta fila.,,,OTT,WEB; AAF; Android; iOS; tvOS; Windows/XBOX; Consolas; Roku; Fire TV; Android TV STV,,False,,"BRF: BRF-17465
+HN: HN003",directo,Confluence,CONFLUENCE,IN_SCOPE,"Fuente HN003 (Integrar URLs). EPC consolidado: EPC-216, EPC-21787. Dispositivos aplicables: WEB, AAF, Android, iOS, tvOS, Windows/XBOX, Consolas, Roku, Fire TV, Android TV STV. Sin split de usuario: la HN no diferencia tipos de usuario.",UNIQUE,,False,"BRF: BRF-17465
+HN: HN003
+Comportamiento: BRF-17465:HN003:integrar-urls
+Fuente HN: CONFLUENCE
+Confluence: pageId=6418530353
+Extracto: Integrar URLs
+
+ Historia de negocio
+ Yo como negocio de Claro Perú
+ Quiero configurar las URLs del canal América TV en el line up de OTT
+ Para asegurar la correcta disponibilidad y reproducción del canal en la plataforma.
+
+ Criterios de aceptación
+ Las URLs que se deben configurar deben ser las compartidas en el siguiente archivo:
+
+ ID"
+NEGATIVE,BRF-17465,EPC-216; EPC-21787,HN004,Incluir canal América TV en paquetes de OTT,HN004 describe un comportamiento funcional verificable (HN ≠ TC). Los EPC del BRF se conservan como trazabilidad; no multiplican esta fila.,,,OTT,WEB; AAF; Android; iOS; tvOS; Windows/XBOX; Consolas; Roku; Fire TV; Android TV STV,,False,,"BRF: BRF-17465
+HN: HN004",directo,Confluence,CONFLUENCE,IN_SCOPE,"Fuente HN004 (Incluir canal América TV en paquetes de OTT). EPC consolidado: EPC-216, EPC-21787. Dispositivos aplicables: WEB, AAF, Android, iOS, tvOS, Windows/XBOX, Consolas, Roku, Fire TV, Android TV STV. Sin split de usuario: la HN no diferencia tipos de usuario.",UNIQUE,,False,"BRF: BRF-17465
+HN: HN004
+Comportamiento: BRF-17465:HN004:incluir-canal-am-rica-tv-en-paquetes-de-ott
+Fuente HN: CONFLUENCE
+Confluence: pageId=6418530353
+Extracto: Incluir canal América TV en paquetes de OTT
+
+ Historia de negocio
+ Yo como negocio de Claro Perú
+ Quiero incluir el canal América TV en los paquetes de OTT
+ Para ampliar la oferta de contenido a los usuarios.
+
+ Criterios de aceptación
+ Se debe incluir el canal América TV en los siguientes paquetes:
+ Claro video - 10000030
+
+ Claro video -10000999
+
+ Claro video - 10001001
+
+ TV Básica - 110001001
+
+ T"
+NEGATIVE,BRF-17465,EPC-216; EPC-21787,HN005,No implementar chapita al canal América TV,"HN005 describe un comportamiento funcional verificable (HN ≠ TC). Los EPC del BRF se conservan como trazabilidad; no multiplican esta fila. Las superficies listadas son dimensión de cobertura, no un comportamiento por superficie.",Chapita en contenido,,OTT,WEB; AAF; Android; iOS; tvOS; Windows/XBOX; Consolas; Roku; Fire TV; Android TV STV,,False,,"BRF: BRF-17465
+HN: HN005
+Superficies: Chapita en contenido",directo,Confluence,CONFLUENCE,IN_SCOPE,"Fuente HN005 (No implementar chapita al canal América TV). EPC consolidado: EPC-216, EPC-21787. Superficies/canal de cobertura: Chapita en contenido. Dispositivos aplicables: WEB, AAF, Android, iOS, tvOS, Windows/XBOX, Consolas, Roku, Fire TV, Android TV STV. Sin split de usuario: la HN no diferencia tipos de usuario.",UNIQUE,,False,"BRF: BRF-17465
+HN: HN005
+Comportamiento: BRF-17465:HN005:no-implementar-chapita-al-canal-am-rica-tv
+Fuente HN: CONFLUENCE
+Confluence: pageId=6418530353
+Extracto: No implementar chapita al canal América TV
+
+ Historia de negocio
+ Yo como negocio de Claro Perú
+ Quiero dar de alta el canal América TV en el line up de OTT sin la implementación de chapitas
+ Para evitar que se asocie con cualquier proveedor dentro de la plataforma.
+
+ Criterios de aceptación
+ El canal América TV no debe mostrar ninguna chapita asociada a ningún proveedor en ninguna sección de la p"
+NEGATIVE,BRF-17465,EPC-216; EPC-21787,HN006,Visualización de canales en carrusel Locales del subnodo TV Básica,"HN006 describe un comportamiento funcional verificable (HN ≠ TC). Los EPC del BRF se conservan como trazabilidad; no multiplican esta fila. Las superficies listadas son dimensión de cobertura, no un comportamiento por superficie.",Carrusel Locales,,OTT,WEB; AAF; Android; iOS; tvOS; Windows/XBOX; Consolas; Roku; Fire TV; Android TV STV,,False,,"BRF: BRF-17465
+HN: HN006
+Superficies: Carrusel Locales",directo,Confluence,CONFLUENCE,IN_SCOPE,"Fuente HN006 (Visualización de canales en carrusel Locales del subnodo TV Básica). EPC consolidado: EPC-216, EPC-21787. Superficies/canal de cobertura: Carrusel Locales. Dispositivos aplicables: WEB, AAF, Android, iOS, tvOS, Windows/XBOX, Consolas, Roku, Fire TV, Android TV STV. Sin split de usuario: la HN no diferencia tipos de usuario.",UNIQUE,,False,"BRF: BRF-17465
+HN: HN006
+Comportamiento: BRF-17465:HN006:visualizaci-n-de-canales-en-carrusel-locales-del-subnodo-tv-
+Fuente HN: CONFLUENCE
+Confluence: pageId=6418530353
+Extracto: Visualización de canales en carrusel Locales del subnodo TV Básica
+
+ Historia de negocio
+ Yo como negocio de Claro Perú
+ Quiero visualizar el canal América TV en el carrusel Locales en el subnodo TV Básica
+ Para permitir que los usuarios identifiquen y accedan fácilmente al canal
+
+ Criterios de aceptación
+ Aplica para OTT e IPTV
+
+ Cuando el usuario acceda desde el nodo Premium / Carrusel Premium a"
+NEGATIVE,BRF-17465,EPC-216; EPC-21787,HN007,Habilitar Timeshift en paquetes IPTV,HN007 describe un comportamiento funcional verificable (HN ≠ TC). Los EPC del BRF se conservan como trazabilidad; no multiplican esta fila.,,,IPTV,STB,,False,,"BRF: BRF-17465
+HN: HN007",directo,Confluence,CONFLUENCE,IN_SCOPE,"Fuente HN007 (Habilitar Timeshift en paquetes IPTV). EPC consolidado: EPC-216, EPC-21787. Dispositivos aplicables: STB. Sin split de usuario: la HN no diferencia tipos de usuario.",UNIQUE,,False,"BRF: BRF-17465
+HN: HN007
+Comportamiento: BRF-17465:HN007:habilitar-timeshift-en-paquetes-iptv
+Fuente HN: CONFLUENCE
+Confluence: pageId=6418530353
+Extracto: Habilitar Timeshift en paquetes IPTV
+
+ Historia de negocio
+ Yo como negocio de Claro Perú
+ Quiero habilitar las funcionalidades de Timeshift en el canal América TV
+ Para cumplir con lo solicitado por la operación.
+
+ Criterios de aceptación
+ La funcionalidad de Timeshift para el canal América TV debe estar habilitada en los siguientes paquetes:
+ Plan TV Básica con Product ID 99000001
+
+ Plan TV Exte"
+NEGATIVE,BRF-17465,EPC-216; EPC-21787,HN008,Habilitar NPVR en paquetes IPTV,HN008 describe un comportamiento funcional verificable (HN ≠ TC). Los EPC del BRF se conservan como trazabilidad; no multiplican esta fila.,,,IPTV,STB,,False,,"BRF: BRF-17465
+HN: HN008",directo,Confluence,CONFLUENCE,IN_SCOPE,"Fuente HN008 (Habilitar NPVR en paquetes IPTV). EPC consolidado: EPC-216, EPC-21787. Dispositivos aplicables: STB. Sin split de usuario: la HN no diferencia tipos de usuario.",UNIQUE,,False,"BRF: BRF-17465
+HN: HN008
+Comportamiento: BRF-17465:HN008:habilitar-npvr-en-paquetes-iptv
+Fuente HN: CONFLUENCE
+Confluence: pageId=6418530353
+Extracto: Habilitar NPVR en paquetes IPTV
+
+ Historia de negocio
+ Yo como negocio de Claro Perú
+ Quiero habilitar las funcionalidades de NPVR en el canal América TV
+ Para permitir a los usuarios grabar el contenido en vivo de este canal.
+
+ Criterios de aceptación
+ La funcionalidad de NPVR para el canal América TV debe estar habilitada en el paquete con Product ID 99000009
+
+ ID"
+NEGATIVE,BRF-17465,EPC-216; EPC-21787,HN009,Habilitar funcionalidad TV Everywhere,"HN009 describe un comportamiento funcional verificable (HN ≠ TC). Los EPC del BRF se conservan como trazabilidad; no multiplican esta fila. Expectativa negativa: ausencia/no publicación, no disponibilidad positiva.",,,OTT,WEB; AAF; Android; iOS; tvOS; Windows/XBOX; Consolas; Roku; Fire TV; Android TV STV,,False,,"BRF: BRF-17465
+HN: HN009",directo,Confluence,CONFLUENCE,IN_SCOPE,"Fuente HN009 (Habilitar funcionalidad TV Everywhere). EPC consolidado: EPC-216, EPC-21787. Dispositivos aplicables: WEB, AAF, Android, iOS, tvOS, Windows/XBOX, Consolas, Roku, Fire TV, Android TV STV. Sin split de usuario: la HN no diferencia tipos de usuario. Cobertura negativa: validar ausencia/no disponibilidad.",UNIQUE,,False,"BRF: BRF-17465
+HN: HN009
+Comportamiento: BRF-17465:HN009:habilitar-funcionalidad-tv-everywhere
+Fuente HN: CONFLUENCE
+Confluence: pageId=6418530353
+Extracto: Habilitar funcionalidad TV Everywhere
+
+ Historia de negocio
+ Yo como negocio de Claro Perú
+ Quiero habilitar la funcionalidad TV Everywhere en el canal América TV
+ Para permitir que el usuario disfrute de la programación desde dispositivos OTT.
+
+ Criterios de aceptación
+ Los usuarios con cuenta activa de IPTV, con acceso al nuevo canal, deben poder reproducirlo desde dispositivos OTT.
+
+ BRF-17658 "
+NEGATIVE,BRF-17465,EPC-216; EPC-21787,HN010,No liberar a producción el alta del canal América TV,"HN010 describe un comportamiento funcional verificable (HN ≠ TC). Los EPC del BRF se conservan como trazabilidad; no multiplican esta fila. Expectativa negativa: ausencia/no publicación, no disponibilidad positiva.",,,OTT,WEB; AAF; Android; iOS; tvOS; Windows/XBOX; Consolas; Roku; Fire TV; Android TV STV,,False,,"BRF: BRF-17465
+HN: HN010",directo,Confluence,CONFLUENCE,IN_SCOPE,"Fuente HN010 (No liberar a producción el alta del canal América TV). EPC consolidado: EPC-216, EPC-21787. Dispositivos aplicables: WEB, AAF, Android, iOS, tvOS, Windows/XBOX, Consolas, Roku, Fire TV, Android TV STV. Sin split de usuario: la HN no diferencia tipos de usuario. Cobertura negativa: validar ausencia/no disponibilidad.",UNIQUE,,False,"BRF: BRF-17465
+HN: HN010
+Comportamiento: BRF-17465:HN010:no-liberar-a-producci-n-el-alta-del-canal-am-rica-tv
+Fuente HN: CONFLUENCE
+Confluence: pageId=6418530353
+Extracto: No liberar a producción el alta del canal América TV
+
+ Historia de negocio
+ Yo como negocio de Claro Perú
+ Quiero que NO se libere a producción el alta del canal América TV
+ Para evitar su publicación en la plataforma de acuerdo a los requerimientos definidos por la operación.
+
+ Criterios de aceptación
+ El alta del canal América TV no debe liberarse en el próximo release operativo de julio de 2026"
+NEGATIVE,BRF-17465,EPC-216; EPC-21787,HN002,Implementar el logotipo del canal América TV,"HN002 describe un comportamiento funcional verificable (HN ≠ TC). Los EPC del BRF se conservan como trazabilidad; no multiplican esta fila. Las superficies listadas son dimensión de cobertura, no un comportamiento por superficie.",Player Live; Panel de opciones; Mosaico; Buscador,,OTT,WEB; AAF; Android; iOS; tvOS; Windows/XBOX; Consolas; Roku; Fire TV; Android TV STV,,False,,"BRF: BRF-17465
+HN: HN002
+Superficies: Player Live, Panel de opciones, Mosaico, Buscador",directo,Confluence,CONFLUENCE,IN_SCOPE,"Fuente HN002 (Implementar el logotipo del canal América TV). EPC consolidado: EPC-216, EPC-21787. Superficies/canal de cobertura: Player Live, Panel de opciones, Mosaico, Buscador. Dispositivos aplicables: WEB, AAF, Android, iOS, tvOS, Windows/XBOX, Consolas, Roku, Fire TV, Android TV STV. Sin split de usuario: la HN no diferencia tipos de usuario.",UNIQUE,,False,"BRF: BRF-17465
+HN: HN002
+Comportamiento: BRF-17465:HN002:implementar-el-logotipo-del-canal-am-rica-tv
+Fuente HN: CONFLUENCE
+Confluence: pageId=6418530353
+Extracto: Implementar el logotipo del canal América TV
+
+ Historia de negocio
+ Yo como negocio de Claro Perú
+ Quiero implementar el logotipo del canal América TV en la plataforma
+ Para permitir que los usuarios identifiquen visualmente el canal.
+
+ Criterios de aceptación
+ El logotipo del canal América TV debe visualizarse en todas las secciones de la plataforma donde se muestre el Canal:
+ EPG (Full y mini)
+
+"
+MULTI_BEHAVIOR_HN,BRF-17603,EPC-21800,HN001,Actualizar las URL de Timeshift,HN001 describe un comportamiento funcional verificable (HN ≠ TC). Los EPC del BRF se conservan como trazabilidad; no multiplican esta fila.,,,IPTV,STB,,False,,"BRF: BRF-17603
+HN: HN001",directo,Confluence,CONFLUENCE,IN_SCOPE,Fuente HN001 (Actualizar las URL de Timeshift). EPC consolidado: EPC-21800. Dispositivos aplicables: STB. Sin split de usuario: la HN no diferencia tipos de usuario.,UNIQUE,,False,"BRF: BRF-17603
+HN: HN001
+Comportamiento: BRF-17603:HN001:actualizar-las-url-de-timeshift
+Fuente HN: CONFLUENCE
+Confluence: pageId=6522077197
+Extracto: Actualizar las URL de Timeshift
+
+ Historia de negocio
+ Yo como negocio de Claro AUP
+ Quiero actualizar el formato de las URLs de canales utilizadas en la funcionalidad de Timeshift
+ Para completar la configuración del avance y retroceso en eventos de canales
+
+ Criterios de aceptación
+ Se debe actualizar el formato de la URL de Timeshift de los canales conforme a los archivos adjuntos:
+  Argentina:"
+MULTI_BEHAVIOR_HN,BRF-17603,EPC-21800,HN002,Actualizar formato de URLs de NPVR,HN002 describe un comportamiento funcional verificable (HN ≠ TC). Los EPC del BRF se conservan como trazabilidad; no multiplican esta fila.,,,IPTV,STB,,False,,"BRF: BRF-17603
+HN: HN002",directo,Confluence,CONFLUENCE,IN_SCOPE,Fuente HN002 (Actualizar formato de URLs de NPVR). EPC consolidado: EPC-21800. Dispositivos aplicables: STB. Sin split de usuario: la HN no diferencia tipos de usuario.,UNIQUE,,False,"BRF: BRF-17603
+HN: HN002
+Comportamiento: BRF-17603:HN002:actualizar-formato-de-urls-de-npvr
+Fuente HN: CONFLUENCE
+Confluence: pageId=6522077197
+Extracto: Actualizar formato de URLs de NPVR
+
+ Historia de negocio
+ Yo como negocio de Claro AUP
+ Quiero actualizar el formato de las URLs de canales utilizadas en la funcionalidad de NPVR
+ Para completar la configuración de la grabación de eventos de canales
+
+ Criterios de aceptación
+ Se debe actualizar el formato de la URL de NPVR de los canales conforme a los archivos adjuntos:
+  Argentina:
+
+ Paraguay:
+
+"
+MULTI_BEHAVIOR_HN,BRF-17603,EPC-21800,HN003,Modificar nomenclatura de las URLS de canales — TIMESHIFT,HN003 describe un comportamiento funcional verificable (HN ≠ TC). Los EPC del BRF se conservan como trazabilidad; no multiplican esta fila.,,,IPTV,STB,,False,,"BRF: BRF-17603
+HN: HN003",directo,Confluence,CONFLUENCE,IN_SCOPE,Fuente HN003 (Modificar nomenclatura de las URLS de canales). EPC consolidado: EPC-21800. Dispositivos aplicables: STB. Sin split de usuario: la HN no diferencia tipos de usuario.,UNIQUE,,False,"BRF: BRF-17603
+HN: HN003
+Comportamiento: BRF-17603:HN003:timeshift
+Fuente HN: CONFLUENCE
+Confluence: pageId=6522077197
+Extracto: Modificar nomenclatura de las URLS de canales
+
+ Historia de negocio
+ Yo como negocio de Claro AUP
+ Quiero modificar la nomenclatura de las URLs de canales
+ Para completar la configuración del avance y retroceso en eventos de canales
+
+ Criterios de aceptación
+ Esta historia de negocio actualiza al criterio 1 de la HN001 y HN002.
+
+ Se debe modificar la nomenclatura de las URLs correspondientes a Tim"
+MULTI_BEHAVIOR_HN,BRF-17603,EPC-21800,HN003,Modificar nomenclatura de las URLS de canales — NPVR,HN003 describe un comportamiento funcional verificable (HN ≠ TC). Los EPC del BRF se conservan como trazabilidad; no multiplican esta fila.,,,IPTV,STB,,False,,"BRF: BRF-17603
+HN: HN003",directo,Confluence,CONFLUENCE,IN_SCOPE,Fuente HN003 (Modificar nomenclatura de las URLS de canales). EPC consolidado: EPC-21800. Dispositivos aplicables: STB. Sin split de usuario: la HN no diferencia tipos de usuario.,UNIQUE,,False,"BRF: BRF-17603
+HN: HN003
+Comportamiento: BRF-17603:HN003:npvr
+Fuente HN: CONFLUENCE
+Confluence: pageId=6522077197
+Extracto: Modificar nomenclatura de las URLS de canales
+
+ Historia de negocio
+ Yo como negocio de Claro AUP
+ Quiero modificar la nomenclatura de las URLs de canales
+ Para completar la configuración del avance y retroceso en eventos de canales
+
+ Criterios de aceptación
+ Esta historia de negocio actualiza al criterio 1 de la HN001 y HN002.
+
+ Se debe modificar la nomenclatura de las URLs correspondientes a Tim"
+CHANNEL_SET,BRF-17620,EPC-21816,HN001,Actualizar posición de nueve canales,HN001 describe un comportamiento funcional verificable (HN ≠ TC). Los EPC del BRF se conservan como trazabilidad; no multiplican esta fila.,,,OTT,WEB; AAF; Android; iOS; tvOS; Windows/XBOX; Consolas; Roku; Fire TV; Android TV STV,,False,,"BRF: BRF-17620
+HN: HN001",directo,Confluence,CONFLUENCE,IN_SCOPE,"Fuente HN001 (Actualizar posición de nueve canales). EPC consolidado: EPC-21816. Dispositivos aplicables: WEB, AAF, Android, iOS, tvOS, Windows/XBOX, Consolas, Roku, Fire TV, Android TV STV. Sin split de usuario: la HN no diferencia tipos de usuario.",UNIQUE,,False,"BRF: BRF-17620
+HN: HN001
+Comportamiento: BRF-17620:HN001:actualizar-posici-n-de-nueve-canales
+Fuente HN: CONFLUENCE
+Confluence: pageId=6537805825
+Extracto: Actualizar posición de nueve canales
+
+ Historia de negocio
+ Yo como negocio de Claro Argentina
+ Quiero actualizar la posición de nueve canales
+ Para asegurar que los canales se visualicen en la grilla conforme a la posición definida por decisión legal.
+
+ Criterios de aceptación
+ Se debe asignar a cada canal la posición correspondiente de acuerdo con el archivo adjunto: ."
+CHANGE_IMPACT,BRF-17833,EPC-21975,HN001; HN002,Actualizar nombre y logotipo del canal TCS+,"Nombre y logotipo del mismo canal son un solo comportamiento de identidad. HN conservadas: HN001, HN002.",Player Live; Panel de opciones; Mosaico; Buscador,,IPTV,STB,,False,,"BRF: BRF-17833
+HN: HN001
+Superficies: Player Live, Panel de opciones, Mosaico, Buscador
+Canal: TCS+
+HN consolidadas: HN001, HN002",derivado,Confluence,CONFLUENCE,IN_SCOPE,"Fuente HN001 (Actualizar nombre del canal TCS+). EPC consolidado: EPC-21975. Superficies/canal de cobertura: Player Live, Panel de opciones, Mosaico, Buscador. Dispositivos aplicables: STB. Sin split de usuario: la HN no diferencia tipos de usuario. Nombre y logotipo del mismo canal son un solo comportamiento de identidad. HN conservadas: HN001, HN002.",UNIQUE,,False,"BRF: BRF-17833
+HN: HN001
+Comportamiento: BRF-17833:HN001:actualizar-nombre-del-canal-tcs
+Fuente HN: CONFLUENCE
+Confluence: pageId=6637945097
+Extracto: Actualizar nombre del canal TCS+
+
+ Historia de negocio
+ Yo como negocio de Claro El Salvador
+ Quiero actualizar el nombre del canal TCS+ por SV+
+ Para mostrar a los usuarios el nuevo nombre del canal.
+
+ Criterios de aceptación
+ Se debe actualizar el nombre del canal de acuerdo al archivo adjunto:
+
+ El cambio de nombre del canal debe reflejarse en todas las secciones de la plataforma donde se visua"
+CHANGE_IMPACT,BRF-17833,EPC-21975,HN003,Actualizar URLs,HN003 describe un comportamiento funcional verificable (HN ≠ TC). Los EPC del BRF se conservan como trazabilidad; no multiplican esta fila.,,,IPTV,STB,,False,,"BRF: BRF-17833
+HN: HN003",directo,Confluence,CONFLUENCE,IN_SCOPE,Fuente HN003 (Actualizar URLs). EPC consolidado: EPC-21975. Dispositivos aplicables: STB. Sin split de usuario: la HN no diferencia tipos de usuario.,UNIQUE,,False,"BRF: BRF-17833
+HN: HN003
+Comportamiento: BRF-17833:HN003:actualizar-urls
+Fuente HN: CONFLUENCE
+Confluence: pageId=6637945097
+Extracto: Actualizar URLs
+
+ Historia de negocio
+ Yo como negocio de Claro El Salvador
+ Quiero actualizar las URLs del canal TCS+ por el de SV+
+ Para asegurar la correcta disponibilidad y reproducción del canal en la plataforma
+
+ Criterios de aceptación
+ Las URLs que se deben configurar para el canal SV+ compartidas en el siguiente archivo:
+
+ ID"
+CHANGE_IMPACT,BRF-17833,EPC-21975,HN004,Mantener Funcionalidades de canal,HN004 describe un comportamiento funcional verificable (HN ≠ TC). Los EPC del BRF se conservan como trazabilidad; no multiplican esta fila. QC_REVIEW: HN de impacto/mantener: no se materializa un comportamiento por cada capacidad citada (TS/NPVR/TVE). QC confirma si hay cobertura de no-regresión.,,,IPTV,STB,,False,,"BRF: BRF-17833
+HN: HN004",QC_REVIEW,Confluence,CONFLUENCE,IN_SCOPE,Fuente HN004 (Mantener Funcionalidades de canal). EPC consolidado: EPC-21975. Dispositivos aplicables: STB. Sin split de usuario: la HN no diferencia tipos de usuario. QC_REVIEW: HN de impacto/mantener: no se materializa un comportamiento por cada capacidad citada (TS/NPVR/TVE). QC confirma si hay cobertura de no-regresión. No se inventó el detalle faltante.,UNIQUE,,True,"BRF: BRF-17833
+HN: HN004
+Comportamiento: BRF-17833:HN004:mantener-funcionalidades-de-canal
+Fuente HN: CONFLUENCE
+Confluence: pageId=6637945097
+Extracto: Mantener Funcionalidades de canal
+
+ Historia de usuario
+ Yo como negocio de Claro El Salvador
+ Quiero mantener las funcionalidades del canal
+ Para permitir que el usuario pueda disfrutar de dichas funcionalidades.
+
+ Criterios de aceptación
+ El canal TCS+ debe mantener las funcionalidades actuales:
+ Timeshift
+
+ NPVR
+
+ Trickplay
+
+ UDP fallback
+
+ Permisos de TV everywhere
+
+ BRF-17906 7036affd-a16f-3f"
+CHANGE_IMPACT,BRF-17833,EPC-21975,HN005,Actualizar Resource ID del canal SV+,HN005 describe un comportamiento funcional verificable (HN ≠ TC). Los EPC del BRF se conservan como trazabilidad; no multiplican esta fila. QC_REVIEW: Dato técnico/configuración: solo es comportamiento si QC confirma impacto funcional visible.,,,IPTV,,,False,,"BRF: BRF-17833
+HN: HN005",QC_REVIEW,Confluence,CONFLUENCE,OUT_OF_SCOPE,Fuente HN005 (Actualizar Resource ID del canal SV+). EPC consolidado: EPC-21975. Sin dispositivo OTT/IPTV aplicable. Sin split de usuario: la HN no diferencia tipos de usuario. QC_REVIEW: Dato técnico/configuración: solo es comportamiento si QC confirma impacto funcional visible. No se inventó el detalle faltante.,UNIQUE,,True,"BRF: BRF-17833
+HN: HN005
+Comportamiento: BRF-17833:HN005:actualizar-resource-id-del-canal-sv
+Fuente HN: CONFLUENCE
+Confluence: pageId=6637945097
+Extracto: Actualizar Resource ID del canal SV+
+
+ Historia de negocio
+ Yo como negocio de Claro El Salvador
+ Quiero actualizar el Resource ID a implementar en el canal SV+
+ Para asegurar la correcta visualización del canal.
+
+ Criterios de aceptación
+ Esta historia de negocio actualiza el criterio de aceptación uno de la HN001.
+
+ Se debe implementar al canal SV+ (posición 5) el Resource ID de acuerdo al archi"
+SCOPE_GATE,BRF-17847,,HN001,Obtener las plantillas de comunicación de la plataforma,"HN001 describe un comportamiento funcional verificable (HN ≠ TC). Los EPC del BRF se conservan como trazabilidad; no multiplican esta fila. Las superficies listadas son dimensión de cobertura, no un comportamiento por superficie. Canal Email: no es dispositivo OTT/IPTV. QC_REVIEW: Insumo de diseño/dependencia: no hay criterio funcional user-facing suficiente.",Correo de bienvenida,Email,,,Registrado (tras alta),False,,"BRF: BRF-17847
+HN: HN001
+Superficies: Correo de bienvenida
+Canal: Email",QC_REVIEW,Confluence,CONFLUENCE,OUT_OF_SCOPE,Fuente HN001 (Obtener las plantillas de comunicación de la plataforma). EPC consolidado: —. Superficies/canal de cobertura: Correo de bienvenida. Canal: Email (no se trata como dispositivo). Sin dispositivo OTT/IPTV aplicable. Usuarios relevantes (solo si cambia el comportamiento): Registrado (tras alta). QC_REVIEW: Insumo de diseño/dependencia: no hay criterio funcional user-facing suficiente. No se inventó el detalle faltante.,UNIQUE,,True,"BRF: BRF-17847
+HN: HN001
+Comportamiento: BRF-17847:HN001:obtener-las-plantillas-de-comunicaci-n-de-la-plataforma
+Fuente HN: CONFLUENCE
+Confluence: pageId=6675235073
+Extracto: Obtener las plantillas de comunicación de la plataforma
+
+ Historia de Negocio
+ Yo como negocio de Claro video
+ Quiero obtener las plantillas de comunicación usadas cuando el usuario tiene medio de pago TELMEX
+ Para conocer la comunicación mostrada a los usuarios
+
+ Criterios de aceptación
+ Se deben compartir las plantillas de comunicación correspondientes a los escenarios realizados por el usuario."
+SCOPE_GATE,BRF-17847,,HN002,Obtener las plantillas de comunicación de los Addons,HN002 describe un comportamiento funcional verificable (HN ≠ TC). Los EPC del BRF se conservan como trazabilidad; no multiplican esta fila. QC_REVIEW: Insumo de diseño/dependencia: no hay criterio funcional user-facing suficiente.,,,OTT,,,False,,"BRF: BRF-17847
+HN: HN002",QC_REVIEW,Confluence,CONFLUENCE,OUT_OF_SCOPE,Fuente HN002 (Obtener las plantillas de comunicación de los Addons). EPC consolidado: —. Sin dispositivo OTT/IPTV aplicable. Sin split de usuario: la HN no diferencia tipos de usuario. QC_REVIEW: Insumo de diseño/dependencia: no hay criterio funcional user-facing suficiente. No se inventó el detalle faltante.,UNIQUE,,True,"BRF: BRF-17847
+HN: HN002
+Comportamiento: BRF-17847:HN002:obtener-las-plantillas-de-comunicaci-n-de-los-addons
+Fuente HN: CONFLUENCE
+Confluence: pageId=6675235073
+Extracto: Obtener las plantillas de comunicación de los Addons
+
+ Historia de Negocio
+ Yo como negocio de Claro Video
+ Quiero obtener las plantillas de comunicación usadas cuando el usuario tiene medio de pago TELMEX con los addons
+ Para conocer la comunicación enviada en la transacción
+
+ Criterios de aceptación
+ Se deben compartir las plantillas de comunicación cuando un usuario realiza una transacción con "
+TECH_DEPENDENCY,BRF-17577,EPC-21741,,Fuera de alcance QC: dependencia técnica/infra,"La evidencia del BRF es de infraestructura/configuración (p. ej. whitelist, VPN, IPs). No se derivan comportamientos funcionales user-facing.",,,,,,False,,,QC_REVIEW,Confluence,CONFLUENCE,OUT_OF_SCOPE,"La evidencia del BRF es de infraestructura/configuración (p. ej. whitelist, VPN, IPs). No se derivan comportamientos funcionales user-facing. No se inventaron comportamientos ni se avanzó a dispositivo/TC.",UNIQUE,,True,"BRF: BRF-17577
+Título: AKM | PE | C
+V | Habilitar I
+Ps dentro del
+whitelist en a
+mbiente UAT
+OPER (BRF-1
+7577 / OPE-J
+ULIO-2026-A
+ND)
+Fuente HN: CONFLUENCE
+=== BRF BRF-17577 (Iniciativa) ===
+PE | CV | Habilitar IPs dentro del whitelist en ambiente UAT OPER
+Negocio de Claro Perú solicita habilitar IPs en la whitelist de la plataforma las IPs correspondientes a las oficinas del proveedor SDMC en ambiente UAT OPER.
+Consultar página de
+ 
+Confluence
+ v.5
+=== CHILD EPC-21741 (Epic) ===
+AKM | PE | CV | Habilitar IPs dentro del whitelist en ambiente UAT OPER"

@@ -1,25 +1,32 @@
 """Release CRUD endpoints.
 
-Deletion rule (per product decision): a Release can only be hard-deleted while it is still
-DRAFT (cascading to its test cases/steps is safe at that point because nothing else can
-reference them yet). Any release that has moved past DRAFT is considered to have activity and
-must be moved to CANCELLED via PATCH instead of being deleted. This cascade behavior should be
-re-reviewed before Sprint 3 once executions/evidence exist.
+Apps and Operativas can be hard-deleted (including the stored Release Note). Release BE
+keeps the DRAFT-only delete rule. A Release that is origin of Revalidaciones cannot be
+deleted.
 """
 
-from typing import Any
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi.responses import Response
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.auth import AuthUser, Role
 from app.db import get_db
+from app.deps.auth import get_current_user, require_jefe
 from app.models.deliverable import Deliverable
+from app.models.epc import Epc
+from app.models.operativa_release import OperativaRelease
 from app.models.release import Release, ReleaseStatus, ReleaseType
 from app.models.release_analysis import ReleaseAnalysis
 from app.models.test_case import TestCase
 from app.routers.common import get_release_or_404
+from app.schemas.case_generation import GenerateCasesResponse
+from app.schemas.coverage_matrix import CoverageMatrixResponse
+from app.schemas.matrix_preview import MatrixPreviewResponse
+from app.schemas.publication import PublicationRecordRead, PublishCasesResponse
 from app.schemas.release import (
     ReleaseAnalysisRead,
     ReleaseCreate,
@@ -28,10 +35,24 @@ from app.schemas.release import (
     ReleaseUpdate,
     ReleaseWithCounts,
 )
+from app.services.ai_case_engine import generate_release_app_candidates
+from app.services.revalidation_engine import generate_revalidation_candidates
+from app.services.case_persistence import (
+    delete_engine_cases,
+    engine_cases_for_release,
+    persist_candidates,
+    summarize_cases,
+)
+from app.services.operativa_engine import ENGINE_VERSION as OPERATIVA_ENGINE, generate_operativa_from_matrix
+from app.services.operativa_engine.coverage_matrix import build_coverage_matrix
+from app.services.operativa_engine.matrix_expand import expand_matrix_preview
+from app.services.test_case_export import build_test_cases_workbook, load_release_cases
+from app.services.zephyr_publish import fingerprint, load_engine_cases, publish_cases
 from app.services.release_note_analyzer import (
     RuleBasedPdfAnalyzer,
     calculate_business_days,
 )
+from app.services.rn_storage import persist_release_note_pdf, read_release_note_pdf, delete_release_note_pdf
 
 router = APIRouter(prefix="/api/v1/releases", tags=["releases"])
 
@@ -46,6 +67,22 @@ _VALID_TRANSITIONS: dict[ReleaseStatus, set[ReleaseStatus]] = {
 # Entregable / Tipo de Release / Release origen can only change while still DRAFT (product
 # decision) -- same posture as the existing DRAFT-only hard-delete rule below.
 _LINEAGE_FIELDS = {"deliverable_name", "release_type", "parent_release_id"}
+
+
+def to_release_read(release: Release) -> ReleaseRead:
+    """Populate deliverable_name and BE fields that are not columns on Release."""
+    be = release.be_release
+    parent = release.parent
+    read = ReleaseRead.model_validate(release)
+    return read.model_copy(
+        update={
+            "deliverable_name": release.deliverable.name if release.deliverable else None,
+            "parent_release_name": f"{parent.name} v{parent.version}" if parent else None,
+            "swf": be.swf if be else None,
+            "regresivo_scope": be.regresivo_scope if be else None,
+            "affected_component": be.affected_component if be else None,
+        }
+    )
 
 
 def _resolve_deliverable(name: str | None, db: Session) -> Deliverable | None:
@@ -92,6 +129,35 @@ def _would_create_cycle(release_id: int, proposed_parent_id: int | None, db: Ses
     return False
 
 
+def _validate_origin_parent(
+    parent_release_id: int | None,
+    deliverable_id: int | None,
+    db: Session,
+    self_release_id: int | None,
+    required_detail: str,
+) -> None:
+    if parent_release_id is None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=required_detail)
+    if self_release_id is not None and parent_release_id == self_release_id:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Una Release no puede ser su propia Release origen.",
+        )
+    parent = db.get(Release, parent_release_id)
+    if parent is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Release origen no encontrada.")
+    if deliverable_id is None or parent.deliverable_id != deliverable_id:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail="La Release origen debe pertenecer al mismo Entregable.",
+        )
+    if self_release_id is not None and _would_create_cycle(self_release_id, parent_release_id, db):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail="Esa Release origen generaría un ciclo en la cadena de versiones del Entregable.",
+        )
+
+
 def _validate_lineage(
     release_type: ReleaseType | None,
     parent_release_id: int | None,
@@ -100,33 +166,25 @@ def _validate_lineage(
     self_release_id: int | None = None,
 ) -> None:
     if release_type == ReleaseType.REVALIDACION:
-        if parent_release_id is None:
-            raise HTTPException(
-                status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Una Release de tipo Revalidación requiere una Release origen.",
-            )
-        if self_release_id is not None and parent_release_id == self_release_id:
-            raise HTTPException(
-                status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Una Release no puede ser su propia Release origen.",
-            )
-        parent = db.get(Release, parent_release_id)
-        if parent is None:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Release origen no encontrada.")
-        if deliverable_id is None or parent.deliverable_id != deliverable_id:
-            raise HTTPException(
-                status.HTTP_409_CONFLICT,
-                detail="La Release origen debe pertenecer al mismo Entregable.",
-            )
-        if self_release_id is not None and _would_create_cycle(self_release_id, parent_release_id, db):
-            raise HTTPException(
-                status.HTTP_409_CONFLICT,
-                detail="Esa Release origen generaría un ciclo en la cadena de versiones del Entregable.",
-            )
-    elif release_type == ReleaseType.EVOLUTIVO and parent_release_id is not None:
+        _validate_origin_parent(
+            parent_release_id,
+            deliverable_id,
+            db,
+            self_release_id,
+            "Una Release de tipo Revalidación requiere una Release origen.",
+        )
+    elif release_type == ReleaseType.EVOLUTIVO:
+        _validate_origin_parent(
+            parent_release_id,
+            deliverable_id,
+            db,
+            self_release_id,
+            "Una Release de tipo Evolutivo requiere una Release origen.",
+        )
+    elif release_type == ReleaseType.NUEVO and parent_release_id is not None:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Una Release de tipo Evolutivo no debe tener Release origen.",
+            detail="Una Release de tipo Nuevo no debe tener Release origen.",
         )
 
 
@@ -151,6 +209,9 @@ async def analyze_release_note(
 
     analyzer = RuleBasedPdfAnalyzer()
     extracted = analyzer.analyze(file.filename, content)
+    stored = persist_release_note_pdf(file.filename, content)
+    if stored:
+        extracted = extracted.model_copy(update={"pdf_file_path": stored})
 
     return ReleaseNoteAnalyzeResponse(
         analysis=extracted,
@@ -162,6 +223,8 @@ async def analyze_release_note(
 def list_releases(
     status_filter: ReleaseStatus | None = Query(default=None, alias="status"),
     platform: str | None = Query(default=None),
+    include_be: bool = Query(default=False),
+    include_operativa: bool = Query(default=False),
     db: Session = Depends(get_db),
 ) -> list[ReleaseWithCounts]:
     stmt = (
@@ -170,6 +233,10 @@ def list_releases(
         .group_by(Release.id)
         .order_by(Release.created_at.desc())
     )
+    if not include_be:
+        stmt = stmt.where(Release.be_release_id.is_(None))
+    if not include_operativa:
+        stmt = stmt.where(Release.operativa_release_id.is_(None))
     if status_filter is not None:
         stmt = stmt.where(Release.status == status_filter)
     if platform is not None:
@@ -187,7 +254,7 @@ def list_releases(
             .scalars()
             .first()
         )
-        release_read = ReleaseRead.model_validate(release).model_dump()
+        release_read = to_release_read(release).model_dump()
         results.append(
             ReleaseWithCounts(
                 **release_read,
@@ -197,14 +264,13 @@ def list_releases(
                     if latest_analysis
                     else None
                 ),
-                deliverable_name=release.deliverable.name if release.deliverable else None,
             )
         )
     return results
 
 
 @router.post("", response_model=ReleaseRead, status_code=status.HTTP_201_CREATED)
-def create_release(payload: ReleaseCreate, db: Session = Depends(get_db)) -> Release:
+def create_release(payload: ReleaseCreate, db: Session = Depends(get_db)) -> ReleaseRead:
     release_dict = payload.model_dump(exclude={"analysis_data", "deliverable_name"})
     if release_dict.get("execution_days") is None and release_dict.get("start_date") and release_dict.get("end_date"):
         release_dict["execution_days"] = calculate_business_days(
@@ -241,20 +307,28 @@ def create_release(payload: ReleaseCreate, db: Session = Depends(get_db)) -> Rel
         ) from exc
 
     db.refresh(release)
-    return release
+    return to_release_read(release)
 
 
 @router.get("/{release_id}", response_model=ReleaseRead)
-def get_release(release_id: int, db: Session = Depends(get_db)) -> Release:
-    return get_release_or_404(release_id, db)
+def get_release(release_id: int, db: Session = Depends(get_db)) -> ReleaseRead:
+    release = get_release_or_404(release_id, db)
+    return to_release_read(release)
 
 
 @router.patch("/{release_id}", response_model=ReleaseRead)
 def update_release(
-    release_id: int, payload: ReleaseUpdate, db: Session = Depends(get_db)
-) -> Release:
+    release_id: int,
+    payload: ReleaseUpdate,
+    db: Session = Depends(get_db),
+    user: AuthUser = Depends(get_current_user),
+) -> ReleaseRead:
     release = get_release_or_404(release_id, db)
     updates = payload.model_dump(exclude_unset=True)
+
+    new_status = updates.get("status")
+    if new_status is not None and new_status != release.status and user.role not in {Role.JEFE, Role.LIDER}:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="No tienes permiso para cambiar el estado del release.")
 
     if _LINEAGE_FIELDS & updates.keys() and release.status != ReleaseStatus.DRAFT:
         raise HTTPException(
@@ -262,7 +336,6 @@ def update_release(
             detail="Entregable, Tipo de Release y Release origen solo pueden editarse mientras la Release está en DRAFT.",
         )
 
-    new_status = updates.get("status")
     if new_status is not None and new_status != release.status:
         allowed = _VALID_TRANSITIONS.get(release.status, set())
         if new_status not in allowed:
@@ -297,30 +370,51 @@ def update_release(
             detail="A release with this name, version and platform already exists.",
         ) from exc
     db.refresh(release)
-    return release
+    return to_release_read(release)
 
 
-@router.delete("/{release_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_release(release_id: int, db: Session = Depends(get_db)) -> None:
-    release = get_release_or_404(release_id, db)
+def hard_delete_release_and_notes(db: Session, release: Release) -> None:
     has_children = db.execute(
-        select(Release.id).where(Release.parent_release_id == release_id)
+        select(Release.id).where(Release.parent_release_id == release.id)
     ).first()
     if has_children:
         raise HTTPException(
             status.HTTP_409_CONFLICT,
             detail="No se puede eliminar una Release que es origen de otras Releases (Revalidaciones).",
         )
-    if release.status != ReleaseStatus.DRAFT:
+    if release.be_release_id is not None and release.status != ReleaseStatus.DRAFT:
         raise HTTPException(
             status.HTTP_409_CONFLICT,
             detail=(
-                "Only DRAFT releases can be deleted. Releases with activity must be moved to "
+                "Only DRAFT Release BE can be deleted. Releases with activity must be moved to "
                 "CANCELLED instead of being deleted."
             ),
         )
+    pdf_paths = [row.pdf_file_path for row in release.analyses if row.pdf_file_path]
+    operativa = release.operativa_release
+    operativa_id = operativa.id if operativa is not None else None
+    if operativa and operativa.pdf_file_path:
+        pdf_paths.append(operativa.pdf_file_path)
+    release.operativa_release_id = None
+    db.flush()
     db.delete(release)
+    db.flush()
+    if operativa_id is not None:
+        leftover = db.get(OperativaRelease, operativa_id)
+        if leftover is not None:
+            db.delete(leftover)
     db.commit()
+    for path in pdf_paths:
+        delete_release_note_pdf(path)
+
+
+@router.delete("/{release_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_release(
+    release_id: int,
+    db: Session = Depends(get_db),
+    _user: AuthUser = Depends(require_jefe),
+) -> None:
+    hard_delete_release_and_notes(db, get_release_or_404(release_id, db))
 
 
 @router.get("/{release_id}/analysis", response_model=ReleaseAnalysisRead)
@@ -343,10 +437,164 @@ def get_release_analysis(release_id: int, db: Session = Depends(get_db)) -> Rele
     return analysis
 
 
-@router.post("/{release_id}/generate-cases")
-def generate_cases_from_rn(release_id: int, db: Session = Depends(get_db)) -> dict[str, Any]:
-    """Stub endpoint prepared for the future .md-based QC Engine."""
+def _already_generated_response(release: Release, summary: dict) -> GenerateCasesResponse:
+    return GenerateCasesResponse(
+        status="ALREADY_GENERATED",
+        message=(
+            f"Esta Release ya tiene {summary['test_case_count']} Test Case(s) generados. "
+            "No se duplicaron. Usa regenerar para reemplazar únicamente los casos del motor."
+        ),
+        release_id=release.id,
+        release_name=release.name,
+        validation_type=release.validation_type,
+        has_analysis=True,
+        engine="already-persisted",
+        candidates=[],
+        persisted=True,
+        already_generated=True,
+        test_case_count=summary["test_case_count"],
+        estimation_hours=summary["estimation_hours"],
+        estimation_days=summary["estimation_days"],
+    )
+
+
+def _generate_operativa_cases(release: Release, regenerate: bool, db: Session) -> GenerateCasesResponse:
+    existing_engine = engine_cases_for_release(db, release.id)
+    if existing_engine and not regenerate:
+        return _already_generated_response(release, summarize_cases(existing_engine))
+
+    epcs = list(
+        db.scalars(
+            select(Epc).where(Epc.release_id == release.id).order_by(Epc.id)
+        ).all()
+    )
+    if not epcs:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail="No hay BRF/EPC congelados en este Release. QC debe incluir EPCs al crear el Release.",
+        )
+    operativa = db.get(OperativaRelease, release.operativa_release_id)
+    pdf_bytes = read_release_note_pdf(operativa.pdf_file_path if operativa else None)
+    result = generate_operativa_from_matrix(
+        release_id=release.id,
+        release_name=release.name,
+        epcs=epcs,
+        pdf_bytes=pdf_bytes,
+    )
+    if regenerate:
+        delete_engine_cases(db, release.id)
+    persisted_rows = []
+    if result.candidates:
+        persisted_rows = persist_candidates(
+            db, release.id, release.platform or "Operativa", result.candidates
+        )
+    db.commit()
+    for row in persisted_rows:
+        db.refresh(row)
+    summary = summarize_cases(persisted_rows)
+    device_review = result.device_review_brfs or []
+    dup_count = result.duplicate_groups
+    n_brfs = result.brfs_analyzed
+    n_cases = summary["test_case_count"]
+    lines = [f"{n_brfs} BRFs analizados · {n_cases} Test Cases generados"]
+    if device_review:
+        lines.append(f"⚠️ {len(device_review)} BRFs requieren revisión de dispositivos")
+    if dup_count:
+        noun = "posible duplicado detectado" if dup_count == 1 else "posibles duplicados/solapamientos detectados"
+        lines.append(f"⚠️ {dup_count} {noun}")
+    lines.append("Ver detalles del análisis")
+    return GenerateCasesResponse(
+        status="PROPOSED",
+        message="\n".join(lines),
+        release_id=release.id,
+        release_name=release.name,
+        validation_type=release.validation_type,
+        has_analysis=True,
+        engine=OPERATIVA_ENGINE,
+        candidates=result.candidates,
+        persisted=bool(persisted_rows),
+        already_generated=False,
+        test_case_count=n_cases,
+        estimation_hours=summary["estimation_hours"],
+        estimation_days=summary["estimation_days"],
+        analysis_details=result.skipped,
+        brfs_analyzed=n_brfs,
+        device_review_count=len(device_review),
+        possible_duplicate_count=dup_count,
+    )
+
+
+@router.get("/{release_id}/coverage-matrix", response_model=CoverageMatrixResponse)
+def get_operativa_coverage_matrix(
+    release_id: int,
+    brf_key: str | None = Query(default=None, description="Filtrar filas a un BRF (p. ej. BRF-17442)"),
+    db: Session = Depends(get_db),
+) -> CoverageMatrixResponse:
+    """Matriz intermedia de cobertura funcional — antes de expansión por dispositivo / TCs."""
     release = get_release_or_404(release_id, db)
+    if release.operativa_release_id is None:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail="La matriz de cobertura aplica solo a Releases Operativas.",
+        )
+    epcs = list(
+        db.scalars(
+            select(Epc).where(Epc.release_id == release.id).order_by(Epc.id)
+        ).all()
+    )
+    if not epcs:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail="No hay BRF/EPC congelados en este Release.",
+        )
+    if brf_key:
+        normalized = brf_key.strip().upper()
+        epcs = [epc for epc in epcs if (epc.brf_key or "").upper() == normalized]
+        if not epcs:
+            raise HTTPException(
+                status.HTTP_404_NOT_FOUND,
+                detail=f"No hay EPC congelados para {normalized} en este Release.",
+            )
+    result = build_coverage_matrix(
+        release_id=release.id,
+        release_name=release.name,
+        epcs=epcs,
+    )
+    if brf_key:
+        normalized = brf_key.strip().upper()
+        result.rows = [row for row in result.rows if row.brf_key.upper() == normalized]
+        result.hn_coverage = [item for item in result.hn_coverage if item.brf_key.upper() == normalized]
+        result.row_count = len(result.rows)
+        result.brfs_analyzed = 1
+    return result
+
+
+@router.get("/{release_id}/coverage-matrix/preview", response_model=MatrixPreviewResponse)
+def get_operativa_matrix_preview(
+    release_id: int,
+    brf_key: str | None = Query(default=None, description="Filtrar a un BRF (p. ej. BRF-17442)"),
+    db: Session = Depends(get_db),
+) -> MatrixPreviewResponse:
+    """Preview Matriz → dispositivo. No persiste TCs ni escribe Jira/Zephyr."""
+    matrix = get_operativa_coverage_matrix(release_id, brf_key=brf_key, db=db)
+    return expand_matrix_preview(matrix)
+
+
+@router.post("/{release_id}/generate-cases", response_model=GenerateCasesResponse)
+def generate_cases_from_rn(
+    release_id: int,
+    regenerate: bool = Query(default=False),
+    db: Session = Depends(get_db),
+) -> GenerateCasesResponse:
+    """Generate functional Test Cases: Apps from RN/Jira, Operativas from QC-selected BRFs."""
+    release = get_release_or_404(release_id, db)
+    if release.be_release_id is not None:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail="La generación de casos desde Matriz QC de Release BE se conectará en una fase posterior.",
+        )
+    if release.operativa_release_id is not None:
+        return _generate_operativa_cases(release, regenerate, db)
     analysis = (
         db.execute(
             select(ReleaseAnalysis)
@@ -356,11 +604,228 @@ def generate_cases_from_rn(release_id: int, db: Session = Depends(get_db)) -> di
         .scalars()
         .first()
     )
-    return {
-        "status": "READY",
-        "message": "Flujo de generación preparado. El motor QC v0.1 se conectará en la siguiente fase.",
-        "release_id": release.id,
-        "release_name": release.name,
-        "validation_type": release.validation_type or "Smoke",
-        "has_analysis": analysis is not None,
+    if analysis is None:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND,
+            detail="No hay un RN asociado a esta Release. Analiza y crea la Release desde el PDF primero.",
+        )
+
+    existing_engine = engine_cases_for_release(db, release.id)
+    if existing_engine and not regenerate:
+        summary = summarize_cases(existing_engine)
+        return GenerateCasesResponse(
+            status="ALREADY_GENERATED",
+            message=(
+                f"Esta Release ya tiene {summary['test_case_count']} Test Case(s) generados. "
+                "No se duplicaron. Usa regenerar para reemplazar únicamente los casos del motor."
+            ),
+            release_id=release.id,
+            release_name=release.name,
+            validation_type=release.validation_type,
+            has_analysis=True,
+            engine="already-persisted",
+            candidates=[],
+            persisted=True,
+            already_generated=True,
+            test_case_count=summary["test_case_count"],
+            estimation_hours=summary["estimation_hours"],
+            estimation_days=summary["estimation_days"],
+        )
+
+    history_stmt = select(TestCase).where(TestCase.release_id == release.id)
+    if release.deliverable_id is not None:
+        sibling_ids = select(Release.id).where(Release.deliverable_id == release.deliverable_id)
+        history_stmt = select(TestCase).where(TestCase.release_id.in_(sibling_ids))
+    history_rows = list(db.execute(history_stmt).scalars().all())
+    existing = [
+        {
+            "test_case_id": row.test_case_id,
+            "test_case_name": row.test_case_name,
+            "description": row.description or "",
+        }
+        for row in history_rows
+        if not getattr(row, "generated_by_engine", False)
+    ]
+    pdf_bytes = read_release_note_pdf(analysis.pdf_file_path)
+    parent = release.parent
+    context = {
+        "name": release.name,
+        "version": release.version,
+        "platform": release.platform,
+        "cluster": release.cluster,
+        "description": release.description,
+        "validation_type": release.validation_type,
+        "jira_issue_filter": release.jira_issue_filter,
+        "release_type": release.release_type.value if release.release_type else None,
+        "parent_release_id": release.parent_release_id,
+        "parent_release_name": f"{parent.name} v{parent.version}" if parent else None,
+        "analysis": {
+            "pdf_filename": analysis.pdf_filename,
+            "detected_name": analysis.detected_name,
+            "detected_version": analysis.detected_version,
+            "detected_platform": analysis.detected_platform,
+            "detected_description": analysis.detected_description,
+            "features_count": analysis.features_count,
+            "observations": analysis.observations,
+        },
     }
+    if release.release_type == ReleaseType.REVALIDACION and release.parent_release_id is not None:
+        origin = db.get(Release, release.parent_release_id)
+        origin_rows = list(
+            db.execute(select(TestCase).where(TestCase.release_id == release.parent_release_id)).scalars().all()
+        )
+        origin_snapshot = [
+            {
+                "id": row.id,
+                "test_case_id": row.test_case_id,
+                "test_case_name": row.test_case_name,
+                "description": row.description or "",
+                "technical_story": row.technical_story or "",
+                "technical_epic": row.technical_epic or "",
+                "evidence": row.evidence or "",
+                "justification": row.justification or "",
+            }
+            for row in origin_rows
+        ]
+        proposal = generate_revalidation_candidates(
+            release_id=release.id,
+            release_name=release.name,
+            validation_type=release.validation_type,
+            rn_filename=analysis.pdf_filename,
+            pdf_bytes=pdf_bytes,
+            origin_release_id=release.parent_release_id,
+            origin_release_name=(
+                f"{origin.name} v{origin.version}" if origin else f"Release {release.parent_release_id}"
+            ),
+            origin_cases=origin_snapshot,
+        )
+    else:
+        proposal = generate_release_app_candidates(
+            release_id=release.id,
+            release_name=release.name,
+            validation_type=release.validation_type,
+            analysis_present=True,
+            rn_filename=analysis.pdf_filename,
+            pdf_bytes=pdf_bytes,
+            release_context=context,
+            existing_cases=existing,
+        )
+    if regenerate:
+        delete_engine_cases(db, release.id)
+
+    persisted_rows = []
+    if proposal.candidates:
+        persisted_rows = persist_candidates(
+            db, release.id, release.platform or "General", proposal.candidates
+        )
+    db.commit()
+    for row in persisted_rows:
+        db.refresh(row)
+    summary = summarize_cases(persisted_rows)
+    if not proposal.candidates:
+        proposal.message = (
+            proposal.message
+            + " No se persistió ningún Test Case porque el motor no materializó candidatos funcionales."
+        )
+        proposal.persisted = False
+    else:
+        proposal.message = (
+            f"Se persistieron {summary['test_case_count']} Test Case(s) en la Release. "
+            f"Estimación IA: {summary['estimation_hours']} h (≈ {summary['estimation_days']} días QC)."
+        )
+        proposal.persisted = True
+    proposal.already_generated = False
+    proposal.test_case_count = summary["test_case_count"]
+    proposal.estimation_hours = summary["estimation_hours"]
+    proposal.estimation_days = summary["estimation_days"]
+    return proposal
+
+
+@router.get("/{release_id}/test-cases/export")
+def export_release_test_cases(release_id: int, db: Session = Depends(get_db)) -> Response:
+    """Excel with QC sheet + Zephyr-flat sheet from persisted Test Cases."""
+    release = get_release_or_404(release_id, db)
+    cases = load_release_cases(db, release.id)
+    try:
+        payload = build_test_cases_workbook(cases)
+    except Exception as exc:
+        raise HTTPException(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"No se pudo generar el Excel: {exc}",
+        ) from exc
+    raw_name = f"CaseForge_{release.name}_TestCases.xlsx".replace(" ", "_")
+    ascii_name = "CaseForge_TestCases.xlsx"
+    disposition = (
+        f"attachment; filename=\"{ascii_name}\"; "
+        f"filename*=UTF-8''{quote(raw_name)}"
+    )
+    return Response(
+        content=payload,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": disposition,
+            "Content-Length": str(len(payload)),
+        },
+    )
+
+
+@router.post("/{release_id}/publish-qco", response_model=PublishCasesResponse)
+def publish_operativa_cases_to_qco(
+    release_id: int,
+    db: Session = Depends(get_db),
+) -> PublishCasesResponse:
+    """QCO_ZEPHYR_PUBLISH: parked. UI hidden. Keep endpoint for Zephyr-format phase.
+
+    Publish persisted engine TCs of an Operativa Release to Jira QCO Test.
+    Idempotent: already-created remote keys are skipped. Does not mutate coverage rows.
+    """
+    release = get_release_or_404(release_id, db)
+    if release.operativa_release_id is None:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail="La publicación a QCO está disponible para Releases de Operativas.",
+        )
+    cases = load_engine_cases(db, release.id)
+    if not cases:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail="No hay Test Cases del motor para publicar. Genera casos primero.",
+        )
+    before = {case.id: fingerprint(case) for case in cases}
+    records = publish_cases(db, cases)
+    db.expire_all()
+    after_cases = load_engine_cases(db, release.id)
+    after = {case.id: fingerprint(case) for case in after_cases}
+    created = sum(1 for row in records if row.resultado == "created")
+    errors = sum(1 for row in records if row.resultado == "error")
+    duplicates = sum(1 for row in records if row.resultado == "duplicate")
+    unmodified = all(after.get(key) == value for key, value in before.items())
+    return PublishCasesResponse(
+        status="PUBLISHED" if not errors else "PARTIAL",
+        message=(
+            f"{len(records)} enviados · {created} creados · {duplicates} duplicados · {errors} errores. "
+            "Los Test Cases de CaseForge no se modifican."
+        ),
+        release_id=release.id,
+        sent=len(records),
+        created=created,
+        errors=errors,
+        duplicates=duplicates,
+        rejected=errors,
+        caseforge_unmodified=unmodified,
+        records=[
+            PublicationRecordRead(
+                caseforge_id=row.caseforge_id,
+                zephyr_id=row.zephyr_id,
+                brf=row.brf,
+                hn=row.hn,
+                device_channel=row.device_channel,
+                name=row.name,
+                steps=row.steps,
+                status=row.status,
+                resultado=row.resultado,
+                detail=row.detail,
+            )
+            for row in records
+        ],
+    )

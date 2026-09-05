@@ -1,5 +1,11 @@
 export type ReleaseStatus = "DRAFT" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
-export type ReleaseType = "EVOLUTIVO" | "REVALIDACION";
+export type ReleaseType = "NUEVO" | "EVOLUTIVO" | "REVALIDACION";
+export type AuthRole = "jefe" | "lider" | "tester" | "consulta";
+
+export interface AuthUser {
+  email: string;
+  role: AuthRole;
+}
 
 export type TestCasePriority = "BLOCKER" | "CRITICAL";
 
@@ -84,6 +90,137 @@ export interface ReleaseNoteAnalyzeResponse {
   calculated_business_days: number;
 }
 
+export interface GeneratedCaseStep {
+  step_number: number;
+  action: string;
+  expected_result: string;
+  test_data?: string | null;
+}
+
+export interface GeneratedCaseCandidate {
+  name: string;
+  description: string;
+  precondition: string | null;
+  requires_condition: boolean;
+  steps: GeneratedCaseStep[];
+  test_data?: string | null;
+  related_functionality: string | null;
+  related_jira: string | null;
+  related_rn: string | null;
+  evidence: string;
+  justification: string;
+  possible_duplicate_of: string | null;
+  confidence: "high" | "medium" | "low";
+  review_required: boolean;
+  basic_validation?: boolean;
+  priority?: "BLOCKER" | "CRITICAL" | null;
+  priority_reason?: string | null;
+  user_type?: string | null;
+  use_case_key?: string | null;
+  use_case_title?: string | null;
+  access_path?: string | null;
+  device?: string | null;
+  country?: string | null;
+  device_source?: string | null;
+  mdp?: string | null;
+  behavior?: string | null;
+  hn_keys?: string[];
+  candidate_id?: string | null;
+  duplicate_status?: "UNIQUE" | "POSSIBLE_DUPLICATE" | "OVERLAP" | null;
+  duplicate_with?: string[];
+  ecosystem?: string | null;
+  applicability_reason?: string | null;
+  group_id?: string | null;
+  interaction_points?: string[];
+  hn_source?: string | null;
+}
+
+export interface GenerateCasesResponse {
+  status: string;
+  message: string;
+  release_id: number;
+  release_name: string;
+  validation_type: string | null;
+  has_analysis: boolean;
+  engine: string;
+  candidates: GeneratedCaseCandidate[];
+  persisted: boolean;
+  already_generated?: boolean;
+  test_case_count?: number;
+  estimation_hours?: number;
+  estimation_days?: number;
+  analysis_details?: string[];
+  brfs_analyzed?: number;
+  device_review_count?: number;
+  possible_duplicate_count?: number;
+}
+
+export interface PublishCasesResponse {
+  status: string;
+  message: string;
+  release_id: number;
+  sent: number;
+  created: number;
+  errors: number;
+  duplicates: number;
+  rejected: number;
+  caseforge_unmodified: boolean;
+  records: Array<{
+    caseforge_id: string;
+    zephyr_id: string | null;
+    brf: string;
+    hn: string;
+    device_channel: string;
+    name: string;
+    steps: number;
+    status: string;
+    resultado: string;
+    detail: string;
+  }>;
+}
+
+export interface CoverageMatrixRow {
+  brf_key: string;
+  epc_keys: string[];
+  hn_keys: string[];
+  behavior_key: string;
+  behavior_title: string;
+  interaction_points: string[];
+  channel: string | null;
+  ecosystem: string | null;
+  applicable_devices: string[];
+  relevant_users: string[];
+  mdp: string[];
+  test_data: string | null;
+  origin: string;
+  evidence: string;
+  applicability_reason: string;
+  duplicate_risk: string;
+  duplicate_with: string[];
+  rules: string[];
+}
+
+export interface CoverageMatrixResponse {
+  status: string;
+  engine: string;
+  release_id: number;
+  release_name: string;
+  brfs_analyzed: number;
+  row_count: number;
+  rows: CoverageMatrixRow[];
+  notes: string[];
+  hn_source_by_brf: Record<string, string>;
+  hn_coverage?: Array<{
+    brf_key: string;
+    hn_key: string;
+    status: string;
+    disposition?: string | null;
+    related_hn?: string[];
+    behavior_keys: string[];
+    reason: string;
+  }>;
+}
+
 export interface Release {
   id: number;
   name: string;
@@ -101,6 +238,13 @@ export interface Release {
   deliverable_id: number | null;
   release_type: ReleaseType | null;
   parent_release_id: number | null;
+  parent_release_name?: string | null;
+  operativa_release_id: number | null;
+  be_release_id: number | null;
+  deliverable_name?: string | null;
+  swf?: string | null;
+  regresivo_scope?: "COMPLETO" | "SMOKE" | "ACOTADO" | null;
+  affected_component?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -125,6 +269,7 @@ export interface DeliverableReleaseSummary {
   status: ReleaseStatus;
   release_type: ReleaseType | null;
   parent_release_id: number | null;
+  deliverable_id?: number | null;
   created_at: string;
 }
 
@@ -159,6 +304,25 @@ export interface TestCase {
   priority: TestCasePriority;
   test_type: TestCaseType;
   status: TestCaseStatus;
+  test_data?: string | null;
+  requires_condition?: boolean;
+  evidence?: string | null;
+  justification?: string | null;
+  technical_epic?: string | null;
+  technical_story?: string | null;
+  scenario_origin?: string | null;
+  related_rn?: string | null;
+  confidence?: string | null;
+  complexity?: string | null;
+  estimation_hours?: number | null;
+  generated_by_engine?: boolean;
+  ecosystem?: string | null;
+  device?: string | null;
+  device_source?: string | null;
+  applicability_reason?: string | null;
+  duplicate_status?: string | null;
+  group_id?: string | null;
+  hn_source?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -234,6 +398,7 @@ export interface ActivityItem {
   deliverable_release_ordinal: number | null;
   deliverable_total_versions: number | null;
   deliverable_total_revalidaciones: number | null;
+  origin_kind: "APP" | "BE" | "OPERATIVA";
 }
 
 export interface QcDashboardSummary {
@@ -256,6 +421,11 @@ export interface QcDashboardSummary {
   defects_critical: number;
   at_risk: AtRiskItem[];
   active_items: ActivityItem[];
+  execution_items: ActivityItem[];
+  in_progress_app: number;
+  in_progress_be: number;
+  in_progress_operativa: number;
+  in_progress_total: number;
 }
 
 export interface QcSummaryFilters {
@@ -315,6 +485,22 @@ export interface QcTicketBulkCreateResult {
   errors: { issue_key: string | null; message: string }[];
 }
 
+export interface QcTicketJiraRefreshFilterResult {
+  filter_id: string;
+  source: string;
+  jira_count: number;
+  mapped: number;
+  skipped: number;
+}
+
+export interface QcTicketJiraRefreshResult {
+  created: number;
+  updated: number;
+  skipped: number;
+  filter_ids: string[];
+  filters: QcTicketJiraRefreshFilterResult[];
+}
+
 export interface QcTicketStats {
   total: number;
   blocker_count: number;
@@ -328,6 +514,38 @@ export interface QcTicketStats {
   by_cluster: Record<string, number>;
   by_swf: Record<string, number>;
   by_month: Record<string, number>;
+  by_month_priority: Record<string, { BLOCKER: number; CRITICAL: number; OTHER: number }>;
+  open_by_priority: Record<string, number>;
+  by_status: Record<string, number>;
+  by_device: Record<string, number>;
+  by_program: Record<string, number>;
+  by_quarter: Record<string, number>;
+  severity_by_swf: Record<string, { BLOCKER: number; CRITICAL: number; OTHER: number }>;
+  swf_by_month: Record<string, Record<string, number>>;
+  leak_by_month: Record<string, { leaked: number; rate: number }>;
+  leak_by_swf: Record<string, number>;
+  leak_by_project: Record<string, number>;
+}
+
+export interface QcTicketRead {
+  id: number;
+  issue_key: string;
+  issue_type: string | null;
+  project_key: string | null;
+  priority_bucket: QcTicketPriority;
+  status_raw: string;
+  is_open: boolean;
+  view: QcTicketView;
+  source: QcTicketSource;
+  cluster: string | null;
+  affected_program: string | null;
+  device: string | null;
+  swf: string | null;
+  is_attributed: boolean | null;
+  created_date: string;
+  resolved_date: string | null;
+  summary: string | null;
+  imported_at: string;
 }
 
 export interface QcRadarFilterItem {
@@ -345,4 +563,112 @@ export interface QcRadarViewConfig {
 export interface QcRadarConfigResponse {
   OPERATIVAS: QcRadarViewConfig;
   RELEASE: QcRadarViewConfig;
+}
+
+export interface EpcRead {
+  id: number;
+  operativa_release_id: number;
+  release_id?: number | null;
+  brf_key: string;
+  epc_key: string | null;
+  titulo: string;
+  alcance: string | null;
+  nota_rte: string | null;
+  estado_jira: string | null;
+  qc_suggestion: "SUGERIDO_INCLUIR" | "SUGERIDO_EXCLUIR" | "REQUIERE_REVISION";
+  include_in_qc: boolean;
+  alcance_funcional: string | null;
+  dispositivos_aplicables: string[] | null;
+}
+
+export interface OperativaReleaseRead {
+  id: number;
+  name: string | null;
+  entregable: string | null;
+  cluster: string | null;
+  description: string | null;
+  pdf_filename: string;
+  start_date: string | null;
+  end_date: string | null;
+  jira_filter_url: string | null;
+  jira_filter_manual: string | null;
+  instrucciones_adicionales: string | null;
+  epcs: EpcRead[];
+  qc_release_id?: number | null;
+  qc_release_status?: string | null;
+}
+
+export interface OperativaReleaseUpdate {
+  name?: string | null;
+  entregable?: string | null;
+  cluster?: string | null;
+  description?: string | null;
+  start_date?: string | null;
+  end_date?: string | null;
+  jira_filter_url?: string | null;
+  jira_filter_manual?: string | null;
+  instrucciones_adicionales?: string | null;
+}
+
+export interface OperativaAnalysisResult {
+  operativa_release: OperativaReleaseRead;
+}
+
+export interface EpcUpdate {
+  include_in_qc?: boolean;
+  alcance_funcional?: string;
+  dispositivos_aplicables?: string[];
+}
+
+export type BeRegresivoScope = "COMPLETO" | "SMOKE" | "ACOTADO";
+export type BeSwf = "Neoris" | "Tata" | "Hitss";
+
+export interface BeReleaseRead {
+  id: number;
+  name: string | null;
+  entregable: string | null;
+  swf: BeSwf | null;
+  description: string | null;
+  pdf_filename: string | null;
+  regresivo_scope: BeRegresivoScope | null;
+  affected_component: string | null;
+}
+
+export interface BeReleaseUpdate {
+  name?: string | null;
+  entregable?: string | null;
+  swf?: BeSwf | null;
+  description?: string | null;
+  regresivo_scope?: BeRegresivoScope | null;
+  affected_component?: string | null;
+}
+
+export interface BeAnalysisResult {
+  be_release: BeReleaseRead;
+}
+
+export interface QcCalendarEvent {
+  id: string;
+  title: string;
+  start: string;
+  end: string;
+  location?: string | null;
+  is_live: boolean;
+  web_link?: string | null;
+  categories: string[];
+  source?: string;
+}
+
+export interface QcCalendarDayResponse {
+  date: string;
+  events: QcCalendarEvent[];
+  feed?: string;
+  outlook_note?: string | null;
+}
+
+export interface QcCalendarWeekResponse {
+  week_start: string;
+  events: QcCalendarEvent[];
+  feed?: string;
+  outlook_note?: string | null;
 }

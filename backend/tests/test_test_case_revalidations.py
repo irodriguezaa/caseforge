@@ -30,7 +30,7 @@ def _count_all_test_cases(client, release_ids) -> int:
 
 
 def test_revalidation_candidates_list_test_cases_from_other_releases_in_same_deliverable(client) -> None:
-    v1 = _create_release(client, version="1.0.0", deliverable_name="WEB - X", release_type="EVOLUTIVO")
+    v1 = _create_release(client, version="1.0.0", deliverable_name="WEB - X", release_type="NUEVO")
     _create_test_case(client, v1["id"], "TE-001", status="FAIL")
     _create_test_case(client, v1["id"], "TE-002", status="PASS")
 
@@ -48,7 +48,7 @@ def test_revalidation_candidates_list_test_cases_from_other_releases_in_same_del
 
 
 def test_adding_a_revalidation_does_not_create_a_new_test_case(client) -> None:
-    v1 = _create_release(client, version="1.0.0", deliverable_name="WEB - X", release_type="EVOLUTIVO")
+    v1 = _create_release(client, version="1.0.0", deliverable_name="WEB - X", release_type="NUEVO")
     te001 = _create_test_case(client, v1["id"], "TE-001", status="FAIL")
 
     v2 = _create_release(
@@ -69,7 +69,7 @@ def test_adding_a_revalidation_does_not_create_a_new_test_case(client) -> None:
 
 def test_revalidation_result_is_independent_of_original_test_case_status(client) -> None:
     """V1: TE-001 -> FAIL. V2 revalidates it -> PASS. V1's own result must NOT change."""
-    v1 = _create_release(client, version="1.0.0", deliverable_name="WEB - X", release_type="EVOLUTIVO")
+    v1 = _create_release(client, version="1.0.0", deliverable_name="WEB - X", release_type="NUEVO")
     te001 = _create_test_case(client, v1["id"], "TE-001", status="FAIL")
 
     v2 = _create_release(
@@ -92,7 +92,7 @@ def test_revalidation_result_is_independent_of_original_test_case_status(client)
 
 def test_revalidation_can_pull_a_candidate_from_any_ancestor_release_not_only_direct_parent(client) -> None:
     """V3's parent is V2, but it can still revalidate TE-001, which first appeared in V1."""
-    v1 = _create_release(client, version="1.0.0", deliverable_name="WEB - X", release_type="EVOLUTIVO")
+    v1 = _create_release(client, version="1.0.0", deliverable_name="WEB - X", release_type="NUEVO")
     te001 = _create_test_case(client, v1["id"], "TE-001", status="FAIL")
     v2 = _create_release(
         client, version="1.0.1", deliverable_name="WEB - X",
@@ -108,7 +108,7 @@ def test_revalidation_can_pull_a_candidate_from_any_ancestor_release_not_only_di
 
 
 def test_cannot_select_the_same_test_case_twice_within_one_revalidation(client) -> None:
-    v1 = _create_release(client, version="1.0.0", deliverable_name="WEB - X", release_type="EVOLUTIVO")
+    v1 = _create_release(client, version="1.0.0", deliverable_name="WEB - X", release_type="NUEVO")
     te001 = _create_test_case(client, v1["id"], "TE-001")
     v2 = _create_release(
         client, version="1.0.1", deliverable_name="WEB - X",
@@ -129,10 +129,10 @@ def test_cannot_select_the_same_test_case_twice_within_one_revalidation(client) 
 
 
 def test_revalidation_candidate_must_belong_to_same_deliverable(client) -> None:
-    v1 = _create_release(client, version="1.0.0", deliverable_name="WEB - X", release_type="EVOLUTIVO")
+    v1 = _create_release(client, version="1.0.0", deliverable_name="WEB - X", release_type="NUEVO")
     te001 = _create_test_case(client, v1["id"], "TE-001")
 
-    other_v1 = _create_release(client, version="1.0.0", name="CV OTHER", deliverable_name="WEB - Y", release_type="EVOLUTIVO")
+    other_v1 = _create_release(client, version="1.0.0", name="CV OTHER", deliverable_name="WEB - Y", release_type="NUEVO")
     other_v2 = _create_release(
         client, version="1.0.1", name="CV OTHER", deliverable_name="WEB - Y",
         release_type="REVALIDACION", parent_release_id=other_v1["id"],
@@ -145,7 +145,7 @@ def test_revalidation_candidate_must_belong_to_same_deliverable(client) -> None:
 
 
 def test_only_revalidacion_releases_can_register_revalidations(client) -> None:
-    v1 = _create_release(client, version="1.0.0", deliverable_name="WEB - X", release_type="EVOLUTIVO")
+    v1 = _create_release(client, version="1.0.0", deliverable_name="WEB - X", release_type="NUEVO")
     te001 = _create_test_case(client, v1["id"], "TE-001")
 
     response = client.post(f"/api/v1/releases/{v1['id']}/revalidations", json={"test_case_ids": [te001["id"]]})
@@ -155,7 +155,7 @@ def test_only_revalidacion_releases_can_register_revalidations(client) -> None:
 def test_revalidation_can_involve_both_old_and_new_tickets_worth_of_test_cases(client) -> None:
     """V2 revalidates TE-001 (old) -- nothing stops a Revalidation Release from ALSO having its
     own fresh TestCases for newly reported defects, since TestCase creation is untouched."""
-    v1 = _create_release(client, version="1.0.0", deliverable_name="WEB - X", release_type="EVOLUTIVO")
+    v1 = _create_release(client, version="1.0.0", deliverable_name="WEB - X", release_type="NUEVO")
     te001 = _create_test_case(client, v1["id"], "TE-001")
 
     v2 = _create_release(

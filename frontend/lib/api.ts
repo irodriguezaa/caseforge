@@ -1,23 +1,39 @@
 import type {
   ApiError,
+  AuthUser,
+  BeAnalysisResult,
+  BeReleaseRead,
+  BeReleaseUpdate,
   BulkCreateResult,
   DashboardSummary,
   Deliverable,
   DeliverableReleaseSummary,
   DeliverableWithMetrics,
+  EpcRead,
+  EpcUpdate,
   ImportCandidateTestCase,
   ImportPreviewResult,
   ImportSheetsResult,
   OperationalWindow,
+  OperativaAnalysisResult,
+  OperativaReleaseRead,
+  OperativaReleaseUpdate,
   QcDashboardSummary,
   QcRadarConfigResponse,
   QcSummaryFilters,
   QcTicketBulkCreateResult,
   QcTicketCreate,
   QcTicketImportPreviewResult,
+  QcTicketJiraRefreshResult,
+  QcTicketRead,
   QcTicketSource,
   QcTicketStats,
   QcTicketView,
+  CoverageMatrixResponse,
+  GenerateCasesResponse,
+  PublishCasesResponse,
+  QcCalendarDayResponse,
+  QcCalendarWeekResponse,
   Release,
   ReleaseAnalysis,
   ReleaseNoteAnalyzeResponse,
@@ -43,8 +59,15 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     ...init,
     cache: "no-store",
+    credentials: "include",
     headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
   });
+
+  if (response.status === 401 && !path.startsWith("/api/auth")) {
+    if (typeof window !== "undefined" && window.location.pathname !== "/login") {
+      window.location.assign("/login");
+    }
+  }
 
   if (response.status === 204) {
     return undefined as T;
@@ -53,7 +76,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const body = (await response.json().catch(() => ({}))) as T & ApiError;
 
   if (!response.ok) {
-    const message = body?.detail ?? body?.message ?? `Request failed (${response.status})`;
+    const raw = body?.detail ?? body?.message ?? `Request failed (${response.status})`;
+    const message = typeof raw === "string" ? raw : JSON.stringify(raw);
     throw new ApiRequestError(response.status, message);
   }
 
@@ -96,10 +120,22 @@ export interface TestCaseInput {
 }
 
 export const api = {
-  listReleases: (params?: { status?: ReleaseStatus; platform?: string }) => {
+  me: () => request<AuthUser>("/api/auth/me"),
+  login: (email: string, password: string) =>
+    request<AuthUser>("/api/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }),
+  logout: () => request<{ status: string }>("/api/auth/logout", { method: "POST" }),
+
+  listReleases: (params?: {
+    status?: ReleaseStatus;
+    platform?: string;
+    include_be?: boolean;
+    include_operativa?: boolean;
+  }) => {
     const query = new URLSearchParams();
     if (params?.status) query.set("status", params.status);
     if (params?.platform) query.set("platform", params.platform);
+    if (params?.include_be) query.set("include_be", "true");
+    if (params?.include_operativa) query.set("include_operativa", "true");
     const suffix = query.toString() ? `?${query.toString()}` : "";
     return request<ReleaseWithCounts[]>(`/api/releases${suffix}`);
   },
@@ -126,17 +162,107 @@ export const api = {
   },
   getReleaseAnalysis: (releaseId: number) =>
     request<ReleaseAnalysis>(`/api/releases/${releaseId}/analysis`),
-  generateCasesFromRN: (releaseId: number) =>
-    request<{
-      status: string;
-      message: string;
-      release_id: number;
-      release_name: string;
-      validation_type: string;
-      has_analysis: boolean;
-    }>(`/api/releases/${releaseId}/generate-cases`, {
+  analyzeOperativaRn: async (file: File): Promise<OperativaAnalysisResult> => {
+    const formData = new FormData();
+    formData.append("file", file);
+    const response = await fetch("/api/operativa/analyze-rn", {
       method: "POST",
+      body: formData,
+      cache: "no-store",
+    });
+    const body = (await response.json().catch(() => ({}))) as OperativaAnalysisResult & ApiError;
+    if (!response.ok) {
+      throw new ApiRequestError(response.status, body?.detail ?? body?.message ?? "No se pudo analizar el RN Operativo.");
+    }
+    return body;
+  },
+  getOperativaRelease: (id: number) => request<OperativaReleaseRead>(`/api/operativa/${id}`),
+  deleteOperativaRelease: (id: number) =>
+    request<void>(`/api/operativa/${id}`, { method: "DELETE" }),
+  listOperativaReleases: () => request<OperativaReleaseRead[]>("/api/operativa"),
+  createReleaseFromOperativa: (operativaReleaseId: number) =>
+    request<Release>(`/api/operativa/${operativaReleaseId}/create-release`, { method: "POST" }),
+  listEpcsForQcRelease: (qcReleaseId: number) =>
+    request<EpcRead[]>(`/api/operativa/qc-releases/${qcReleaseId}/epcs`),
+  updateOperativaRelease: (id: number, payload: OperativaReleaseUpdate) =>
+    request<OperativaReleaseRead>(`/api/operativa/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
     }),
+  updateEpc: (epcId: number, payload: EpcUpdate) =>
+    request<EpcRead>(`/api/operativa/epcs/${epcId}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  createBeReleaseWithoutRn: () =>
+    request<BeReleaseRead>("/api/releases-be", { method: "POST" }),
+  listBeReleases: () => request<BeReleaseRead[]>("/api/releases-be"),
+  getBeRelease: (id: number) => request<BeReleaseRead>(`/api/releases-be/${id}`),
+  updateBeRelease: (id: number, payload: BeReleaseUpdate) =>
+    request<BeReleaseRead>(`/api/releases-be/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  analyzeBeRn: async (file: File): Promise<BeAnalysisResult> => {
+    const formData = new FormData();
+    formData.append("file", file);
+    const response = await fetch("/api/releases-be/analyze-rn", {
+      method: "POST",
+      body: formData,
+      cache: "no-store",
+    });
+    const body = (await response.json().catch(() => ({}))) as BeAnalysisResult & ApiError;
+    if (!response.ok) {
+      throw new ApiRequestError(response.status, body?.detail ?? body?.message ?? "No se pudo analizar el RN de BE.");
+    }
+    return body;
+  },
+  createReleaseFromBe: (beReleaseId: number) =>
+    request<Release>(`/api/releases-be/${beReleaseId}/create-release`, { method: "POST" }),
+  generateCasesFromRN: (releaseId: number, regenerate = false) =>
+    request<GenerateCasesResponse>(
+      `/api/releases/${releaseId}/generate-cases${regenerate ? "?regenerate=true" : ""}`,
+      {
+        method: "POST",
+      },
+    ),
+  getCoverageMatrix: (releaseId: number, brfKey?: string) => {
+    const query = brfKey ? `?brf_key=${encodeURIComponent(brfKey)}` : "";
+    return request<CoverageMatrixResponse>(`/api/releases/${releaseId}/coverage-matrix${query}`);
+  },
+  // QCO_ZEPHYR_PUBLISH — kept; UI hidden via SHOW_QCO_ZEPHYR_PUBLISH.
+  publishOperativaToQco: (releaseId: number) =>
+    request<PublishCasesResponse>(`/api/releases/${releaseId}/publish-qco`, { method: "POST" }),
+  exportReleaseTestCases: async (releaseId: number, releaseName: string): Promise<void> => {
+    let response: Response;
+    try {
+      response = await fetch(`/api/releases/${releaseId}/test-cases/export`, {
+        cache: "no-store",
+      });
+    } catch {
+      throw new ApiRequestError(503, "No se pudo contactar al servidor para exportar el Excel.");
+    }
+    const contentType = response.headers.get("content-type") ?? "";
+    if (!response.ok) {
+      const body = (await response.json().catch(() => ({}))) as { detail?: unknown; message?: string };
+      const detail = typeof body.detail === "string" ? body.detail : body.message;
+      throw new ApiRequestError(
+        response.status,
+        detail || "No se pudo exportar el Excel.",
+      );
+    }
+    if (contentType.includes("application/json")) {
+      const body = (await response.json().catch(() => ({}))) as { detail?: string; message?: string };
+      throw new ApiRequestError(502, body.detail ?? body.message ?? "El servidor no devolvió un Excel.");
+    }
+    const blob = await response.blob();
+    if (blob.size < 64) {
+      throw new ApiRequestError(502, "El Excel exportado llegó vacío.");
+    }
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const safe = releaseName.replace(/[<>:"/\\|?*]+/g, "_").replace(/\s+/g, "_").slice(0, 80) || "Release";
+    link.href = url;
+    link.download = `CaseForge_${safe}_TestCases.xlsx`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  },
 
   listTestCases: (releaseId: number) =>
     request<TestCase[]>(`/api/releases/${releaseId}/test-cases`),
@@ -216,6 +342,25 @@ export const api = {
     const suffix = query.toString() ? `?${query.toString()}` : "";
     return request<QcDashboardSummary>(`/api/dashboard/qc-summary${suffix}`);
   },
+  getCalendarDay: (date?: string) => {
+    const suffix = date ? `?date=${encodeURIComponent(date)}` : "";
+    return request<QcCalendarDayResponse>(`/api/calendar/day${suffix}`);
+  },
+  getCalendarWeek: (date?: string) => {
+    const suffix = date ? `?date=${encodeURIComponent(date)}` : "";
+    return request<QcCalendarWeekResponse>(`/api/calendar/week${suffix}`);
+  },
+  uploadCalendarIcs: async (file: File): Promise<{ status: string; bytes: number }> => {
+    const formData = new FormData();
+    formData.append("file", file);
+    const response = await fetch("/api/calendar/ics", { method: "POST", body: formData, cache: "no-store" });
+    const body = (await response.json().catch(() => ({}))) as { status?: string; bytes?: number; detail?: string; message?: string };
+    if (!response.ok) {
+      const raw = body.detail ?? body.message ?? "No se pudo cargar el .ics";
+      throw new ApiRequestError(response.status, typeof raw === "string" ? raw : JSON.stringify(raw));
+    }
+    return { status: body.status || "ok", bytes: body.bytes || 0 };
+  },
   listOperationalWindows: () => request<OperationalWindow[]>("/api/operational-windows"),
   listAllReleaseWindows: () => request<ReleaseWindow[]>("/api/release-windows"),
   createReleaseWindow: (
@@ -244,10 +389,20 @@ export const api = {
   },
   bulkCreateQcTickets: (tickets: QcTicketCreate[]) =>
     request<QcTicketBulkCreateResult>("/api/qc-tickets/bulk", { method: "POST", body: JSON.stringify(tickets) }),
-  getQcTicketStats: (view: QcTicketView, cluster?: string) => {
+  getQcTicketStats: (view: QcTicketView, cluster?: string, bugType?: "QC" | "QA") => {
     const params = new URLSearchParams({ view });
     if (cluster) params.set("cluster", cluster);
+    if (bugType) params.set("bug_type", bugType);
     return request<QcTicketStats>(`/api/qc-tickets/stats?${params.toString()}`);
+  },
+  refreshQcTicketsFromJira: (view: QcTicketView) =>
+    request<QcTicketJiraRefreshResult>(`/api/qc-tickets/jira/refresh?view=${encodeURIComponent(view)}`, {
+      method: "POST",
+    }),
+  listQcTickets: (view: QcTicketView, bugType?: "QC" | "QA") => {
+    const params = new URLSearchParams({ view });
+    if (bugType) params.set("bug_type", bugType);
+    return request<QcTicketRead[]>(`/api/qc-tickets?${params.toString()}`);
   },
   getQcRadarConfig: () => request<QcRadarConfigResponse>("/api/qc-tickets/filters"),
 

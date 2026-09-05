@@ -11,6 +11,8 @@ from collections import Counter
 from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+
+from app.deps.auth import require_dashboard
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -22,7 +24,11 @@ from app.models.test_case import TestCase, TestCasePriority, TestCaseStatus
 from app.models.window import OperationalWindow, ReleaseWindow, WindowStatus
 from app.schemas.dashboard import ActivityItem, AtRiskItem, DashboardSummary, QcDashboardSummary
 
-router = APIRouter(prefix="/api/v1/dashboard", tags=["dashboard"])
+router = APIRouter(
+    prefix="/api/v1/dashboard",
+    tags=["dashboard"],
+    dependencies=[Depends(require_dashboard)],
+)
 
 # A window is flagged at risk if its executed ratio trails its elapsed-time ratio by more than
 # this margin, or if it has any BLOCKED test case, or if FAIL exceeds this share of executed.
@@ -54,6 +60,14 @@ def get_dashboard_summary(db: Session = Depends(get_db)) -> DashboardSummary:
             priority.value: count for priority, count in test_cases_by_priority
         },
     )
+
+
+def _release_origin_kind(rel: Release) -> str:
+    if rel.be_release_id is not None:
+        return "BE"
+    if rel.operativa_release_id is not None:
+        return "OPERATIVA"
+    return "APP"
 
 
 def _parse_month(month: str) -> tuple[date, date]:
@@ -193,23 +207,29 @@ def get_qc_summary(
     # Activity table: one row per open Release, showing its own execution state and risk --
     # independent of the aggregate `test_cases` set above, since each release needs its own
     # planned/executed counts regardless of which release the top filters target.
-    active_releases_stmt = select(Release).where(
-        Release.status.in_([ReleaseStatus.DRAFT, ReleaseStatus.IN_PROGRESS])
-    )
+    # Execution list includes every status so the dashboard panel can filter. The activity
+    # table still uses only DRAFT + IN_PROGRESS.
+    tracked_releases_stmt = select(Release)
     if cluster is not None:
-        active_releases_stmt = active_releases_stmt.where(Release.cluster == cluster)
+        tracked_releases_stmt = tracked_releases_stmt.where(Release.cluster == cluster)
     if release_id is not None:
-        active_releases_stmt = active_releases_stmt.where(Release.id == release_id)
-    active_releases = list(db.execute(active_releases_stmt).scalars().all())
+        tracked_releases_stmt = tracked_releases_stmt.where(Release.id == release_id)
+    tracked_releases = list(db.execute(tracked_releases_stmt).scalars().all())
+    active_releases = [
+        rel
+        for rel in tracked_releases
+        if rel.status in {ReleaseStatus.DRAFT, ReleaseStatus.IN_PROGRESS}
+    ]
 
     # Deliverable context (Entregable/Versiones/Revalidaciones): one grouped query per lookup,
     # not per-row, over the Deliverables actually present in this filtered view. Counts total
     # Releases per Deliverable regardless of status -- same definition as
     # routers/deliverables.py:get_deliverable, for consistency.
-    deliverable_ids = {rel.deliverable_id for rel in active_releases if rel.deliverable_id is not None}
+    deliverable_ids = {rel.deliverable_id for rel in tracked_releases if rel.deliverable_id is not None}
     deliverable_names: dict[int, str] = {}
     deliverable_version_counts: dict[int, int] = {}
     deliverable_revalidacion_counts: dict[int, int] = {}
+    release_ordinal: dict[int, int] = {}
     if deliverable_ids:
         deliverable_names = dict(
             db.execute(
@@ -236,7 +256,6 @@ def get_qc_summary(
         # Ordinal position of THIS release within its Deliverable's timeline (v1, v2, v3...) --
         # needed to show "v2 de 3", not just the total. One query for every Deliverable in view,
         # ordered so position is computed by grouping in Python, not one query per Deliverable.
-        release_ordinal: dict[int, int] = {}
         per_deliverable_counters: dict[int, int] = {}
         ordered_rows = db.execute(
             select(Release.id, Release.deliverable_id)
@@ -247,8 +266,8 @@ def get_qc_summary(
             per_deliverable_counters[deliverable_id] = per_deliverable_counters.get(deliverable_id, 0) + 1
             release_ordinal[release_id] = per_deliverable_counters[deliverable_id]
 
-    active_items: list[ActivityItem] = []
-    for rel in active_releases:
+    execution_items: list[ActivityItem] = []
+    for rel in tracked_releases:
         rel_tc_stmt = select(TestCase).where(TestCase.release_id == rel.id)
         if operational_window_id is not None:
             rel_tc_stmt = rel_tc_stmt.where(TestCase.operational_window_id == operational_window_id)
@@ -312,7 +331,7 @@ def get_qc_summary(
         else:
             risk_level = "LOW"
 
-        active_items.append(
+        execution_items.append(
             ActivityItem(
                 release_id=rel.id,
                 release_name=rel.name,
@@ -343,8 +362,13 @@ def get_qc_summary(
                 deliverable_total_revalidaciones=(
                     deliverable_revalidacion_counts.get(rel.deliverable_id) if rel.deliverable_id else None
                 ),
+                origin_kind=_release_origin_kind(rel),
             )
         )
+
+    active_items = [
+        item for item in execution_items if item.status in {ReleaseStatus.DRAFT.value, ReleaseStatus.IN_PROGRESS.value}
+    ]
 
     return QcDashboardSummary(
         windows_total=len(operational_windows) + len(release_windows),
@@ -369,4 +393,9 @@ def get_qc_summary(
         defects_critical=defects_critical,
         at_risk=at_risk,
         active_items=active_items,
+        execution_items=execution_items,
+        in_progress_app=sum(1 for rel in active_releases if rel.status == ReleaseStatus.IN_PROGRESS and _release_origin_kind(rel) == "APP"),
+        in_progress_be=sum(1 for rel in active_releases if rel.status == ReleaseStatus.IN_PROGRESS and _release_origin_kind(rel) == "BE"),
+        in_progress_operativa=sum(1 for rel in active_releases if rel.status == ReleaseStatus.IN_PROGRESS and _release_origin_kind(rel) == "OPERATIVA"),
+        in_progress_total=sum(1 for rel in active_releases if rel.status == ReleaseStatus.IN_PROGRESS),
     )

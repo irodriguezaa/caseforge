@@ -1,0 +1,22 @@
+caseforge_field,destination_field,transform,required,source,risk
+test_case_id (QC-nnn),Test Case ID,Copia literal. Identidad de publicación; no regenerar.,True,TestCase.test_case_id persistido,Sin ID no hay fila Zephyr. No inventar claves Jira.
+BRF (component / technical_epic),Component,Copia BRF (p. ej. BRF-17442). No sustituir por familia funcional.,True,TestCase.component,Zephyr Component nativo de Jira no tiene ID; se publica el texto BRF.
+Test Case Name (incluye · Device o · Email),Test Case Name,Copia el nombre completo. No recortar el sufijo de dispositivo.,True,TestCase.test_case_name,El export Excel actual recorta ' · Device'; la publicación no debe usarlo.
+Description + trazabilidad,Description,"Description persistida + bloque de trazabilidad solo con valores existentes: BRF, HN/CA, EPCs, Behavior, Ecosystem, Device, Surface/Channel, MDP, Test Data, Reasoning.",False,description + test_data + justification + technical_story + group_id,Zephyr FLAT no tiene columnas propias para Device/HN/EPC/MDP; sin este bloque se pierden.
+User / relevant_users,User Type,"Copia si la matriz declaró usuario. Si está vacío, publicar vacío. No inventar.",False,TestCase.user_type,La mayoría de TCs oficiales no tienen split de usuario.
+"Test Steps (step_number, test_step)",Step + Test Step,1 TC × N steps = N filas FLAT. Mismo Test Case ID. No fusionar TCs ni steps.,True,TestStep.step_number + TestStep.test_step,Step vacío bloquea publicación. No reescribir el texto del lote.
+Expected Result por step,Expected Result,Pareo posicional 1:1 con Test Step. No embeber todos los expected en una celda.,True,TestStep.expected_result,El layout EMBEDDED (una celda) no se usa para publicar este lote.
+Priority,Priority,"CRITICAL→CRITICAL, BLOCKER→BLOCKER. Sin alias inventados (High/Medium).",True,TestCase.priority,Zephyr Scale UI puede mostrar otras etiquetas; no convertir sin catálogo acordado.
+Test Type,Test Type,FUNCTIONAL→FUNCTIONAL. Copia el enum persistido.,True,TestCase.test_type,No reclasificar a SMOKE/REGRESSION en la publicación.
+Status,Status,UNEXECUTED→UNEXECUTED. No marcar PASS/FAIL al publicar.,True,TestCase.status,Publicar no ejecuta el caso.
+Device,Description (trazabilidad) — sin columna Zephyr,Incluir 'Device: {valor}' en Description si hay valor. Email: no fingir dispositivo.,False,TestCase.device,Sin columna nativa. Perder el device fusionaría comportamientos de la matriz.
+Ecosystem,Description (trazabilidad) — sin columna Zephyr,Incluir 'Ecosystem: {valor}' solo si existe.,False,TestCase.ecosystem,Sin columna nativa.
+Surface/Channel,Description (trazabilidad) — sin columna Zephyr,Copiar superficies/canal ya persistidos en description/test_data. No añadir superficies.,False,description / test_data,Sin columna nativa.
+HN/CA,Description (trazabilidad) — sin columna Zephyr,Copiar HN listadas en test_data/description. No reconsultar Confluence.,False,test_data / description,No hay campo HN en el modelo TestCase; vive en texto persistido.
+EPCs,Description (trazabilidad) + Technical Story local,Copiar technical_story (EPCs). No crear un issue Jira por EPC.,False,TestCase.technical_story,"Varios EPC en un TC son trazabilidad, no multiplicador."
+Grupo/Behavior (group_id),Description (trazabilidad) — sin columna Zephyr,Copiar group_id/behavior. Publicación 1 TC persistido = 1 TC Zephyr.,False,TestCase.group_id,Fusionar por behavior_key rompería la dimensión dispositivo.
+MDP,Description (trazabilidad) — sin columna Zephyr,Copiar MDP solo si el TC lo trae. No inventar catálogo de pago.,False,test_data / description,Sin columna nativa.
+Test Data,Description (concatenado) — sin columna Zephyr FLAT,Anexar Test Data a Description. No crear custom field sin acuerdo.,False,TestCase.test_data,El import FLAT ignora Datos de Prueba como columna propia.
+Reasoning / justification,Description (trazabilidad) — sin columna Zephyr,Anexar justification tal cual. No resumir con LLM.,False,TestCase.justification,Sin columna nativa.
+Evidence/Notes,sin destino Zephyr FLAT,No mapear a Test Step. Conservar en CaseForge. Opcional: adjunto posterior.,False,TestCase.evidence,Extractos largos no caben en Step. No recortar cobertura para publicar.
+hn_source / duplicate_status / confidence / complexity / estimation,sin destino,No publicar. Permanecen en CaseForge.,False,TestCase metadata,Ninguno para cobertura. No inventar Labels a partir de estos campos.

@@ -1,18 +1,17 @@
 "use client";
 
-import { Sparkles } from "lucide-react";
 import type { ReleaseAnalysis } from "@/lib/types";
 
 interface ReleaseAnalysisCardProps {
   analysis: ReleaseAnalysis;
   qcResources?: number | null;
   executionDays?: number | null;
-  onGenerateClick?: () => void;
 }
 
 export function ReleaseAnalysisCard({
   analysis,
-  onGenerateClick,
+  qcResources,
+  executionDays,
 }: ReleaseAnalysisCardProps): React.ReactElement {
   return (
     <div className="card" style={{ borderLeft: "3px solid var(--accent)" }}>
@@ -56,16 +55,11 @@ export function ReleaseAnalysisCard({
           ))}
         </div>
 
-        <div className="form-actions" style={{ marginTop: "14px" }}>
-          <button
-            type="button"
-            onClick={onGenerateClick}
-            style={{ background: "var(--accent-dim)", color: "#a9c8fb", border: "1px solid var(--accent)" }}
-          >
-            <Sparkles size={14} style={{ verticalAlign: "-2px", marginRight: "6px" }} />
-            Generar casos
-          </button>
-        </div>
+        {executionDays !== undefined && executionDays !== null && executionDays > 0 && qcResources ? (
+          <p className="muted" style={{ fontSize: "12.5px", margin: "14px 0 0" }}>
+            Estimación de IA: con los recursos asignados, la ejecución estimada es de {executionDays} día{executionDays > 1 ? "s" : ""}.
+          </p>
+        ) : null}
       </div>
   );
 }

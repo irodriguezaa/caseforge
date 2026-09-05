@@ -8,7 +8,7 @@ import enum
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, Enum, ForeignKey, String, Text, UniqueConstraint, func
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Numeric, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -87,6 +87,29 @@ class TestCase(Base):
         default=TestCaseStatus.UNEXECUTED,
         server_default=TestCaseStatus.UNEXECUTED.value,
     )
+    test_data: Mapped[str | None] = mapped_column(Text, nullable=True)
+    requires_condition: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    evidence: Mapped[str | None] = mapped_column(Text, nullable=True)
+    justification: Mapped[str | None] = mapped_column(Text, nullable=True)
+    technical_epic: Mapped[str | None] = mapped_column(String(250), nullable=True)
+    technical_story: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    scenario_origin: Mapped[str | None] = mapped_column(Text, nullable=True)
+    related_rn: Mapped[str | None] = mapped_column(String(250), nullable=True)
+    confidence: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    complexity: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    estimation_hours: Mapped[float | None] = mapped_column(Numeric(6, 2), nullable=True)
+    generated_by_engine: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    ecosystem: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    device: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    device_source: Mapped[str | None] = mapped_column(String(250), nullable=True)
+    applicability_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    duplicate_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    group_id: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    hn_source: Mapped[str | None] = mapped_column(String(32), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

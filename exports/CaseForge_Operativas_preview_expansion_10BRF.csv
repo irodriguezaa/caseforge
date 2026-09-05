@@ -1,0 +1,477 @@
+BRF,HN,behavior,device,channel,generated,reason
+BRF-17844,HN002; HN003; HN004; HN005; HN006; HN007; HN008; HN009; HN010,Implementar logotipo de canales declarados,WEB,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17844,HN002; HN003; HN004; HN005; HN006; HN007; HN008; HN009; HN010,Implementar logotipo de canales declarados,AAF,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17844,HN002; HN003; HN004; HN005; HN006; HN007; HN008; HN009; HN010,Implementar logotipo de canales declarados,Android,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17844,HN002; HN003; HN004; HN005; HN006; HN007; HN008; HN009; HN010,Implementar logotipo de canales declarados,iOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17844,HN002; HN003; HN004; HN005; HN006; HN007; HN008; HN009; HN010,Implementar logotipo de canales declarados,tvOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17844,HN002; HN003; HN004; HN005; HN006; HN007; HN008; HN009; HN010,Implementar logotipo de canales declarados,Windows/XBOX,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17844,HN002; HN003; HN004; HN005; HN006; HN007; HN008; HN009; HN010,Implementar logotipo de canales declarados,Consolas,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17844,HN002; HN003; HN004; HN005; HN006; HN007; HN008; HN009; HN010,Implementar logotipo de canales declarados,Roku,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17844,HN002; HN003; HN004; HN005; HN006; HN007; HN008; HN009; HN010,Implementar logotipo de canales declarados,Fire TV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17844,HN002; HN003; HN004; HN005; HN006; HN007; HN008; HN009; HN010,Implementar logotipo de canales declarados,Android TV STV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17844,HN001,Realizar alta de los canales de Claro Sport UEFA,WEB,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17844,HN001,Realizar alta de los canales de Claro Sport UEFA,AAF,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17844,HN001,Realizar alta de los canales de Claro Sport UEFA,Android,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17844,HN001,Realizar alta de los canales de Claro Sport UEFA,iOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17844,HN001,Realizar alta de los canales de Claro Sport UEFA,tvOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17844,HN001,Realizar alta de los canales de Claro Sport UEFA,Windows/XBOX,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17844,HN001,Realizar alta de los canales de Claro Sport UEFA,Consolas,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17844,HN001,Realizar alta de los canales de Claro Sport UEFA,Roku,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17844,HN001,Realizar alta de los canales de Claro Sport UEFA,Fire TV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17844,HN001,Realizar alta de los canales de Claro Sport UEFA,Android TV STV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17844,HN011,Integrar URLs,WEB,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17844,HN011,Integrar URLs,AAF,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17844,HN011,Integrar URLs,Android,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17844,HN011,Integrar URLs,iOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17844,HN011,Integrar URLs,tvOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17844,HN011,Integrar URLs,Windows/XBOX,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17844,HN011,Integrar URLs,Consolas,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17844,HN011,Integrar URLs,Roku,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17844,HN011,Integrar URLs,Fire TV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17844,HN011,Integrar URLs,Android TV STV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17834,HN001,Actualizar el precio del Type EST EXC 39 UNI,WEB,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17834,HN001,Actualizar el precio del Type EST EXC 39 UNI,AAF,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17834,HN001,Actualizar el precio del Type EST EXC 39 UNI,Android,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17834,HN001,Actualizar el precio del Type EST EXC 39 UNI,iOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17834,HN001,Actualizar el precio del Type EST EXC 39 UNI,tvOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17834,HN001,Actualizar el precio del Type EST EXC 39 UNI,Windows/XBOX,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17834,HN001,Actualizar el precio del Type EST EXC 39 UNI,Consolas,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17834,HN001,Actualizar el precio del Type EST EXC 39 UNI,Roku,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17834,HN001,Actualizar el precio del Type EST EXC 39 UNI,Fire TV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17834,HN001,Actualizar el precio del Type EST EXC 39 UNI,Android TV STV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17834,HN002,Valores de configuración,—,—,False,OUT_OF_SCOPE; 0 TCs.
+BRF-17834,HN003,Habilitar medios de pago,WEB,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17834,HN003,Habilitar medios de pago,AAF,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17834,HN003,Habilitar medios de pago,Android,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17834,HN003,Habilitar medios de pago,iOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17834,HN003,Habilitar medios de pago,tvOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17834,HN003,Habilitar medios de pago,Windows/XBOX,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17834,HN003,Habilitar medios de pago,Consolas,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17834,HN003,Habilitar medios de pago,Roku,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17834,HN003,Habilitar medios de pago,Fire TV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17834,HN003,Habilitar medios de pago,Android TV STV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17834,HN004,Implementar comunicación,WEB,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17834,HN004,Implementar comunicación,AAF,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17834,HN004,Implementar comunicación,Android,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17834,HN004,Implementar comunicación,iOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17834,HN004,Implementar comunicación,tvOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17834,HN004,Implementar comunicación,Windows/XBOX,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17834,HN004,Implementar comunicación,Consolas,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17834,HN004,Implementar comunicación,Roku,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17834,HN004,Implementar comunicación,Fire TV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17834,HN004,Implementar comunicación,Android TV STV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17847,HN001,Obtener las plantillas de comunicación de la plataforma,—,Email,False,OUT_OF_SCOPE; 0 TCs.
+BRF-17847,HN002,Obtener las plantillas de comunicación de los Addons,—,—,False,OUT_OF_SCOPE; 0 TCs.
+BRF-17577,—,Fuera de alcance QC: dependencia técnica/infra,—,—,False,OUT_OF_SCOPE; 0 TCs.
+BRF-17465,HN001,Realizar alta del canal América TV,WEB,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN001,Realizar alta del canal América TV,AAF,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN001,Realizar alta del canal América TV,Android,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN001,Realizar alta del canal América TV,iOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN001,Realizar alta del canal América TV,tvOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN001,Realizar alta del canal América TV,Windows/XBOX,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN001,Realizar alta del canal América TV,Consolas,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN001,Realizar alta del canal América TV,Roku,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN001,Realizar alta del canal América TV,Fire TV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN001,Realizar alta del canal América TV,Android TV STV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN003,Integrar URLs,WEB,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN003,Integrar URLs,AAF,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN003,Integrar URLs,Android,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN003,Integrar URLs,iOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN003,Integrar URLs,tvOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN003,Integrar URLs,Windows/XBOX,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN003,Integrar URLs,Consolas,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN003,Integrar URLs,Roku,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN003,Integrar URLs,Fire TV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN003,Integrar URLs,Android TV STV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN004,Incluir canal América TV en paquetes de OTT,WEB,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN004,Incluir canal América TV en paquetes de OTT,AAF,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN004,Incluir canal América TV en paquetes de OTT,Android,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN004,Incluir canal América TV en paquetes de OTT,iOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN004,Incluir canal América TV en paquetes de OTT,tvOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN004,Incluir canal América TV en paquetes de OTT,Windows/XBOX,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN004,Incluir canal América TV en paquetes de OTT,Consolas,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN004,Incluir canal América TV en paquetes de OTT,Roku,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN004,Incluir canal América TV en paquetes de OTT,Fire TV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN004,Incluir canal América TV en paquetes de OTT,Android TV STV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN005,No implementar chapita al canal América TV,WEB,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN005,No implementar chapita al canal América TV,AAF,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN005,No implementar chapita al canal América TV,Android,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN005,No implementar chapita al canal América TV,iOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN005,No implementar chapita al canal América TV,tvOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN005,No implementar chapita al canal América TV,Windows/XBOX,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN005,No implementar chapita al canal América TV,Consolas,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN005,No implementar chapita al canal América TV,Roku,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN005,No implementar chapita al canal América TV,Fire TV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN005,No implementar chapita al canal América TV,Android TV STV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN006,Visualización de canales en carrusel Locales del subnodo TV Básica,WEB,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN006,Visualización de canales en carrusel Locales del subnodo TV Básica,AAF,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN006,Visualización de canales en carrusel Locales del subnodo TV Básica,Android,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN006,Visualización de canales en carrusel Locales del subnodo TV Básica,iOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN006,Visualización de canales en carrusel Locales del subnodo TV Básica,tvOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN006,Visualización de canales en carrusel Locales del subnodo TV Básica,Windows/XBOX,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN006,Visualización de canales en carrusel Locales del subnodo TV Básica,Consolas,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN006,Visualización de canales en carrusel Locales del subnodo TV Básica,Roku,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN006,Visualización de canales en carrusel Locales del subnodo TV Básica,Fire TV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN006,Visualización de canales en carrusel Locales del subnodo TV Básica,Android TV STV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN007,Habilitar Timeshift en paquetes IPTV,STB,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN008,Habilitar NPVR en paquetes IPTV,STB,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN009,Habilitar funcionalidad TV Everywhere,WEB,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN009,Habilitar funcionalidad TV Everywhere,AAF,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN009,Habilitar funcionalidad TV Everywhere,Android,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN009,Habilitar funcionalidad TV Everywhere,iOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN009,Habilitar funcionalidad TV Everywhere,tvOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN009,Habilitar funcionalidad TV Everywhere,Windows/XBOX,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN009,Habilitar funcionalidad TV Everywhere,Consolas,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN009,Habilitar funcionalidad TV Everywhere,Roku,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN009,Habilitar funcionalidad TV Everywhere,Fire TV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN009,Habilitar funcionalidad TV Everywhere,Android TV STV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN010,No liberar a producción el alta del canal América TV,WEB,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN010,No liberar a producción el alta del canal América TV,AAF,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN010,No liberar a producción el alta del canal América TV,Android,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN010,No liberar a producción el alta del canal América TV,iOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN010,No liberar a producción el alta del canal América TV,tvOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN010,No liberar a producción el alta del canal América TV,Windows/XBOX,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN010,No liberar a producción el alta del canal América TV,Consolas,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN010,No liberar a producción el alta del canal América TV,Roku,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN010,No liberar a producción el alta del canal América TV,Fire TV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN010,No liberar a producción el alta del canal América TV,Android TV STV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN002,Implementar el logotipo del canal América TV,WEB,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN002,Implementar el logotipo del canal América TV,AAF,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN002,Implementar el logotipo del canal América TV,Android,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN002,Implementar el logotipo del canal América TV,iOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN002,Implementar el logotipo del canal América TV,tvOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN002,Implementar el logotipo del canal América TV,Windows/XBOX,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN002,Implementar el logotipo del canal América TV,Consolas,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN002,Implementar el logotipo del canal América TV,Roku,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN002,Implementar el logotipo del canal América TV,Fire TV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17465,HN002,Implementar el logotipo del canal América TV,Android TV STV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN001,Integrar add on Crunchyroll,WEB,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN001,Integrar add on Crunchyroll,AAF,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN001,Integrar add on Crunchyroll,Android,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN001,Integrar add on Crunchyroll,iOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN001,Integrar add on Crunchyroll,tvOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN001,Integrar add on Crunchyroll,Windows/XBOX,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN001,Integrar add on Crunchyroll,Consolas,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN001,Integrar add on Crunchyroll,Roku,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN001,Integrar add on Crunchyroll,Fire TV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN001,Integrar add on Crunchyroll,Android TV STV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN002,Iniciar el flujo de contratación,WEB,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN002,Iniciar el flujo de contratación,AAF,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN002,Iniciar el flujo de contratación,Android,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN002,Iniciar el flujo de contratación,iOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN002,Iniciar el flujo de contratación,tvOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN002,Iniciar el flujo de contratación,Windows/XBOX,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN002,Iniciar el flujo de contratación,Consolas,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN002,Iniciar el flujo de contratación,Roku,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN002,Iniciar el flujo de contratación,Fire TV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN002,Iniciar el flujo de contratación,Android TV STV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN003,Cancelación,WEB,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN003,Cancelación,AAF,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN003,Cancelación,Android,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN003,Cancelación,iOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN003,Cancelación,tvOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN003,Cancelación,Windows/XBOX,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN003,Cancelación,Consolas,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN003,Cancelación,Roku,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN003,Cancelación,Fire TV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN003,Cancelación,Android TV STV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN004,Implementar logos del add on Crunchyroll,WEB,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN004,Implementar logos del add on Crunchyroll,AAF,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN004,Implementar logos del add on Crunchyroll,Android,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN004,Implementar logos del add on Crunchyroll,iOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN004,Implementar logos del add on Crunchyroll,tvOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN004,Implementar logos del add on Crunchyroll,Windows/XBOX,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN004,Implementar logos del add on Crunchyroll,Consolas,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN004,Implementar logos del add on Crunchyroll,Roku,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN004,Implementar logos del add on Crunchyroll,Fire TV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN004,Implementar logos del add on Crunchyroll,Android TV STV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN005,Implementar tarjeta en Plan Selector,WEB,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN005,Implementar tarjeta en Plan Selector,AAF,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN005,Implementar tarjeta en Plan Selector,Android,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN005,Implementar tarjeta en Plan Selector,iOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN005,Implementar tarjeta en Plan Selector,tvOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN005,Implementar tarjeta en Plan Selector,Windows/XBOX,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN005,Implementar tarjeta en Plan Selector,Consolas,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN005,Implementar tarjeta en Plan Selector,Roku,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN005,Implementar tarjeta en Plan Selector,Fire TV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN005,Implementar tarjeta en Plan Selector,Android TV STV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN006,Implementar Superdestacado en Landing Comercial,WEB,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN006,Implementar Superdestacado en Landing Comercial,AAF,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN006,Implementar Superdestacado en Landing Comercial,Android,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN006,Implementar Superdestacado en Landing Comercial,iOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN006,Implementar Superdestacado en Landing Comercial,tvOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN006,Implementar Superdestacado en Landing Comercial,Windows/XBOX,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN006,Implementar Superdestacado en Landing Comercial,Consolas,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN006,Implementar Superdestacado en Landing Comercial,Roku,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN006,Implementar Superdestacado en Landing Comercial,Fire TV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN006,Implementar Superdestacado en Landing Comercial,Android TV STV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN007,Integrar imágenes secundarias en Landing Comercial,WEB,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN007,Integrar imágenes secundarias en Landing Comercial,AAF,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN007,Integrar imágenes secundarias en Landing Comercial,Android,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN007,Integrar imágenes secundarias en Landing Comercial,iOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN007,Integrar imágenes secundarias en Landing Comercial,tvOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN007,Integrar imágenes secundarias en Landing Comercial,Windows/XBOX,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN007,Integrar imágenes secundarias en Landing Comercial,Consolas,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN007,Integrar imágenes secundarias en Landing Comercial,Roku,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN007,Integrar imágenes secundarias en Landing Comercial,Fire TV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN007,Integrar imágenes secundarias en Landing Comercial,Android TV STV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN008,Implementar imagen de contenido en la pantalla Checkout del add on Crunchyroll,tvOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN008,Implementar imagen de contenido en la pantalla Checkout del add on Crunchyroll,Android TV STV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN008,Implementar imagen de contenido en la pantalla Checkout del add on Crunchyroll,Roku,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN008,Implementar imagen de contenido en la pantalla Checkout del add on Crunchyroll,Fire TV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN009,Implementar imagen de contenido en la pantalla Ticket del add on Crunchyroll,tvOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN009,Implementar imagen de contenido en la pantalla Ticket del add on Crunchyroll,Android TV STV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN009,Implementar imagen de contenido en la pantalla Ticket del add on Crunchyroll,Roku,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN009,Implementar imagen de contenido en la pantalla Ticket del add on Crunchyroll,Fire TV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN010,Implementar imagen en Carrusel Premium,WEB,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN010,Implementar imagen en Carrusel Premium,AAF,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN010,Implementar imagen en Carrusel Premium,Android,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN010,Implementar imagen en Carrusel Premium,iOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN010,Implementar imagen en Carrusel Premium,tvOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN010,Implementar imagen en Carrusel Premium,Windows/XBOX,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN010,Implementar imagen en Carrusel Premium,Consolas,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN010,Implementar imagen en Carrusel Premium,Roku,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN010,Implementar imagen en Carrusel Premium,Fire TV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN010,Implementar imagen en Carrusel Premium,Android TV STV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN011,Habilitar sub nodo en el nodo Canales,WEB,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN011,Habilitar sub nodo en el nodo Canales,AAF,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN011,Habilitar sub nodo en el nodo Canales,Android,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN011,Habilitar sub nodo en el nodo Canales,iOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN011,Habilitar sub nodo en el nodo Canales,tvOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN011,Habilitar sub nodo en el nodo Canales,Windows/XBOX,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN011,Habilitar sub nodo en el nodo Canales,Consolas,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN011,Habilitar sub nodo en el nodo Canales,Roku,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN011,Habilitar sub nodo en el nodo Canales,Fire TV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN011,Habilitar sub nodo en el nodo Canales,Android TV STV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN012,Implementar imagen en nodo en nodo Canales/ Premium,WEB,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN012,Implementar imagen en nodo en nodo Canales/ Premium,AAF,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN012,Implementar imagen en nodo en nodo Canales/ Premium,Android,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN012,Implementar imagen en nodo en nodo Canales/ Premium,iOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN012,Implementar imagen en nodo en nodo Canales/ Premium,tvOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN012,Implementar imagen en nodo en nodo Canales/ Premium,Windows/XBOX,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN012,Implementar imagen en nodo en nodo Canales/ Premium,Consolas,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN012,Implementar imagen en nodo en nodo Canales/ Premium,Roku,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN012,Implementar imagen en nodo en nodo Canales/ Premium,Fire TV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN012,Implementar imagen en nodo en nodo Canales/ Premium,Android TV STV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN013,Habilitar la pantalla home del add on Crunchyroll,WEB,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN013,Habilitar la pantalla home del add on Crunchyroll,AAF,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN013,Habilitar la pantalla home del add on Crunchyroll,Android,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN013,Habilitar la pantalla home del add on Crunchyroll,iOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN013,Habilitar la pantalla home del add on Crunchyroll,tvOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN013,Habilitar la pantalla home del add on Crunchyroll,Windows/XBOX,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN013,Habilitar la pantalla home del add on Crunchyroll,Consolas,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN013,Habilitar la pantalla home del add on Crunchyroll,Roku,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN013,Habilitar la pantalla home del add on Crunchyroll,Fire TV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN013,Habilitar la pantalla home del add on Crunchyroll,Android TV STV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN014,Habilitar brand header,WEB,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN014,Habilitar brand header,AAF,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN014,Habilitar brand header,Android,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN014,Habilitar brand header,iOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN014,Habilitar brand header,tvOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN014,Habilitar brand header,Windows/XBOX,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN014,Habilitar brand header,Consolas,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN014,Habilitar brand header,Roku,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN014,Habilitar brand header,Fire TV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN014,Habilitar brand header,Android TV STV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN015,Incluir contenido Superdestacado,WEB,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN015,Incluir contenido Superdestacado,AAF,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN015,Incluir contenido Superdestacado,Android,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN015,Incluir contenido Superdestacado,iOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN015,Incluir contenido Superdestacado,tvOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN015,Incluir contenido Superdestacado,Windows/XBOX,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN015,Incluir contenido Superdestacado,Consolas,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN015,Incluir contenido Superdestacado,Roku,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN015,Incluir contenido Superdestacado,Fire TV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN015,Incluir contenido Superdestacado,Android TV STV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN016,Habilitar botonera de categorías en la home del add on,WEB,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN016,Habilitar botonera de categorías en la home del add on,AAF,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN016,Habilitar botonera de categorías en la home del add on,Android,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN016,Habilitar botonera de categorías en la home del add on,iOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN016,Habilitar botonera de categorías en la home del add on,tvOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN016,Habilitar botonera de categorías en la home del add on,Windows/XBOX,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN016,Habilitar botonera de categorías en la home del add on,Consolas,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN016,Habilitar botonera de categorías en la home del add on,Roku,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN016,Habilitar botonera de categorías en la home del add on,Fire TV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN016,Habilitar botonera de categorías en la home del add on,Android TV STV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN017,Implementar imágenes de nivel,WEB,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN017,Implementar imágenes de nivel,AAF,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN017,Implementar imágenes de nivel,Android,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN017,Implementar imágenes de nivel,iOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN017,Implementar imágenes de nivel,tvOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN017,Implementar imágenes de nivel,Windows/XBOX,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN017,Implementar imágenes de nivel,Consolas,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN017,Implementar imágenes de nivel,Roku,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN017,Implementar imágenes de nivel,Fire TV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN017,Implementar imágenes de nivel,Android TV STV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN018,Implementar chapitas,WEB,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN018,Implementar chapitas,AAF,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN018,Implementar chapitas,Android,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN018,Implementar chapitas,iOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN018,Implementar chapitas,tvOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN018,Implementar chapitas,Windows/XBOX,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN018,Implementar chapitas,Consolas,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN018,Implementar chapitas,Roku,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN018,Implementar chapitas,Fire TV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN018,Implementar chapitas,Android TV STV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN019,Matriz de comunicación,—,Email,True,Canal Email; 1 TC de canal sin dispositivo OTT/IPTV.
+BRF-16018,HN020,Implementar el logotipo en el correo de bienvenida a Claro video,—,Email,True,Canal Email; 1 TC de canal sin dispositivo OTT/IPTV.
+BRF-16018,HN021,Compartir insumos de diseño del add on Crunchyroll,—,—,False,OUT_OF_SCOPE; 0 TCs.
+BRF-16018,HN023,Habilitar medios de pago,WEB,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN023,Habilitar medios de pago,AAF,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN023,Habilitar medios de pago,Android,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN023,Habilitar medios de pago,iOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN023,Habilitar medios de pago,tvOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN023,Habilitar medios de pago,Windows/XBOX,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN023,Habilitar medios de pago,Consolas,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN023,Habilitar medios de pago,Roku,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN023,Habilitar medios de pago,Fire TV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN023,Habilitar medios de pago,Android TV STV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN024,Habilitar carruseles de contenido,WEB,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN024,Habilitar carruseles de contenido,AAF,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN024,Habilitar carruseles de contenido,Android,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN024,Habilitar carruseles de contenido,iOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN024,Habilitar carruseles de contenido,tvOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN024,Habilitar carruseles de contenido,Windows/XBOX,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN024,Habilitar carruseles de contenido,Consolas,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN024,Habilitar carruseles de contenido,Roku,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN024,Habilitar carruseles de contenido,Fire TV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN024,Habilitar carruseles de contenido,Android TV STV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-16018,HN025,No liberar a producción el add on Crunchyroll,—,—,False,QC_REVIEW / origen no ejecutable; 0 TCs automáticos.
+BRF-16018,HN026,Liberar a produccion el add on Crunchyroll,—,—,False,QC_REVIEW / origen no ejecutable; 0 TCs automáticos.
+BRF-17442,HN001,Iniciar el flujo de contratación,WEB,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN001,Iniciar el flujo de contratación,AAF,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN001,Iniciar el flujo de contratación,Android,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN001,Iniciar el flujo de contratación,iOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN001,Iniciar el flujo de contratación,tvOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN001,Iniciar el flujo de contratación,Windows/XBOX,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN001,Iniciar el flujo de contratación,Consolas,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN001,Iniciar el flujo de contratación,Roku,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN001,Iniciar el flujo de contratación,Fire TV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN001,Iniciar el flujo de contratación,Android TV STV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN002,Implementar logos del add on Sony One,WEB,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN002,Implementar logos del add on Sony One,AAF,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN002,Implementar logos del add on Sony One,Android,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN002,Implementar logos del add on Sony One,iOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN002,Implementar logos del add on Sony One,tvOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN002,Implementar logos del add on Sony One,Windows/XBOX,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN002,Implementar logos del add on Sony One,Consolas,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN002,Implementar logos del add on Sony One,Roku,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN002,Implementar logos del add on Sony One,Fire TV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN002,Implementar logos del add on Sony One,Android TV STV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN003,Implementar tarjeta en Plan Selector,WEB,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN003,Implementar tarjeta en Plan Selector,AAF,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN003,Implementar tarjeta en Plan Selector,Android,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN003,Implementar tarjeta en Plan Selector,iOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN003,Implementar tarjeta en Plan Selector,tvOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN003,Implementar tarjeta en Plan Selector,Windows/XBOX,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN003,Implementar tarjeta en Plan Selector,Consolas,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN003,Implementar tarjeta en Plan Selector,Roku,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN003,Implementar tarjeta en Plan Selector,Fire TV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN003,Implementar tarjeta en Plan Selector,Android TV STV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN004,Implementar Superdestacado en Landing Comercial,WEB,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN004,Implementar Superdestacado en Landing Comercial,AAF,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN004,Implementar Superdestacado en Landing Comercial,Android,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN004,Implementar Superdestacado en Landing Comercial,iOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN004,Implementar Superdestacado en Landing Comercial,tvOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN004,Implementar Superdestacado en Landing Comercial,Windows/XBOX,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN004,Implementar Superdestacado en Landing Comercial,Consolas,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN004,Implementar Superdestacado en Landing Comercial,Roku,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN004,Implementar Superdestacado en Landing Comercial,Fire TV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN004,Implementar Superdestacado en Landing Comercial,Android TV STV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN005,Integrar imágenes secundarias en Landing Comercial,WEB,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN005,Integrar imágenes secundarias en Landing Comercial,AAF,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN005,Integrar imágenes secundarias en Landing Comercial,Android,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN005,Integrar imágenes secundarias en Landing Comercial,iOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN005,Integrar imágenes secundarias en Landing Comercial,tvOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN005,Integrar imágenes secundarias en Landing Comercial,Windows/XBOX,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN005,Integrar imágenes secundarias en Landing Comercial,Consolas,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN005,Integrar imágenes secundarias en Landing Comercial,Roku,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN005,Integrar imágenes secundarias en Landing Comercial,Fire TV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN005,Integrar imágenes secundarias en Landing Comercial,Android TV STV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN006,Implementar imagen de contenido en la pantalla Checkout,tvOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN006,Implementar imagen de contenido en la pantalla Checkout,Android TV STV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN006,Implementar imagen de contenido en la pantalla Checkout,Roku,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN006,Implementar imagen de contenido en la pantalla Checkout,Fire TV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN007,Implementar imagen de contenido en la pantalla Ticket,tvOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN007,Implementar imagen de contenido en la pantalla Ticket,Android TV STV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN007,Implementar imagen de contenido en la pantalla Ticket,Roku,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN007,Implementar imagen de contenido en la pantalla Ticket,Fire TV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN008,Implementar imagen en Carrusel Premium,WEB,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN008,Implementar imagen en Carrusel Premium,AAF,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN008,Implementar imagen en Carrusel Premium,Android,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN008,Implementar imagen en Carrusel Premium,iOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN008,Implementar imagen en Carrusel Premium,tvOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN008,Implementar imagen en Carrusel Premium,Windows/XBOX,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN008,Implementar imagen en Carrusel Premium,Consolas,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN008,Implementar imagen en Carrusel Premium,Roku,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN008,Implementar imagen en Carrusel Premium,Fire TV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN008,Implementar imagen en Carrusel Premium,Android TV STV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN009,Habilitar home del add on Sony One,WEB,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN009,Habilitar home del add on Sony One,AAF,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN009,Habilitar home del add on Sony One,Android,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN009,Habilitar home del add on Sony One,iOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN009,Habilitar home del add on Sony One,tvOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN009,Habilitar home del add on Sony One,Windows/XBOX,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN009,Habilitar home del add on Sony One,Consolas,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN009,Habilitar home del add on Sony One,Roku,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN009,Habilitar home del add on Sony One,Fire TV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN009,Habilitar home del add on Sony One,Android TV STV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN010,Habilitar brand header,WEB,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN010,Habilitar brand header,AAF,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN010,Habilitar brand header,Android,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN010,Habilitar brand header,iOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN010,Habilitar brand header,tvOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN010,Habilitar brand header,Windows/XBOX,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN010,Habilitar brand header,Consolas,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN010,Habilitar brand header,Roku,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN010,Habilitar brand header,Fire TV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN010,Habilitar brand header,Android TV STV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN011,Incluir contenido Superdestacado,WEB,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN011,Incluir contenido Superdestacado,AAF,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN011,Incluir contenido Superdestacado,Android,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN011,Incluir contenido Superdestacado,iOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN011,Incluir contenido Superdestacado,tvOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN011,Incluir contenido Superdestacado,Windows/XBOX,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN011,Incluir contenido Superdestacado,Consolas,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN011,Incluir contenido Superdestacado,Roku,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN011,Incluir contenido Superdestacado,Fire TV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN011,Incluir contenido Superdestacado,Android TV STV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN012,Habilitar categorías en la home del add on,WEB,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN012,Habilitar categorías en la home del add on,AAF,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN012,Habilitar categorías en la home del add on,Android,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN012,Habilitar categorías en la home del add on,iOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN012,Habilitar categorías en la home del add on,tvOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN012,Habilitar categorías en la home del add on,Windows/XBOX,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN012,Habilitar categorías en la home del add on,Consolas,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN012,Habilitar categorías en la home del add on,Roku,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN012,Habilitar categorías en la home del add on,Fire TV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN012,Habilitar categorías en la home del add on,Android TV STV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN013,Implementar chapitas,WEB,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN013,Implementar chapitas,AAF,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN013,Implementar chapitas,Android,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN013,Implementar chapitas,iOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN013,Implementar chapitas,tvOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN013,Implementar chapitas,Windows/XBOX,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN013,Implementar chapitas,Consolas,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN013,Implementar chapitas,Roku,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN013,Implementar chapitas,Fire TV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN013,Implementar chapitas,Android TV STV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17442,HN014,Implementar el logo en correo de bienvenida,—,Email,True,Canal Email; 1 TC de canal sin dispositivo OTT/IPTV.
+BRF-17620,HN001,Actualizar posición de nueve canales,WEB,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17620,HN001,Actualizar posición de nueve canales,AAF,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17620,HN001,Actualizar posición de nueve canales,Android,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17620,HN001,Actualizar posición de nueve canales,iOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17620,HN001,Actualizar posición de nueve canales,tvOS,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17620,HN001,Actualizar posición de nueve canales,Windows/XBOX,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17620,HN001,Actualizar posición de nueve canales,Consolas,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17620,HN001,Actualizar posición de nueve canales,Roku,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17620,HN001,Actualizar posición de nueve canales,Fire TV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17620,HN001,Actualizar posición de nueve canales,Android TV STV,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17603,HN001,Actualizar las URL de Timeshift,STB,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17603,HN002,Actualizar formato de URLs de NPVR,STB,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17603,HN003,Modificar nomenclatura de las URLS de canales — TIMESHIFT,STB,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17603,HN003,Modificar nomenclatura de las URLS de canales — NPVR,STB,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17833,HN001; HN002,Actualizar nombre y logotipo del canal TCS+,STB,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17833,HN003,Actualizar URLs,STB,—,True,1 comportamiento IN_SCOPE ejecutable × 1 dispositivo aplicable.
+BRF-17833,HN004,Mantener Funcionalidades de canal,—,—,False,QC_REVIEW / origen no ejecutable; 0 TCs automáticos.
+BRF-17833,HN005,Actualizar Resource ID del canal SV+,—,—,False,OUT_OF_SCOPE; 0 TCs.

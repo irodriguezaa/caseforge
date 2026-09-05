@@ -81,13 +81,21 @@ def get_deliverable(deliverable_id: int, db: Session = Depends(get_db)) -> Deliv
 def list_deliverable_releases(
     deliverable_id: int, db: Session = Depends(get_db)
 ) -> list[Release]:
-    """Backs the 'Release origen' dropdown -- every Release under this Deliverable, regardless
-    of status (a CANCELLED release can still legitimately be a documented origin point)."""
+    """Backs the 'Release origen' dropdown.
+
+    Historical versions of one Entregable: filter only by deliverable_id, never by
+    Release.name. Distinct RN titles (e.g. HBO WEB vs RN-CV - WEB -16.9.0) still belong
+    to the same version tree if they share the Deliverable row.
+    """
     get_deliverable_or_404(deliverable_id, db)
     return list(
         db.execute(
             select(Release)
-            .where(Release.deliverable_id == deliverable_id)
+            .where(
+                Release.deliverable_id == deliverable_id,
+                Release.be_release_id.is_(None),
+                Release.operativa_release_id.is_(None),
+            )
             .order_by(Release.created_at.asc())
         )
         .scalars()

@@ -41,7 +41,9 @@ class QcTicketSource(str, enum.Enum):
 
 class QcTicket(Base):
     __tablename__ = "qc_tickets"
-    __table_args__ = (UniqueConstraint("issue_key", name="uq_qc_ticket_issue_key"),)
+    __table_args__ = (
+        UniqueConstraint("issue_key", "view", "source", name="uq_qc_ticket_issue_key_view_source"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     issue_key: Mapped[str] = mapped_column(String(50), nullable=False)

@@ -118,6 +118,14 @@ _TICKET_PREFIX_RE = re.compile(
     r"\b(IOSPR|TVOSPR|ADRPR|C9085PR|ROKUPR|STVCL|AAFCL|ADTCL)-\d+\b"
 )
 
+# A ticket whose text carries this "Negocio <CODE> |" business-line marker is an NCO,
+# regardless of which table/section it structurally sits in. Validated against Roku's RN,
+# where this exact convention ("Negocio BA |", "Negocio PXD |") appears under its own
+# explicitly-labeled "1.4 Incidencias NCO's" heading. Some templates (e.g. iOS 10.1.5) mix
+# these into the QA bugs/QC bugs table without a separate NCO heading at all -- the marker,
+# not the table it happens to sit in, is the real signal.
+_NCO_MARKER_RE = re.compile(r"\bnegocio\s+[a-z]{2,4}\s*\|", re.IGNORECASE)
+
 
 def _detect_device(filename: str, text: str, detected_name: str | None) -> str | None:
     # 1. Installation-section heading.
@@ -210,7 +218,7 @@ _QA_QC_SENTENCE_RE = re.compile(r"(defectos\s+QA\s+y\s+QC|QA\s*/\s*QC|corrige\s+
 
 # Only the ticket that HEADS a table cell counts -- a cell's own descriptive text can mention
 # another ticket inline.
-_CELL_TICKET_RE = re.compile(r"^\s*(?!BRF)([A-Z]{2,8})-(\d{2,6})")
+_CELL_TICKET_RE = re.compile(r"^\s*(?!BRF)([A-Z][A-Z0-9]{1,7})-(\d{2,6})")
 
 # The Table of Contents repeats the "Descripción del cambio" header before the real section, so
 # the LAST occurrence in the document is used. The stop boundary is the next numbered heading of
@@ -236,6 +244,12 @@ def _detect_description(text: str) -> str | None:
     return body
 
 
+# Returned by _table_header_override for tables that exist in the RN but are out of the four
+# counted buckets (Alcance no entregado / Histórico). Distinct from None, which means "no
+# header signal, inherit the sticky numbered-heading section".
+_UNTRACKED_TABLE = "untracked"
+
+
 def _table_header_override(header_cell: str) -> str | None:
     """A table's OWN header cell, when it's one of these exact/specific phrases, is a stronger
     and more direct signal than the numbered-heading position tracking -- used for documents
@@ -245,15 +259,17 @@ def _table_header_override(header_cell: str) -> str | None:
 
     Deliberately narrow: "TRI" and "QA bugs / QC bugs" were verified, across all 17 real RN
     samples checked, to NEVER be reused as a header for any other section. "ARTEFACTO"/"BRF"
-    were explicitly tried and rejected for this same purpose -- they're also used as the header
-    for "Alcance no entregado" / "Histórico de versiones" tables in several templates, which
-    would silently pull that unrelated content into Functionality.
+    were explicitly tried and rejected as Functionality/QA-QC headers -- they label "Alcance
+    no entregado" (and similar out-of-scope) tables. Those must not inherit the previous
+    section's sticky bucket; they return _UNTRACKED_TABLE so their tickets are not counted.
     """
     normalized = header_cell.strip().upper().replace("ʼ", "'").replace("’", "'")
     if normalized == "TRI":
         return "tri"
-    if "QA BUGS" in normalized and "QC BUGS" in normalized:
+    if "QA BUGS" in normalized or "QC BUGS" in normalized:
         return "qa_qc"
+    if normalized == "ARTEFACTO" or normalized.startswith("ARTEFACTO"):
+        return _UNTRACKED_TABLE
     return None
 
 
@@ -293,6 +309,123 @@ class TableCounts:
         self.qa_qc = qa_qc
 
 
+_RN_BUCKETS = ("functionality", "nco", "tri", "qa_qc")
+
+
+def iter_rn_ticket_rows(pdf_bytes: bytes) -> list[tuple[str, str, str]]:
+    """Walks RN tables with the same sticky-section + TOC-skip rules as count extraction.
+
+    Returns (ticket_id, cell_text, bucket) in document order. Used by both the Release
+    analyzer counts and Release Apps case generation so the two cannot diverge.
+    """
+    hits: list[tuple[str, str, str]] = []
+    current_section: str | None = None
+    any_numbered_heading_found = False
+
+    try:
+        with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
+            for page in pdf.pages:
+                events: list[tuple[float, str, Any]] = []
+
+                words = page.extract_words()
+                lines: dict[int, list] = {}
+                for word in words:
+                    lines.setdefault(round(word["top"]), []).append(word)
+                for top, line_words in lines.items():
+                    line_words.sort(key=lambda w: w["x0"])
+                    line_text = " ".join(w["text"] for w in line_words)
+                    heading_match = _NUMBERED_HEADING_RE.match(line_text)
+                    if heading_match:
+                        events.append((top, "heading", _classify_heading(heading_match.group(1))))
+                    elif _QA_QC_SENTENCE_RE.search(line_text):
+                        events.append((top, "qa_sentence", None))
+
+                for table in page.find_tables():
+                    events.append((table.bbox[1], "table", table))
+
+                events.sort(key=lambda e: e[0])
+
+                _toc_line_gap_px = 50
+                toc_indices: set[int] = set()
+                run: list[int] = []
+
+                def _flush_run() -> None:
+                    if len(run) >= 3:
+                        toc_indices.update(run)
+                    run.clear()
+
+                last_heading_top: float | None = None
+                for i, event in enumerate(events):
+                    if event[1] == "heading":
+                        top = event[0]
+                        if run and last_heading_top is not None and top - last_heading_top > _toc_line_gap_px:
+                            _flush_run()
+                        run.append(i)
+                        last_heading_top = top
+                    else:
+                        _flush_run()
+                        last_heading_top = None
+                _flush_run()
+
+                for idx, (_top, kind, payload) in enumerate(events):
+                    if kind == "heading":
+                        if idx not in toc_indices and payload is not None:
+                            current_section = payload
+                            any_numbered_heading_found = True
+                        continue
+                    if kind == "qa_sentence":
+                        current_section = "qa_qc"
+                        continue
+
+                    rows = payload.extract()
+                    if not rows:
+                        continue
+                    header_cell = (rows[0][0] or "").strip()
+                    override = _table_header_override(header_cell)
+                    if override == _UNTRACKED_TABLE:
+                        current_section = None
+                        continue
+
+                    found: list[tuple[str, str, bool]] = []
+                    seen_in_table: set[str] = set()
+                    for row in rows:
+                        for cell in row:
+                            if not cell:
+                                continue
+                            cleaned = cell.replace("\n", "")
+                            match = _CELL_TICKET_RE.match(cleaned)
+                            if match:
+                                ticket_id = f"{match.group(1)}-{match.group(2)}"
+                                if ticket_id not in seen_in_table:
+                                    found.append(
+                                        (ticket_id, cleaned, bool(_NCO_MARKER_RE.search(cleaned)))
+                                    )
+                                    seen_in_table.add(ticket_id)
+                                break
+                    if not found:
+                        continue
+
+                    if override is not None:
+                        current_section = override
+                        bucket = override
+                    else:
+                        bucket = current_section
+                        if bucket is None and not any_numbered_heading_found:
+                            bucket = "functionality"
+                            current_section = "functionality"
+
+                    if bucket == "qa_qc":
+                        for ticket_id, cell_text, nco_marked in found:
+                            hits.append((ticket_id, cell_text, "nco" if nco_marked else "qa_qc"))
+                    elif bucket in _RN_BUCKETS:
+                        for ticket_id, cell_text, _nco_marked in found:
+                            hits.append((ticket_id, cell_text, bucket))
+    except Exception:
+        return hits
+
+    return hits
+
+
 class RuleBasedPdfAnalyzer:
     """Deterministic extractor for Release Note PDF documents."""
 
@@ -318,113 +451,9 @@ class RuleBasedPdfAnalyzer:
         containing ticket-headed cells defaults to Functionality, and a free-text QA/QC-defects
         sentence marks the QA/QC table.
         """
-        counts: dict[str, set[str]] = {"functionality": set(), "nco": set(), "tri": set(), "qa_qc": set()}
-        current_section: str | None = None
-        any_numbered_heading_found = False
-
-        try:
-            with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
-                for page in pdf.pages:
-                    events: list[tuple[float, str, Any]] = []
-
-                    words = page.extract_words()
-                    lines: dict[int, list] = {}
-                    for word in words:
-                        lines.setdefault(round(word["top"]), []).append(word)
-                    for top, line_words in lines.items():
-                        line_words.sort(key=lambda w: w["x0"])
-                        line_text = " ".join(w["text"] for w in line_words)
-                        heading_match = _NUMBERED_HEADING_RE.match(line_text)
-                        if heading_match:
-                            events.append((top, "heading", _classify_heading(heading_match.group(1))))
-                        elif _QA_QC_SENTENCE_RE.search(line_text):
-                            events.append((top, "qa_sentence", None))
-
-                    for table in page.find_tables():
-                        events.append((table.bbox[1], "table", table))
-
-                    events.sort(key=lambda e: e[0])
-
-                    # A Table of Contents is a run of 3+ consecutive "heading" events, closely
-                    # spaced vertically (consistent line height, like a real TOC's line spacing)
-                    # with no table/content event between them -- it lists section names but
-                    # doesn't start real content, so it must not be allowed to overwrite
-                    # current_section. The vertical-closeness check matters: without it, a real
-                    # TOC block followed much later by an isolated real heading (with no table
-                    # event happening to fall between them) would wrongly merge into one run and
-                    # skip the real heading too.
-                    _toc_line_gap_px = 50
-                    toc_indices: set[int] = set()
-                    run: list[int] = []
-
-                    def _flush_run() -> None:
-                        if len(run) >= 3:
-                            toc_indices.update(run)
-                        run.clear()
-
-                    last_heading_top: float | None = None
-                    for i, event in enumerate(events):
-                        if event[1] == "heading":
-                            top = event[0]
-                            if run and last_heading_top is not None and top - last_heading_top > _toc_line_gap_px:
-                                _flush_run()
-                            run.append(i)
-                            last_heading_top = top
-                        else:
-                            _flush_run()
-                            last_heading_top = None
-                    _flush_run()
-
-                    for idx, (_top, kind, payload) in enumerate(events):
-                        if kind == "heading":
-                            if idx not in toc_indices and payload is not None:
-                                current_section = payload
-                                any_numbered_heading_found = True
-                            continue
-                        if kind == "qa_sentence":
-                            current_section = "qa_qc"
-                            continue
-
-                        rows = payload.extract()
-                        if not rows:
-                            continue
-                        header_cell = (rows[0][0] or "").strip()
-                        override = _table_header_override(header_cell)
-
-                        tickets_here: set[str] = set()
-                        for row in rows:
-                            for cell in row:
-                                if not cell:
-                                    continue
-                                match = _CELL_TICKET_RE.match(cell)
-                                if match:
-                                    tickets_here.add(f"{match.group(1)}-{match.group(2)}")
-                        if not tickets_here:
-                            continue
-
-                        if override is not None:
-                            # The table's own header is a stronger, more direct signal than
-                            # whatever the sticky numbered-heading state currently says -- and
-                            # it becomes the new sticky state itself, so a header-less
-                            # continuation of THIS table (e.g. ADR's TRI table spanning pages
-                            # 2-6 with the header only printed once) still counts correctly.
-                            current_section = override
-                            bucket = override
-                        else:
-                            bucket = current_section
-                            if bucket is None and not any_numbered_heading_found:
-                                # No numbered heading has EVER been found in this document --
-                                # the first ticket-bearing table defaults to Functionality, and
-                                # (unlike the previous one-shot version) STAYS Functionality for
-                                # subsequent header-less continuation tables too, since nothing
-                                # else in the document will ever signal otherwise.
-                                bucket = "functionality"
-                                current_section = "functionality"
-                        if bucket in counts:
-                            counts[bucket] |= tickets_here
-        except Exception:
-            pass  # Table extraction is best-effort; a malformed PDF just yields all-zero counts.
-
+        counts: dict[str, set[str]] = {key: set() for key in _RN_BUCKETS}
+        for ticket_id, _cell_text, bucket in iter_rn_ticket_rows(pdf_bytes):
+            counts[bucket].add(ticket_id)
         return TableCounts(
             functionality=len(counts["functionality"]),
             nco=len(counts["nco"]),

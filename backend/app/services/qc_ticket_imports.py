@@ -229,8 +229,8 @@ def _resolve_operativas_device_swf(affected_program: str | None, created: date_c
 
 
 def _resolve_release_swf(project_key: str | None) -> tuple[str | None, str | None]:
-    """Returns (operativo_final_or_None_if_excluded, swf). A return of (None, "EXCLUIR") signals
-    the ticket should be dropped entirely (matches REL_OPERATIVO_FINAL['DISPT'] = 'EXCLUIR')."""
+    """Returns (operativo_final, swf). DISPT maps to EXCLUIR here; callers persist it as OTROS
+    so the ticket still counts in the Jira filter total."""
     if not project_key:
         return None, None
     operativo_final = REL_OPERATIVO_FINAL.get(project_key, project_key)
@@ -264,9 +264,7 @@ def validate_rows(
             continue
 
         status_raw = row.values.get("status_raw", "")
-        if "cancel" in status_raw.strip().lower():
-            excluded_cancelled += 1
-            continue  # Cancelled tickets are excluded from ALL counts, no exception -- not imported.
+        is_cancelled = "cancel" in status_raw.strip().lower()
 
         if issue_key in seen_keys:
             errors.append(
@@ -296,7 +294,7 @@ def validate_rows(
 
         status_upper = status_raw.strip().upper()
         closed_set = _CLOSED_STATUSES_OPERATIVAS if view == QcTicketView.OPERATIVAS else _CLOSED_STATUSES_RELEASE
-        is_open = status_upper not in closed_set
+        is_open = (not is_cancelled) and status_upper not in closed_set
         if status_upper not in _KNOWN_STATUSES:
             warnings.append(
                 QcTicketImportRowError(
@@ -334,7 +332,7 @@ def validate_rows(
         else:
             device, swf = _resolve_release_swf(row.values.get("project_key") or None)
             if swf == "EXCLUIR":
-                continue  # DISPT-mapped projects are excluded from Release SWF entirely.
+                swf = "OTROS"
             if row.values.get("project_key") and swf is None:
                 swf = "OTROS"
 

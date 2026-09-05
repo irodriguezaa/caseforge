@@ -15,6 +15,26 @@ import app.models  # noqa: F401  ensure all models are registered on Base.metada
 from app.db import Base, get_db
 from app.main import app
 
+TEST_QC_USERS = (
+    "jefe@test.com:jefe:jefe-pass,"
+    "lider@test.com:lider:lider-pass,"
+    "tester@test.com:tester:tester-pass,"
+    "consulta@test.com:consulta:consulta-pass"
+)
+TEST_SESSION_SECRET = "test-qc-session-secret"
+
+
+@pytest.fixture(autouse=True)
+def qc_auth_env(monkeypatch):
+    monkeypatch.setenv("QC_USERS", TEST_QC_USERS)
+    monkeypatch.setenv("QC_SESSION_SECRET", TEST_SESSION_SECRET)
+
+
+def login_as(client: TestClient, email: str, password: str) -> None:
+    client.cookies.clear()
+    response = client.post("/api/v1/auth/login", json={"email": email, "password": password})
+    assert response.status_code == 200, response.text
+
 
 @pytest.fixture()
 def db_session():
@@ -47,5 +67,6 @@ def client(db_session):
 
     app.dependency_overrides[get_db] = _override_get_db
     with TestClient(app) as test_client:
+        login_as(test_client, "jefe@test.com", "jefe-pass")
         yield test_client
     app.dependency_overrides.clear()

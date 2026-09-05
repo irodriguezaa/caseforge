@@ -28,6 +28,7 @@ def _analyze(filename: str):
 
 
 WEB = "DAMCO-RN-CV_-_WEB_-16_9_1-290826-044927.pdf"
+WEB_1690 = "DAMCO-RN-CV_-_WEB_-16.9.0-010926-005137.pdf"
 XBOX = "XBOX_-_v7_8_1-280826-194602.pdf"
 ANDROID_TV_CSTB = "DAMCO-CSTB-RN_CV_Android_TV_11_0_2-280826-194439.pdf"
 IOS = "DAMCO-RN_CV_IOS_10_1_5-290826-175843.pdf"
@@ -46,7 +47,7 @@ AAF_STALE = "DAMCO-RN_AAF_STALE-_Nueva_experiencia_para_Activacio_n_de_HBO_Max__
 AAF_STALE_MUNDIAL = "DAMCO-RN_AAF_STALE_MUNDIAL_Fase_2___QA___QC_BUG_s_25_0_11-290826-175322.pdf"
 
 ALL_FIXTURES = [
-    WEB, XBOX, ANDROID_TV_CSTB, IOS, TVOS, ADR_5, ADR_9, COSHIP, ROKU,
+    WEB, WEB_1690, XBOX, ANDROID_TV_CSTB, IOS, TVOS, ADR_5, ADR_9, COSHIP, ROKU,
     ADT_HF, ADT_PLAIN, FIRETV_HF, FIRETV_PLAIN,
     AAF_OTT, AAF_OTT_MUNDIAL, AAF_STALE, AAF_STALE_MUNDIAL,
 ]
@@ -185,6 +186,17 @@ def test_counts_web_exact() -> None:
     assert (r.features_count, r.nco_issues_count, r.qa_qc_issues_count, r.tri_issues_count) == (6, 0, 0, 0)
 
 
+def test_counts_web_1690_empty_qa_qc_table_is_zero_not_alcance() -> None:
+    """WEB 16.9.0 section 1.4 is an empty QA-QC| Bugs table. The only ticket-shaped cell after
+    it is TBRFRE-2105 in 1.5 Alcance no entregado (header Artefacto). That row must not be
+    counted as a QA/QC Bug. Funcionalidades stay at the five real WEBCL rows."""
+    r = _analyze(WEB_1690)
+    assert r.features_count == 5
+    assert r.qa_qc_issues_count == 0
+    assert r.nco_issues_count == 0
+    assert r.tri_issues_count == 0
+
+
 def test_counts_xbox_exact_including_a_page_break_continuation() -> None:
     r = _analyze(XBOX)
     assert (r.features_count, r.nco_issues_count, r.qa_qc_issues_count, r.tri_issues_count) == (14, 3, 3, 0)
@@ -252,6 +264,14 @@ def test_table_header_override_does_not_fire_on_a_mention_of_tri_elsewhere() -> 
 def test_table_header_qa_qc_bugs_is_recognized_as_an_override_signal() -> None:
     assert _table_header_override("QA bugs / QC bugs") == "qa_qc"
     assert _table_header_override("QA BUGS / QC BUGS") == "qa_qc"
+
+
+def test_table_header_artefacto_is_untracked_not_qa_qc() -> None:
+    """Alcance no entregado tables are headed 'Artefacto'; they must not inherit QA/QC."""
+    from app.services.release_note_analyzer import _UNTRACKED_TABLE
+
+    assert _table_header_override("Artefacto") == _UNTRACKED_TABLE
+    assert _table_header_override("ARTEFACTO") == _UNTRACKED_TABLE
 
 
 def test_adr_659_tri_table_tickets_come_from_the_tri_headed_table_not_the_qa_qc_table(

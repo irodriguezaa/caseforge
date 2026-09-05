@@ -25,6 +25,24 @@ services:
       JIRA_BASE_URL: ${JIRA_BASE_URL:-}
       JIRA_EMAIL: ${JIRA_EMAIL:-}
       JIRA_API_TOKEN: ${JIRA_API_TOKEN:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
+      RN_STORAGE_DIR: ${RN_STORAGE_DIR:-/app/data/release_notes}
+      MS_CLIENT_ID: ${MS_CLIENT_ID:-}
+      MS_CLIENT_SECRET: ${MS_CLIENT_SECRET:-}
+      MS_TENANT_ID: ${MS_TENANT_ID:-}
+      MS_GRAPH_ACCESS_TOKEN: ${MS_GRAPH_ACCESS_TOKEN:-}
+      MS_GRAPH_MAILBOX: ${MS_GRAPH_MAILBOX:-}
+      MS_GRAPH_TIMEZONE: ${MS_GRAPH_TIMEZONE:-America/Mexico_City}
+      MS_CALENDAR_ICS_URL: ${MS_CALENDAR_ICS_URL:-}
+      MS_CALENDAR_ICS_PATH: ${MS_CALENDAR_ICS_PATH:-}
+      MS_CALENDAR_ICS_QC_ONLY: ${MS_CALENDAR_ICS_QC_ONLY:-}
+      QC_USERS: ${QC_USERS:-}
+      QC_SESSION_SECRET: ${QC_SESSION_SECRET:-}
+      QC_COOKIE_SECURE: ${QC_COOKIE_SECURE:-}
+    volumes:
+      - rn_notes:/app/data/release_notes
     ports:
       - "127.0.0.1:8000:8000"
     depends_on:
@@ -51,6 +69,8 @@ services:
       DATABASE_NAME: ${DATABASE_NAME:?Set DATABASE_NAME in .env}
       DATABASE_USER: ${DATABASE_USER:?Set DATABASE_USER in .env}
       DATABASE_PASSWORD: ${DATABASE_PASSWORD:?Set DATABASE_PASSWORD in .env}
+      QC_USERS: ${QC_USERS:-}
+      QC_SESSION_SECRET: ${QC_SESSION_SECRET:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -68,3 +88,4 @@ services:
 
 volumes:
   postgres_data:
+  rn_notes:
