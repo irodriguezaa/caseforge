@@ -9,6 +9,7 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { BE_CLUSTER_OPTIONS, BE_CLUSTER_TODOS, BE_REGRESIVO_SCOPE_LABEL, BE_REGRESIVO_SCOPES, BE_SWF_OPTIONS } from "@/lib/constants";
 import { calculateBusinessDays } from "@/lib/dateUtils";
+import type { BeCluster, BeRegresivoScope, BeReleaseRead, BeReleaseUpdate } from "@/lib/types";
 
 type RnSource = "with_rn" | "without_rn" | null;
 
