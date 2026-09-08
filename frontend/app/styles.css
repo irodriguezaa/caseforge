@@ -398,6 +398,33 @@ button.danger:hover:not(:disabled) { background: #d94f4c; }
 .form-field.full { grid-column: 1 / -1; }
 input, select, textarea { background: var(--bg); border: 1px solid var(--border-strong); border-radius: 7px; color: var(--text); font: inherit; padding: .55rem .7rem; }
 input[type="date"] { color-scheme: light; }
+.choice-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+.choice-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  position: relative;
+  z-index: 2;
+  min-height: 32px;
+  padding: 4px 8px 4px 4px;
+  border-radius: 6px;
+}
+.choice-option:hover { background: var(--surface-2); }
+.choice-option input {
+  accent-color: var(--accent);
+  width: 16px;
+  height: 16px;
+  color-scheme: light;
+  flex-shrink: 0;
+}
 textarea { resize: vertical; min-height: 4.5rem; }
 .form-actions { margin-top: 1rem; display: flex; gap: .6rem; flex-wrap: wrap; }
 .error-text { color: var(--danger); margin-top: .5rem; font-size: 13px; }

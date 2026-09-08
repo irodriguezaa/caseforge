@@ -96,8 +96,16 @@ export default function ReleaseBePage(): React.ReactElement {
 
   const patchRelease = async (payload: BeReleaseUpdate): Promise<void> => {
     if (!beRelease) return;
-    const updated = await api.updateBeRelease(beRelease.id, payload);
-    setBeRelease(updated);
+    const previous = beRelease;
+    setBeRelease({ ...beRelease, ...payload });
+    setCreateError(null);
+    try {
+      const updated = await api.updateBeRelease(beRelease.id, payload);
+      setBeRelease(updated);
+    } catch (err: unknown) {
+      setBeRelease(previous);
+      setCreateError(err instanceof Error ? err.message : "No se pudo guardar el Release BE.");
+    }
   };
 
   const toggleCluster = (option: BeCluster): void => {
@@ -264,13 +272,9 @@ export default function ReleaseBePage(): React.ReactElement {
             </div>
             <div className="form-field full">
               <span id="be-swf-label">SWF solicitante</span>
-              <div role="radiogroup" aria-labelledby="be-swf-label" className="form-grid">
+              <div role="radiogroup" aria-labelledby="be-swf-label" className="choice-grid">
                 {BE_SWF_OPTIONS.map((swf) => (
-                  <label
-                    key={swf}
-                    className="form-field"
-                    style={{ flexDirection: "row", alignItems: "center", gap: "8px" }}
-                  >
+                  <label key={swf} className="choice-option">
                     <input
                       type="radio"
                       name="be-swf"
@@ -284,13 +288,9 @@ export default function ReleaseBePage(): React.ReactElement {
             </div>
             <div className="form-field full">
               <span id="be-cluster-label">Cluster</span>
-              <div role="group" aria-labelledby="be-cluster-label" className="form-grid">
+              <div role="group" aria-labelledby="be-cluster-label" className="choice-grid">
                 {BE_CLUSTER_OPTIONS.map((cluster) => (
-                  <label
-                    key={cluster}
-                    className="form-field"
-                    style={{ flexDirection: "row", alignItems: "center", gap: "8px" }}
-                  >
+                  <label key={cluster} className="choice-option">
                     <input
                       type="checkbox"
                       name="be-cluster"
