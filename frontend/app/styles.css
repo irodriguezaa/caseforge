@@ -244,6 +244,18 @@ table.activity th.num, table.activity td.num { text-align: right; font-variant-n
 table.activity tr:last-child td { border-bottom: 0; }
 table.activity tr.clickable { cursor: pointer; }
 table.activity tr.clickable:hover { background: var(--surface-2); }
+td.epc-include-cell { position: relative; z-index: 2; }
+.epc-include-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  min-height: 32px;
+  margin: -6px;
+  cursor: pointer;
+  position: relative;
+  z-index: 2;
+}
 .muted { color: var(--text-muted); }
 
 .risk-badge { display: inline-block; font-size: 10px; font-weight: 600; padding: 1px 8px; border-radius: 999px; text-transform: uppercase; letter-spacing: .02em; }

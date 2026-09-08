@@ -85,10 +85,22 @@ export default function OperativaReleaseNotesPage(): React.ReactElement {
   };
 
   const patchEpc = async (epcId: number, payload: EpcUpdate): Promise<void> => {
-    const updated = await api.updateEpc(epcId, payload);
+    if (!operativaRelease) return;
+    const previous = operativaRelease;
     setOperativaRelease((prev) =>
-      prev ? { ...prev, epcs: prev.epcs.map((e) => (e.id === updated.id ? updated : e)) } : prev
+      prev
+        ? { ...prev, epcs: prev.epcs.map((e) => (e.id === epcId ? { ...e, ...payload } : e)) }
+        : prev,
     );
+    try {
+      const updated = await api.updateEpc(epcId, payload);
+      setOperativaRelease((prev) =>
+        prev ? { ...prev, epcs: prev.epcs.map((e) => (e.id === updated.id ? updated : e)) } : prev,
+      );
+    } catch (err: unknown) {
+      setOperativaRelease(previous);
+      setCreateError(err instanceof Error ? err.message : "No se pudo actualizar Incluir en QC.");
+    }
   };
 
   const qcReleaseId = (row: OperativaReleaseRead): number | null =>

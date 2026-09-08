@@ -52,12 +52,14 @@ export function OperativaEpcTable({
               </span>
             </td>
             {!readOnly && (
-            <td>
-              <label style={{ display: "inline-flex", alignItems: "center", gap: "6px", cursor: "pointer" }}>
+            <td className="epc-include-cell">
+              <label className="epc-include-label" htmlFor={`epc-qc-${epc.id}`}>
                 <input
+                  id={`epc-qc-${epc.id}`}
                   type="checkbox"
                   checked={epc.include_in_qc}
-                  onChange={(e) => onToggleInclude?.(epc, e.target.checked)}
+                  onClick={(event) => event.stopPropagation()}
+                  onChange={(event) => onToggleInclude?.(epc, event.target.checked)}
                 />
               </label>
             </td>
