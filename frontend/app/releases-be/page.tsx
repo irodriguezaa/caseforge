@@ -8,7 +8,7 @@ import { StatusBadge } from "@/app/components/StatusBadge";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { BE_CLUSTER_OPTIONS, BE_CLUSTER_TODOS, BE_REGRESIVO_SCOPE_LABEL, BE_REGRESIVO_SCOPES, BE_SWF_OPTIONS } from "@/lib/constants";
-import type { BeCluster, BeRegresivoScope, BeReleaseRead, BeReleaseUpdate } from "@/lib/types";
+import { calculateBusinessDays } from "@/lib/dateUtils";
 
 type RnSource = "with_rn" | "without_rn" | null;
 
@@ -127,6 +127,13 @@ export default function ReleaseBePage(): React.ReactElement {
     clusters && clusters.length > 0 ? clusters.join(", ") : "—";
 
   const listedReleases = rows.filter((row) => row.qc_release_id);
+  const businessDays = calculateBusinessDays(beRelease?.start_date ?? "", beRelease?.end_date ?? "");
+
+  const formatDate = (iso: string | null | undefined): string => {
+    if (!iso) return "—";
+    const [y, m, d] = iso.split("-");
+    return `${d}/${m}/${y}`;
+  };
 
   const handleRowClick = (row: BeReleaseRead): void => {
     if (!row.qc_release_id) {
@@ -353,6 +360,42 @@ export default function ReleaseBePage(): React.ReactElement {
               ))}
             </select>
           </div>
+          <div className="form-grid" style={{ marginTop: "12px" }}>
+            <div className="form-field">
+              <label htmlFor="be-start">Inicio de revisión</label>
+              <input
+                id="be-start"
+                type="date"
+                value={beRelease.start_date ?? ""}
+                onChange={(e) => void patchRelease({ start_date: e.target.value || null })}
+              />
+            </div>
+            <div className="form-field">
+              <label htmlFor="be-end">Fin de revisión</label>
+              <input
+                id="be-end"
+                type="date"
+                min={beRelease.start_date ?? undefined}
+                value={beRelease.end_date ?? ""}
+                onChange={(e) => void patchRelease({ end_date: e.target.value || null })}
+              />
+            </div>
+            <div className="form-field">
+              <label>Días de ejecución (hábiles)</label>
+              <div
+                style={{
+                  background: "var(--surface-2)",
+                  border: "1px solid var(--border-strong)",
+                  borderRadius: "7px",
+                  padding: ".55rem .7rem",
+                  fontWeight: 600,
+                  color: businessDays > 0 ? "var(--accent)" : "var(--text-dim)",
+                }}
+              >
+                {businessDays > 0 ? `${businessDays} día${businessDays > 1 ? "s" : ""}` : "—"}
+              </div>
+            </div>
+          </div>
           {beRelease.regresivo_scope === "ACOTADO" && (
             <div className="form-field full" style={{ marginTop: "12px" }}>
               <label htmlFor="be-component">Componente / Funcionalidad Afectada:</label>
@@ -404,6 +447,7 @@ export default function ReleaseBePage(): React.ReactElement {
                 <th>SWF</th>
                 <th>Cluster</th>
                 <th>Alcance</th>
+                <th>Periodo</th>
                 <th>RN</th>
                 <th>Estado</th>
               </tr>
@@ -423,6 +467,11 @@ export default function ReleaseBePage(): React.ReactElement {
                   <td className="muted">
                     {row.regresivo_scope ? BE_REGRESIVO_SCOPE_LABEL[row.regresivo_scope] : "—"}
                   </td>
+                  <td className="muted">
+                    {row.start_date || row.end_date
+                      ? `${formatDate(row.start_date)} — ${formatDate(row.end_date)}`
+                      : "—"}
+                  </td>
                   <td className="muted">{row.pdf_filename ?? "Sin RN"}</td>
                   <td>
                     {row.qc_release_status ? (
@@ -435,7 +484,7 @@ export default function ReleaseBePage(): React.ReactElement {
               ))}
               {listedReleases.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="muted">
+                  <td colSpan={8} className="muted">
                     No hay Release BE todavía.
                   </td>
                 </tr>

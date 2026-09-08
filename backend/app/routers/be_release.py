@@ -23,7 +23,7 @@ from app.schemas.be_release import (
     be_clusters_as_release_label,
 )
 from app.schemas.release import ReleaseRead
-from app.services.be_rn_analyzer import extract_be_rn_header
+from app.services.release_note_analyzer import calculate_business_days
 
 router = APIRouter(prefix="/api/v1/releases-be", tags=["releases-be"])
 
@@ -119,12 +119,16 @@ def create_qc_release_from_be(be_release_id: int, db: Session = Depends(get_db))
             )
 
     deliverable = _resolve_deliverable(be_release.entregable, db)
+    execution_days = calculate_business_days(be_release.start_date, be_release.end_date)
     release = Release(
         name=be_release.name.strip(),
         version=BE_VERSION,
         platform=BE_PLATFORM,
         cluster=be_clusters_as_release_label(be_release.clusters),
         description=be_release.description,
+        start_date=be_release.start_date,
+        end_date=be_release.end_date,
+        execution_days=execution_days or None,
         qc_resources=None,
         validation_type=None,
         deliverable_id=deliverable.id if deliverable else None,
@@ -184,6 +188,13 @@ def update_be_release(
             updates["affected_component"] = None
     for field, value in updates.items():
         setattr(be_release, field, value)
+    qc_release = be_release.qc_release
+    if qc_release is not None and {"start_date", "end_date"} & updates.keys():
+        qc_release.start_date = be_release.start_date
+        qc_release.end_date = be_release.end_date
+        qc_release.execution_days = calculate_business_days(
+            be_release.start_date, be_release.end_date
+        ) or None
     db.commit()
     db.refresh(be_release)
     return be_release

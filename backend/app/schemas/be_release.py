@@ -1,4 +1,5 @@
 from typing import Any
+from datetime import date
 from enum import Enum
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
@@ -64,6 +65,8 @@ class BeReleaseRead(BaseModel):
     pdf_filename: str | None
     regresivo_scope: BeRegresivoScope | None
     affected_component: str | None
+    start_date: date | None = None
+    end_date: date | None = None
     qc_release_id: int | None = None
     qc_release_status: str | None = None
 
@@ -91,12 +94,21 @@ class BeReleaseUpdate(BaseModel):
     description: str | None = None
     regresivo_scope: BeRegresivoScope | None = None
     affected_component: str | None = None
+    start_date: date | None = None
+    end_date: date | None = None
 
     @field_validator("name", "entregable", "swf", "description", "affected_component", mode="before")
     @classmethod
     def empty_string_to_none(cls, value: object) -> object:
         if isinstance(value, str):
             return _blank_to_none(value)
+        return value
+
+    @field_validator("start_date", "end_date", mode="before")
+    @classmethod
+    def empty_date_to_none(cls, value: object) -> object:
+        if value == "":
+            return None
         return value
 
     @field_validator("swf")

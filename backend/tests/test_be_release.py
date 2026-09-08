@@ -241,11 +241,59 @@ def test_create_qc_release_without_pdf(client) -> None:
     assert body["qc_resources"] is None
     assert body["validation_type"] is None
     assert body["operativa_release_id"] is None
+    assert body["start_date"] is None
+    assert body["end_date"] is None
+    assert body["execution_days"] is None
 
     gotten = client.get(f"/api/v1/releases/{body['id']}")
     assert gotten.status_code == 200
     assert gotten.json()["be_release_id"] == created["id"]
     assert gotten.json()["swf"] == "BE Nubiral"
+
+
+def test_create_qc_release_copies_dates_and_business_days(client) -> None:
+    created = client.post("/api/v1/releases-be").json()
+    patched = client.patch(
+        f"/api/v1/releases-be/{created['id']}",
+        json={
+            "name": "BE-DATES",
+            "swf": "BE Hitss",
+            "regresivo_scope": "SMOKE",
+            "start_date": "2026-09-07",
+            "end_date": "2026-09-11",
+        },
+    )
+    assert patched.status_code == 200, patched.text
+    body = patched.json()
+    assert body["start_date"] == "2026-09-07"
+    assert body["end_date"] == "2026-09-11"
+
+    created_qc = client.post(f"/api/v1/releases-be/{created['id']}/create-release")
+    assert created_qc.status_code == 201, created_qc.text
+    qc = created_qc.json()
+    assert qc["start_date"] == "2026-09-07"
+    assert qc["end_date"] == "2026-09-11"
+    assert qc["execution_days"] == 5
+
+
+def test_patch_dates_after_create_syncs_qc_release(client) -> None:
+    created = client.post("/api/v1/releases-be").json()
+    client.patch(
+        f"/api/v1/releases-be/{created['id']}",
+        json={"name": "BE-SYNC-DATES", "swf": "BE Neoris", "regresivo_scope": "COMPLETO"},
+    )
+    qc = client.post(f"/api/v1/releases-be/{created['id']}/create-release").json()
+    assert qc["start_date"] is None
+
+    updated = client.patch(
+        f"/api/v1/releases-be/{created['id']}",
+        json={"start_date": "2026-09-08", "end_date": "2026-09-09"},
+    )
+    assert updated.status_code == 200, updated.text
+    detail = client.get(f"/api/v1/releases/{qc['id']}").json()
+    assert detail["start_date"] == "2026-09-08"
+    assert detail["end_date"] == "2026-09-09"
+    assert detail["execution_days"] == 2
 
 
 def test_create_qc_release_is_idempotent(client) -> None:

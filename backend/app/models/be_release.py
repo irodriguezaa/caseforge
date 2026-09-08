@@ -5,10 +5,10 @@ separate table and flow: optional RN metadata and regresivo scope. Test cases ar
 the QC Release after Paso 4, not selected in the wizard.
 """
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import JSON, DateTime, String, Text, func
+from sqlalchemy import Date, DateTime, JSON, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -33,6 +33,10 @@ class BeRelease(Base):
     # COMPLETO | SMOKE | ACOTADO — stored as text (not Release.validation_type).
     regresivo_scope: Mapped[str | None] = mapped_column(String(20), nullable=True)
     affected_component: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Paso 3: ventana QC (mismos campos que Operativa / Apps). Días hábiles se calculan al crear el QC Release.
+    start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

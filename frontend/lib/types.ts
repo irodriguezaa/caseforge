@@ -699,6 +699,8 @@ export interface BeReleaseRead {
   pdf_filename: string | null;
   regresivo_scope: BeRegresivoScope | null;
   affected_component: string | null;
+  start_date: string | null;
+  end_date: string | null;
   qc_release_id?: number | null;
   qc_release_status?: string | null;
 }
@@ -711,6 +713,8 @@ export interface BeReleaseUpdate {
   description?: string | null;
   regresivo_scope?: BeRegresivoScope | null;
   affected_component?: string | null;
+  start_date?: string | null;
+  end_date?: string | null;
 }
 
 export interface BeAnalysisResult {
