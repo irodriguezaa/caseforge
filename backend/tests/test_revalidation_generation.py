@@ -35,7 +35,55 @@ def _run(tickets: dict, origin_cases: list[dict] | None = None):
     )
 
 
-def test_identical_functionality_does_not_duplicate_origin_coverage() -> None:
+def test_identical_functionality_in_origin_rn_is_not_regenerated_without_origin_cases() -> None:
+    result = generate_revalidation_candidates(
+        release_id=2,
+        release_name="16.9.2",
+        validation_type="Completo",
+        rn_filename="16.9.2.pdf",
+        pdf_bytes=b"%PDF",
+        origin_release_id=1,
+        origin_release_name="16.9.1",
+        origin_cases=[],
+        tickets={
+            "functionality": [
+                ("WEBCL-3721", "WEBCL-3721: Activación HBO Max"),
+                ("WEBCL-3779", "WEBCL-3779: Menú de configuración"),
+                ("WEBCL-3762", "WEBCL-3762: URL handler"),
+                ("WEBCL-3767", "WEBCL-3767: PayPal métricas"),
+            ],
+            "qa_qc": [
+                ("WEBCL-3849", "WEBCL-3849: En API de HBO se muestra parametro de api_version"),
+                ("WEBCL-3874", "WEBCL-3874: Se hace 2 veces el llamado"),
+                ("WEBCL-3878", "WEBCL-3878: No respeta configuración default"),
+                ("WEBCL-3886", "WEBCL-3886: No se vuelve a mostrar modal"),
+                ("WEBCL-3900", "WEBCL-3900: Error 404 al no tener región"),
+                ("WEBCL-3898", "WEBCL-3898: Falta parametro de region"),
+                ("WEBCL-3902", "WEBCL-3902: Landings se quedan en spinner"),
+                ("WEBCL-3904", "WEBCL-3904: QR de activación no manda donde debería"),
+            ],
+            "nco": [],
+        },
+        prior_functionality_cells={
+            "WEBCL-3721": "WEBCL-3721: Activación HBO Max",
+            "WEBCL-3779": "WEBCL-3779: Menú de configuración",
+            "WEBCL-3762": "WEBCL-3762: URL handler",
+            "WEBCL-3767": "WEBCL-3767: PayPal métricas",
+        },
+    )
+    jiras = {row.related_jira for row in result.candidates}
+    assert len(result.candidates) == 8
+    assert jiras == {
+        "WEBCL-3849",
+        "WEBCL-3874",
+        "WEBCL-3878",
+        "WEBCL-3886",
+        "WEBCL-3900",
+        "WEBCL-3898",
+        "WEBCL-3902",
+        "WEBCL-3904",
+    }
+    assert "WEBCL-3721" not in jiras
     result = _run(
         {
             "functionality": [

@@ -125,7 +125,20 @@ def plan_incremental_generation(
         plan.qa_qc.append((ticket_id, cell_text))
     for ticket_id, cell_text in functionality:
         key = ticket_id.upper()
+        prior_cell = prior_cells.get(key)
         if key not in origin_keys:
+            if prior_cell and not functionality_cell_has_real_change(cell_text, prior_cell):
+                plan.analysis_details.append(
+                    f"No se regeneró {ticket_id}: ya figuraba en el RN anterior."
+                )
+                continue
+            if prior_cell and functionality_cell_has_real_change(cell_text, prior_cell):
+                plan.changed_functionality.append((ticket_id, cell_text))
+                plan.analysis_details.append(
+                    f"{ticket_id} figuraba en el RN anterior y el texto cambió. "
+                    "Se genera solo el delta, no la cobertura anterior."
+                )
+                continue
             plan.new_functionality.append((ticket_id, cell_text))
             continue
         if key in change_keys:
@@ -483,12 +496,18 @@ def generate_revalidation_candidates(
     origin_release_name: str,
     origin_cases: list[dict[str, Any]],
     tickets: dict[str, list[tuple[str, str]]] | None = None,
+    prior_functionality_cells: dict[str, str] | None = None,
+    prior_qa_qc_cells: dict[str, str] | None = None,
+    prior_nco_cells: dict[str, str] | None = None,
 ) -> GenerateCasesResponse:
     details: list[str] = []
     filename = rn_filename or ""
     buckets = tickets if tickets is not None else (_tickets_by_section(pdf_bytes) if pdf_bytes else {})
     coverage = origin_coverage_by_key(origin_cases)
     origin_keys = set(coverage)
+    prior_func = {key.upper(): text for key, text in (prior_functionality_cells or {}).items()}
+    prior_qa = {key.upper(): text for key, text in (prior_qa_qc_cells or {}).items()}
+    prior_nco = {key.upper(): text for key, text in (prior_nco_cells or {}).items()}
 
     qa_qc = buckets.get("qa_qc") or []
     nco = buckets.get("nco") or []
@@ -499,7 +518,27 @@ def generate_revalidation_candidates(
 
     for ticket_id, cell_text in functionality:
         key = ticket_id.upper()
+        if key in change_keys and (key in origin_keys or key in prior_func):
+            details.append(
+                f"{ticket_id} permanece en Funcionalidades pero el RN también reporta un cambio/fix; "
+                "no se duplica la cobertura original, solo el delta."
+            )
+            continue
         if key in origin_keys and key not in change_keys:
+            if functionality_cell_has_real_change(cell_text, prior_func.get(key)):
+                candidates.append(
+                    _functional_delta_candidate(
+                        ticket_id=ticket_id,
+                        cell_text=cell_text,
+                        rn_filename=filename,
+                        origin_release_id=origin_release_id,
+                        origin_release_name=origin_release_name,
+                    )
+                )
+                details.append(
+                    f"{ticket_id} ya tenía cobertura en el origen; el RN evidencia un cambio funcional."
+                )
+                continue
             related = coverage.get(key) or []
             details.append(
                 f"No se regeneró {ticket_id}: ya hay cobertura validada en el Release origen"
@@ -507,10 +546,9 @@ def generate_revalidation_candidates(
                 + "."
             )
             continue
-        if key in origin_keys and key in change_keys:
+        if key in prior_func and not functionality_cell_has_real_change(cell_text, prior_func.get(key)):
             details.append(
-                f"{ticket_id} permanece en Funcionalidades pero el RN también reporta un cambio/fix; "
-                "no se duplica la cobertura original, solo el delta."
+                f"No se regeneró {ticket_id}: ya figuraba en el RN del Release origen."
             )
             continue
         candidates.append(
@@ -524,6 +562,18 @@ def generate_revalidation_candidates(
         )
 
     for ticket_id, cell_text in qa_qc:
+        key = ticket_id.upper()
+        prior = prior_qa.get(key)
+        if key in origin_keys and prior and _normalize_cell(cell_text) == _normalize_cell(prior):
+            details.append(
+                f"No se regeneró QA/QC {ticket_id}: ya hay cobertura en el Release origen."
+            )
+            continue
+        if prior and _normalize_cell(cell_text) == _normalize_cell(prior) and key not in origin_keys:
+            details.append(
+                f"No se regeneró QA/QC {ticket_id}: ya figuraba en el RN del Release origen."
+            )
+            continue
         related = _related_origin_labels(ticket_id, cell_text, coverage)
         candidates.append(
             _fix_candidate(
@@ -538,6 +588,13 @@ def generate_revalidation_candidates(
         )
 
     for ticket_id, cell_text in nco:
+        key = ticket_id.upper()
+        prior = prior_nco.get(key)
+        if prior and _normalize_cell(cell_text) == _normalize_cell(prior):
+            details.append(
+                f"No se regeneró NCO {ticket_id}: ya figuraba en el RN del Release origen."
+            )
+            continue
         related = _related_origin_labels(ticket_id, cell_text, coverage)
         if nco_has_validation_evidence(ticket_id, cell_text):
             candidates.append(

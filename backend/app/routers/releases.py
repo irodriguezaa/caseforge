@@ -592,6 +592,31 @@ def _test_case_coverage_snapshot(row: TestCase) -> dict:
     }
 
 
+def _rn_cells_from_analysis(analysis: ReleaseAnalysis | None) -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
+    if analysis is None:
+        return {}, {}, {}
+    prior_pdf = read_release_note_pdf(analysis.pdf_file_path)
+    if not prior_pdf:
+        return {}, {}, {}
+    buckets = _tickets_by_section(prior_pdf)
+    functionality = {ticket_id.upper(): cell_text for ticket_id, cell_text in buckets.get("functionality", [])}
+    qa_qc = {ticket_id.upper(): cell_text for ticket_id, cell_text in buckets.get("qa_qc", [])}
+    nco = {ticket_id.upper(): cell_text for ticket_id, cell_text in buckets.get("nco", [])}
+    return functionality, qa_qc, nco
+
+
+def _latest_analysis(db: Session, release_id: int) -> ReleaseAnalysis | None:
+    return (
+        db.execute(
+            select(ReleaseAnalysis)
+            .where(ReleaseAnalysis.release_id == release_id)
+            .order_by(ReleaseAnalysis.created_at.desc())
+        )
+        .scalars()
+        .first()
+    )
+
+
 def _deliverable_baseline_coverage(
     db: Session, release: Release
 ) -> tuple[list[dict], dict[str, str], dict[str, str], dict[str, str]]:
@@ -616,27 +641,10 @@ def _deliverable_baseline_coverage(
     prior_qa_qc: dict[str, str] = {}
     prior_nco: dict[str, str] = {}
     for sibling in siblings:
-        analysis = (
-            db.execute(
-                select(ReleaseAnalysis)
-                .where(ReleaseAnalysis.release_id == sibling.id)
-                .order_by(ReleaseAnalysis.created_at.desc())
-            )
-            .scalars()
-            .first()
-        )
-        if analysis is None:
-            continue
-        prior_pdf = read_release_note_pdf(analysis.pdf_file_path)
-        if not prior_pdf:
-            continue
-        buckets = _tickets_by_section(prior_pdf)
-        for ticket_id, cell_text in buckets.get("functionality", []):
-            prior_functionality[ticket_id.upper()] = cell_text
-        for ticket_id, cell_text in buckets.get("qa_qc", []):
-            prior_qa_qc[ticket_id.upper()] = cell_text
-        for ticket_id, cell_text in buckets.get("nco", []):
-            prior_nco[ticket_id.upper()] = cell_text
+        functionality, qa_qc, nco = _rn_cells_from_analysis(_latest_analysis(db, sibling.id))
+        prior_functionality.update(functionality)
+        prior_qa_qc.update(qa_qc)
+        prior_nco.update(nco)
     return snapshot, prior_functionality, prior_qa_qc, prior_nco
 
 
@@ -723,6 +731,9 @@ def generate_cases_from_rn(
             db.execute(select(TestCase).where(TestCase.release_id == release.parent_release_id)).scalars().all()
         )
         origin_snapshot = [_test_case_coverage_snapshot(row) for row in origin_rows]
+        prior_functionality, prior_qa_qc, prior_nco = _rn_cells_from_analysis(
+            _latest_analysis(db, release.parent_release_id)
+        )
         proposal = generate_revalidation_candidates(
             release_id=release.id,
             release_name=release.name,
@@ -734,6 +745,9 @@ def generate_cases_from_rn(
                 f"{origin.name} v{origin.version}" if origin else f"Release {release.parent_release_id}"
             ),
             origin_cases=origin_snapshot,
+            prior_functionality_cells=prior_functionality,
+            prior_qa_qc_cells=prior_qa_qc,
+            prior_nco_cells=prior_nco,
         )
     else:
         baseline_cases, prior_functionality_cells, prior_qa_qc_cells, prior_nco_cells = (

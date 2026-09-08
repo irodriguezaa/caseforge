@@ -30,7 +30,25 @@ def _origin_cases(*keys: str, generated: bool = True) -> list[dict]:
     return rows
 
 
-def test_plan_skips_existing_functionality_without_change() -> None:
+def test_plan_skips_functionality_present_in_prior_rn_without_origin_cases() -> None:
+    plan = plan_incremental_generation(
+        {
+            "functionality": [
+                ("WEBCL-3721", "WEBCL-3721: Activación HBO"),
+                ("WEBCL-3779", "WEBCL-3779: Menú HBO"),
+            ],
+            "qa_qc": [("WEBCL-3849", "WEBCL-3849: Se muestra parametro de api_version")],
+            "nco": [],
+        },
+        [],
+        {
+            "WEBCL-3721": "WEBCL-3721: Activación HBO",
+            "WEBCL-3779": "WEBCL-3779: Menú HBO",
+        },
+    )
+    assert plan.new_functionality == []
+    assert plan.changed_functionality == []
+    assert plan.qa_qc == [("WEBCL-3849", "WEBCL-3849: Se muestra parametro de api_version")]
     plan = plan_incremental_generation(
         {
             "functionality": [
