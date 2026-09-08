@@ -212,7 +212,7 @@ export default function ReleaseDetailPage(): React.ReactElement {
     setTestCases((current) => current.map((tc) => (tc.id === testCaseId ? { ...tc, status } : tc)));
     setActionError(null);
     try {
-      await api.updateTestCase(testCaseId, { status }, releaseId);
+      await api.updateTestCase(testCaseId, { status });
     } catch (err) {
       setTestCases(previous);
       setActionError(err instanceof ApiRequestError ? err.message : "No se pudo actualizar el estado del Test Case.");
@@ -226,7 +226,7 @@ export default function ReleaseDetailPage(): React.ReactElement {
     }
     setActionError(null);
     try {
-      await api.deleteTestCase(row.id, releaseId);
+      await api.deleteTestCase(row.id);
       load();
     } catch (err) {
       setActionError(err instanceof ApiRequestError ? err.message : "No se pudo eliminar el Test Case.");

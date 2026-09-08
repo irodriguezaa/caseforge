@@ -102,17 +102,13 @@ export function EditTestCaseModal({
       return;
     }
     try {
-      const updated = await api.updateTestCase(
-        testCase.id,
-        {
+      const updated = await api.updateTestCase(testCase.id, {
           test_case_name: name.trim(),
           description: description.trim() || null,
           priority,
           status,
           steps: cleaned,
-        },
-        releaseId,
-      );
+        });
       onSaved(updated);
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : "No se pudo guardar el Test Case.");
