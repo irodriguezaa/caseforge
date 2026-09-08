@@ -11,6 +11,25 @@ import { NextResponse } from "next/server";
 const backendUrl = process.env.BACKEND_URL ?? "http://backend:8000";
 const defaultTimeoutMs = 30_000;
 
+/** Next 16 hangs if you await params before consuming a PATCH/POST body. */
+export async function idAndBody(
+  request: Request,
+  params: Promise<{ id: string }>,
+): Promise<{ id: string; body: string }> {
+  const body = await request.text();
+  const { id } = await params;
+  return { id, body };
+}
+
+export async function idAndFormData(
+  request: Request,
+  params: Promise<{ id: string }>,
+): Promise<{ id: string; formData: FormData }> {
+  const formData = await request.formData();
+  const { id } = await params;
+  return { id, formData };
+}
+
 export async function cookieHeaderFromSession(): Promise<string | null> {
   const store = await cookies();
   const all = store.getAll();
@@ -30,12 +49,14 @@ export async function fetchBackend(
   if (cookieHeader && !headers.has("Cookie")) {
     headers.set("Cookie", cookieHeader);
   }
+  const hasBody = init?.body != null && init.body !== "";
   return fetch(`${backendUrl}${path}`, {
     ...init,
     headers,
     cache: "no-store",
     signal: AbortSignal.timeout(options?.timeoutMs ?? defaultTimeoutMs),
-  });
+    ...(hasBody ? { duplex: "half" as const } : {}),
+  } as RequestInit);
 }
 
 export async function proxyToBackend(

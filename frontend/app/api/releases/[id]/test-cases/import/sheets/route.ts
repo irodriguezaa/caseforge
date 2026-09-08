@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { fetchBackend } from "@/lib/backend";
+import { fetchBackend, idAndFormData } from "@/lib/backend";
 
 const requestTimeoutMs = 15_000;
 
@@ -8,13 +8,12 @@ interface RouteParams {
 }
 
 export async function POST(request: NextRequest, { params }: RouteParams): Promise<NextResponse> {
-  const { id } = await params;
+  const { id, formData } = await idAndFormData(request, params);
 
   try {
-    const incomingFormData = await request.formData();
     const response = await fetchBackend(
       `/api/v1/releases/${id}/test-cases/import/sheets`,
-      { method: "POST", body: incomingFormData },
+      { method: "POST", body: formData },
       { timeoutMs: requestTimeoutMs },
     );
     const body = await response.json();

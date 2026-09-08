@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { fetchBackend } from "@/lib/backend";
+import { fetchBackend, idAndBody } from "@/lib/backend";
 
 const bulkImportTimeoutMs = 120_000;
 
@@ -8,12 +8,11 @@ interface RouteParams {
 }
 
 export async function POST(request: NextRequest, { params }: RouteParams): Promise<NextResponse> {
-  const { id } = await params;
-  const payload = await request.json();
+  const { id, body } = await idAndBody(request, params);
   try {
     const response = await fetchBackend(
       `/api/v1/releases/${id}/test-cases/bulk`,
-      { method: "POST", body: JSON.stringify(payload), headers: { "Content-Type": "application/json" } },
+      { method: "POST", body, headers: { "Content-Type": "application/json" } },
       { timeoutMs: bulkImportTimeoutMs },
     );
     const body = await response.json();
