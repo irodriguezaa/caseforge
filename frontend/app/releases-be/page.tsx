@@ -126,6 +126,13 @@ export default function ReleaseBePage(): React.ReactElement {
   const clusterLabel = (clusters: string[] | null | undefined): string =>
     clusters && clusters.length > 0 ? clusters.join(", ") : "—";
 
+  const regresivoScopeLabel = (scope: string | null | undefined): string => {
+    if (scope === "COMPLETO" || scope === "SMOKE" || scope === "ACOTADO") {
+      return BE_REGRESIVO_SCOPE_LABEL[scope];
+    }
+    return "—";
+  };
+
   const listedReleases = rows.filter((row) => row.qc_release_id);
   const businessDays = calculateBusinessDays(beRelease?.start_date ?? "", beRelease?.end_date ?? "");
 
@@ -464,9 +471,7 @@ export default function ReleaseBePage(): React.ReactElement {
                   <td className="muted">{row.entregable ?? "—"}</td>
                   <td className="muted">{row.swf ?? "—"}</td>
                   <td className="muted">{clusterLabel(row.clusters)}</td>
-                  <td className="muted">
-                    {row.regresivo_scope ? BE_REGRESIVO_SCOPE_LABEL[row.regresivo_scope] : "—"}
-                  </td>
+                  <td className="muted">{regresivoScopeLabel(row.regresivo_scope)}</td>
                   <td className="muted">
                     {row.start_date || row.end_date
                       ? `${formatDate(row.start_date)} — ${formatDate(row.end_date)}`
