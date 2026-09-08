@@ -9,7 +9,7 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
 const backendUrl = process.env.BACKEND_URL ?? "http://backend:8000";
-const defaultTimeoutMs = 30_000;
+const defaultTimeoutMs = 12_000;
 
 /** Next 16 hangs if you await params before consuming a PATCH/POST body. */
 export async function idAndBody(
