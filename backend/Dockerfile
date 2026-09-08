@@ -48,6 +48,7 @@ RUN chmod +x ./entrypoint.sh \
 
 EXPOSE 8000
 
-USER caseforge
+# Root only so entrypoint can chown the named volume, then drops to caseforge.
+USER root
 
 CMD ["./entrypoint.sh"]
