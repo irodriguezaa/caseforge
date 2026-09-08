@@ -1,5 +1,5 @@
 export type ReleaseStatus = "DRAFT" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
-export type ReleaseType = "NUEVO" | "EVOLUTIVO" | "REVALIDACION";
+export type ReleaseType = "NUEVO" | "REVALIDACION";
 export type AuthRole = "jefe" | "lider" | "tester" | "consulta";
 
 export interface AuthUser {
@@ -428,6 +428,70 @@ export interface QcDashboardSummary {
   in_progress_total: number;
 }
 
+export interface ClusterParticipation {
+  cluster: string;
+  count: number;
+}
+
+export interface DeliverableReleaseKpi {
+  deliverable_id: number | null;
+  deliverable_name: string;
+  releases: number;
+  versions: number | null;
+}
+
+export interface SwfReleaseKpi {
+  swf: string;
+  releases: number;
+  percent: number;
+}
+
+export interface UnclassifiedSwfKpi {
+  origin: string;
+  platform: string | null;
+  count: number;
+  reason: string;
+}
+
+export interface SwfDistributionKpi {
+  considered: number;
+  unclassified: number;
+  by_swf: SwfReleaseKpi[];
+  unclassified_rows: UnclassifiedSwfKpi[];
+}
+
+export interface RevalidationKpi {
+  total: number;
+  app: number;
+  nuevo: number;
+  revalidacion: number;
+  untyped_app: number;
+  revalidacion_percent: number;
+  scope: string;
+}
+
+export interface ReleaseKpisRead {
+  total: number;
+  app: number;
+  be: number;
+  operativa: number;
+  by_month: ReleaseVolumeMonth[];
+  by_cluster: ClusterParticipation[];
+  cluster_validations_total: number;
+  clusters_per_release_avg: number;
+  by_deliverable: DeliverableReleaseKpi[];
+  swf: SwfDistributionKpi;
+  revalidation: RevalidationKpi;
+}
+
+export interface ReleaseVolumeMonth {
+  month: string;
+  total: number;
+  app: number;
+  be: number;
+  operativa: number;
+}
+
 export interface QcSummaryFilters {
   month?: string;
   release_id?: number;
@@ -621,23 +685,29 @@ export interface EpcUpdate {
 }
 
 export type BeRegresivoScope = "COMPLETO" | "SMOKE" | "ACOTADO";
-export type BeSwf = "Neoris" | "Tata" | "Hitss";
+export type BeSwf = "BE Hitss" | "BE Nubiral" | "BE Neoris";
+
+export type BeCluster = "Todos" | "Global" | "AUP" | "CENAM" | "Andina" | "Dominicana";
 
 export interface BeReleaseRead {
   id: number;
   name: string | null;
   entregable: string | null;
-  swf: BeSwf | null;
+  swf: string | null;
+  clusters: string[] | null;
   description: string | null;
   pdf_filename: string | null;
   regresivo_scope: BeRegresivoScope | null;
   affected_component: string | null;
+  qc_release_id?: number | null;
+  qc_release_status?: string | null;
 }
 
 export interface BeReleaseUpdate {
   name?: string | null;
   entregable?: string | null;
   swf?: BeSwf | null;
+  clusters?: BeCluster[] | null;
   description?: string | null;
   regresivo_scope?: BeRegresivoScope | null;
   affected_component?: string | null;

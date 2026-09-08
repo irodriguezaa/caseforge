@@ -47,7 +47,7 @@ class ActivityItem(BaseModel):
     # Deliverable context (Entregable/Versiones/Revalidaciones) -- None when this Release has no
     # Deliverable, so old data and the rest of the row render exactly as before this addition.
     deliverable_name: str | None = None
-    release_type: str | None = None  # "EVOLUTIVO" | "REVALIDACION"
+    release_type: str | None = None  # "NUEVO" | "REVALIDACION"
     deliverable_release_ordinal: int | None = None  # this release's position: v1, v2, v3...
     deliverable_total_versions: int | None = None
     deliverable_total_revalidaciones: int | None = None

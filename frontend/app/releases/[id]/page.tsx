@@ -1,9 +1,10 @@
 "use client";
 
-import { Download, Plus, Sparkles, Upload } from "lucide-react";
+import { Download, Pencil, Plus, Sparkles, Trash2, Upload } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import { EditTestCaseModal } from "@/app/components/EditTestCaseModal";
 import { ImportTestCasesPanel } from "@/app/components/ImportTestCasesPanel";
 import { InfoTooltip } from "@/app/components/InfoTooltip";
 import { OperativaCoverageMatrix } from "@/app/components/OperativaCoverageMatrix";
@@ -60,6 +61,7 @@ export default function ReleaseDetailPage(): React.ReactElement {
   const [publishing, setPublishing] = useState(false);
   const [publishResult, setPublishResult] = useState<PublishCasesResponse | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [editingCase, setEditingCase] = useState<TestCase | null>(null);
 
   const load = (): void => {
     setLoadError(null);
@@ -161,7 +163,7 @@ export default function ReleaseDetailPage(): React.ReactElement {
     setActionError(null);
     setPublishResult(null);
     const confirmed = window.confirm(
-      "Esto publica los Test Cases del motor a Jira QCO (issuetype Test). No modifica los casos en CaseForge. ¿Continuar?"
+      "Esto publica los Test Cases del motor a Jira QCO (issuetype Test). No modifica los casos en QC Pulse. ¿Continuar?"
     );
     if (!confirmed) {
       return;
@@ -210,10 +212,24 @@ export default function ReleaseDetailPage(): React.ReactElement {
     setTestCases((current) => current.map((tc) => (tc.id === testCaseId ? { ...tc, status } : tc)));
     setActionError(null);
     try {
-      await api.updateTestCase(testCaseId, { status });
+      await api.updateTestCase(testCaseId, { status }, releaseId);
     } catch (err) {
       setTestCases(previous);
       setActionError(err instanceof ApiRequestError ? err.message : "No se pudo actualizar el estado del Test Case.");
+    }
+  };
+
+  const handleDeleteTestCase = async (row: TestCase): Promise<void> => {
+    const confirmed = window.confirm("¿Deseas eliminar este Test Case?");
+    if (!confirmed) {
+      return;
+    }
+    setActionError(null);
+    try {
+      await api.deleteTestCase(row.id, releaseId);
+      load();
+    } catch (err) {
+      setActionError(err instanceof ApiRequestError ? err.message : "No se pudo eliminar el Test Case.");
     }
   };
 
@@ -238,7 +254,9 @@ export default function ReleaseDetailPage(): React.ReactElement {
     return (
       <div className="page">
         <p className="error-text">{loadError}</p>
-        <Link href="/releases" className="back-link">← Volver a Releases</Link>
+        <p>
+          <Link href="/" className="back-link">← Volver al Dashboard</Link>
+        </p>
       </div>
     );
   }
@@ -253,7 +271,6 @@ export default function ReleaseDetailPage(): React.ReactElement {
 
   const isBe = Boolean(release.be_release_id);
   const isOperativa = Boolean(release.operativa_release_id);
-  const canDelete = !isBe || release.status === "DRAFT";
   const backHref = isBe ? "/releases-be" : isOperativa ? "/operativas/release-notes" : "/releases";
   const backLabel = isBe
     ? "← Volver a Release BE"
@@ -312,6 +329,10 @@ export default function ReleaseDetailPage(): React.ReactElement {
                 <span style={{ fontWeight: 600 }}>{release.swf ?? "—"}</span>
               </div>
               <div>
+                <span className="muted" style={{ display: "block", fontSize: "11px", textTransform: "uppercase" }}>Cluster</span>
+                <span style={{ fontWeight: 600 }}>{release.cluster ?? "—"}</span>
+              </div>
+              <div>
                 <span className="muted" style={{ display: "block", fontSize: "11px", textTransform: "uppercase" }}>Alcance de regresivo</span>
                 <span style={{ fontWeight: 600 }}>
                   {release.regresivo_scope
@@ -339,11 +360,9 @@ export default function ReleaseDetailPage(): React.ReactElement {
                     <span style={{ fontWeight: 600 }}>
                       {release.release_type === "NUEVO"
                         ? "Nuevo"
-                        : release.release_type === "EVOLUTIVO"
-                          ? "Evolutivo"
-                          : release.release_type === "REVALIDACION"
-                            ? "Revalidación"
-                            : "—"}
+                        : release.release_type === "REVALIDACION"
+                          ? "Revalidación"
+                          : "—"}
                     </span>
                   </div>
                   <div>
@@ -465,7 +484,7 @@ export default function ReleaseDetailPage(): React.ReactElement {
           <p className="muted" style={{ margin: 0 }}>
             Enviados {publishResult.sent} · Creados {publishResult.created} · Duplicados {publishResult.duplicates} ·
             Errores {publishResult.errors}
-            {publishResult.caseforge_unmodified ? " · CaseForge sin modificación" : " · Atención: fingerprints cambiaron"}
+            {publishResult.caseforge_unmodified ? " · QC Pulse sin modificación" : " · Atención: fingerprints cambiaron"}
           </p>
         </div>
       )}
@@ -484,19 +503,12 @@ export default function ReleaseDetailPage(): React.ReactElement {
           <button
             type="button"
             className="danger"
-            disabled={!canDelete}
-            title={canDelete ? undefined : "Solo se pueden eliminar Release BE en DRAFT. Usa CANCELLED."}
             onClick={handleDelete}
           >
             Eliminar
           </button>
           )}
         </div>
-        {canDeleteRelease && !canDelete && (
-          <p className="muted" style={{ marginTop: ".75rem" }}>
-            Esta Release BE ya tiene actividad: solo puede moverse a CANCELLED, no eliminarse.
-          </p>
-        )}
       </div>
       )}
 
@@ -700,6 +712,7 @@ export default function ReleaseDetailPage(): React.ReactElement {
             <th>Dispositivo</th>
             <th>Prioridad</th>
             <th>Estado</th>
+            <th>Acciones</th>
           </tr>
         </thead>
         <tbody>
@@ -732,11 +745,37 @@ export default function ReleaseDetailPage(): React.ReactElement {
                   <StatusBadge status={testCase.status} />
                 )}
               </td>
+              <td onClick={(e) => e.stopPropagation()}>
+                {canExecuteCases ? (
+                  <div className="row-actions">
+                    <button
+                      type="button"
+                      className="icon-btn"
+                      title="Editar"
+                      aria-label="Editar"
+                      onClick={() => setEditingCase(testCase)}
+                    >
+                      <Pencil size={14} aria-hidden="true" />
+                    </button>
+                    <button
+                      type="button"
+                      className="icon-btn danger"
+                      title="Eliminar"
+                      aria-label="Eliminar"
+                      onClick={() => void handleDeleteTestCase(testCase)}
+                    >
+                      <Trash2 size={14} aria-hidden="true" />
+                    </button>
+                  </div>
+                ) : (
+                  <span className="muted">—</span>
+                )}
+              </td>
             </tr>
           ))}
           {visibleCases.length === 0 && (
             <tr>
-              <td colSpan={7} className="muted">
+              <td colSpan={8} className="muted">
                 {testCases.length === 0 ? "Sin test cases todavía." : "Ningún Test Case para ese dispositivo."}
               </td>
             </tr>
@@ -747,6 +786,18 @@ export default function ReleaseDetailPage(): React.ReactElement {
       <p style={{ marginTop: "1.5rem" }}>
         <Link href={backHref} className="back-link">{backLabel}</Link>
       </p>
+
+      {editingCase && (
+        <EditTestCaseModal
+          releaseId={releaseId}
+          testCase={editingCase}
+          onClose={() => setEditingCase(null)}
+          onSaved={() => {
+            setEditingCase(null);
+            load();
+          }}
+        />
+      )}
     </div>
   );
 }

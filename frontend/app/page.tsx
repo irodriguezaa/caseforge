@@ -323,7 +323,7 @@ export default function DashboardPage(): React.ReactElement {
                         {item.deliverable_name && (
                           <span className="exec-release-deliverable">
                             {" "}· {item.deliverable_name}
-                            {item.release_type === "REVALIDACION" ? " · Revalidación" : item.release_type === "EVOLUTIVO" ? " · Evolutivo" : ""}
+                            {item.release_type === "REVALIDACION" ? " · Revalidación" : item.release_type === "NUEVO" ? " · Nuevo" : ""}
                             {item.deliverable_release_ordinal != null && item.deliverable_total_versions != null && (
                               <> (v{item.deliverable_release_ordinal} de {item.deliverable_total_versions}
                                 {item.deliverable_total_revalidaciones ? ` · ${item.deliverable_total_revalidaciones} revalidacion${item.deliverable_total_revalidaciones === 1 ? "" : "es"}` : ""})

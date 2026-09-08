@@ -30,7 +30,10 @@ export const DEVICE_OPTIONS = [
 ] as const;
 export const VALIDATION_TYPE_OPTIONS = ["Completo", "Smoke", "Regresivo", "Funcional", "Exploratorio", "NA"] as const;
 
-export const BE_SWF_OPTIONS = ["Neoris", "Tata", "Hitss"] as const;
+export const BE_SWF_OPTIONS = ["BE Hitss", "BE Nubiral", "BE Neoris"] as const;
+export const BE_CLUSTER_TODOS = "Todos" as const;
+export const BE_CLUSTER_INDIVIDUAL = ["Global", "AUP", "CENAM", "Andina", "Dominicana"] as const;
+export const BE_CLUSTER_OPTIONS = [BE_CLUSTER_TODOS, ...BE_CLUSTER_INDIVIDUAL] as const;
 export const BE_REGRESIVO_SCOPES = ["COMPLETO", "SMOKE", "ACOTADO"] as const;
 export const BE_REGRESIVO_SCOPE_LABEL: Record<(typeof BE_REGRESIVO_SCOPES)[number], string> = {
   COMPLETO: "Completo",

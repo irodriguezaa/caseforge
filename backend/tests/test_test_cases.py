@@ -226,3 +226,112 @@ def test_bulk_create_is_transactional_one_bad_row_persists_nothing(client) -> No
     assert [tc["test_case_id"] for tc in remaining] == ["QC-001"]
     assert len(body["errors"]) == 1
     assert body["errors"][0]["test_case_id"] == "QC-001"
+
+
+def test_patch_updates_same_test_case_including_steps(client) -> None:
+    release = _create_release(client)
+    created = client.post(
+        f"/api/v1/releases/{release['id']}/test-cases",
+        json={
+            "test_case_id": "QC-001",
+            "component": "Playback",
+            "test_case_name": "Original",
+            "description": "Antes",
+            "priority": "CRITICAL",
+            "steps": [{"step_number": 1, "test_step": "A", "expected_result": "A ok"}],
+        },
+    ).json()
+
+    response = client.patch(
+        f"/api/v1/test-cases/{created['id']}",
+        params={"release_id": release["id"]},
+        json={
+            "test_case_name": "Editado",
+            "description": "Después",
+            "priority": "BLOCKER",
+            "status": "PASS",
+            "steps": [
+                {"step_number": 1, "test_step": "Abrir", "expected_result": "Abre"},
+                {"step_number": 2, "test_step": "Reproducir", "expected_result": "Reproduce"},
+            ],
+        },
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["id"] == created["id"]
+    assert body["release_id"] == release["id"]
+    assert body["test_case_id"] == "QC-001"
+    assert body["test_case_name"] == "Editado"
+    assert body["description"] == "Después"
+    assert body["priority"] == "BLOCKER"
+    assert body["status"] == "PASS"
+    assert len(body["steps"]) == 2
+    assert [row["test_step"] for row in body["steps"]] == ["Abrir", "Reproducir"]
+
+    listing = client.get(f"/api/v1/releases/{release['id']}/test-cases").json()
+    assert len(listing) == 1
+    assert listing[0]["id"] == created["id"]
+
+
+def test_patch_rejects_test_case_from_another_release(client) -> None:
+    release_a = _create_release(client, name="Release A")
+    release_b = _create_release(client, name="Release B")
+    test_case = client.post(
+        f"/api/v1/releases/{release_a['id']}/test-cases",
+        json={"test_case_id": "QC-001", "component": "Playback", "test_case_name": "Case A"},
+    ).json()
+
+    response = client.patch(
+        f"/api/v1/test-cases/{test_case['id']}",
+        params={"release_id": release_b["id"]},
+        json={"test_case_name": "Hacked"},
+    )
+    assert response.status_code == 404
+    original = client.get(f"/api/v1/test-cases/{test_case['id']}").json()
+    assert original["test_case_name"] == "Case A"
+
+
+def test_delete_does_not_affect_other_releases(client) -> None:
+    release_a = _create_release(client, name="Release A")
+    release_b = _create_release(client, name="Release B")
+    case_a = client.post(
+        f"/api/v1/releases/{release_a['id']}/test-cases",
+        json={
+            "test_case_id": "QC-001",
+            "component": "Playback",
+            "test_case_name": "Case A",
+            "steps": [{"step_number": 1, "test_step": "A", "expected_result": "A ok"}],
+        },
+    ).json()
+    case_b = client.post(
+        f"/api/v1/releases/{release_b['id']}/test-cases",
+        json={"test_case_id": "QC-001", "component": "Playback", "test_case_name": "Case B"},
+    ).json()
+
+    response = client.delete(
+        f"/api/v1/test-cases/{case_a['id']}",
+        params={"release_id": release_a["id"]},
+    )
+    assert response.status_code == 204
+    assert client.get(f"/api/v1/test-cases/{case_a['id']}").status_code == 404
+    remaining_a = client.get(f"/api/v1/releases/{release_a['id']}/test-cases").json()
+    remaining_b = client.get(f"/api/v1/releases/{release_b['id']}/test-cases").json()
+    assert remaining_a == []
+    assert len(remaining_b) == 1
+    assert remaining_b[0]["id"] == case_b["id"]
+
+
+def test_delete_rejects_test_case_from_another_release(client) -> None:
+    release_a = _create_release(client, name="Release A")
+    release_b = _create_release(client, name="Release B")
+    test_case = client.post(
+        f"/api/v1/releases/{release_a['id']}/test-cases",
+        json={"test_case_id": "QC-001", "component": "Playback", "test_case_name": "Case A"},
+    ).json()
+
+    response = client.delete(
+        f"/api/v1/test-cases/{test_case['id']}",
+        params={"release_id": release_b["id"]},
+    )
+    assert response.status_code == 404
+    assert client.get(f"/api/v1/test-cases/{test_case['id']}").status_code == 200

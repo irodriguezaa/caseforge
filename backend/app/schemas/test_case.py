@@ -87,6 +87,7 @@ class TestCaseUpdate(BaseModel):
     status: TestCaseStatus | None = None
     operational_window_id: int | None = None
     release_window_id: int | None = None
+    steps: list[TestStepCreate] | None = None
 
     @field_validator("test_case_id")
     @classmethod
@@ -96,6 +97,15 @@ class TestCaseUpdate(BaseModel):
                 "test_case_id must be alphanumeric and may include '-' or '_' (e.g. 'QC-001')."
             )
         return value
+
+    @model_validator(mode="after")
+    def _validate_unique_step_numbers(self) -> "TestCaseUpdate":
+        if self.steps is None:
+            return self
+        numbers = [step.step_number for step in self.steps]
+        if len(numbers) != len(set(numbers)):
+            raise ValueError("step_number values must be unique within a test case.")
+        return self
 
 
 class TestCaseRead(TestCaseBase):

@@ -227,10 +227,12 @@ def _from_evidence(
     pdf_bytes: bytes | None,
     rn_filename: str,
     existing: list[dict[str, str]],
+    tickets: dict[str, list[tuple[str, str]]] | None = None,
 ) -> list[GeneratedCaseCandidate]:
-    if not pdf_bytes:
-        return []
-    tickets = _tickets_by_section(pdf_bytes)
+    if tickets is None:
+        if not pdf_bytes:
+            return []
+        tickets = _tickets_by_section(pdf_bytes)
     candidates: list[GeneratedCaseCandidate] = []
     for ticket_id, cell_text in tickets.get("functionality", []):
         candidate = _candidate_from_functionality_ticket(ticket_id, cell_text, rn_filename, existing)
@@ -292,7 +294,14 @@ def _from_llm(
             "Fuente B = acceptance_criteria (customfield_19114). "
             "Traduce a usuario final. NO 1 Scenario = 1 TC. Agrupa HTTP/orígenes/flags con el mismo UX. "
             "No inventes tickets ni combinaciones. No uses qa_qc/nco/tri como fuente "
-            "salvo comportamiento funcional nuevo en el RN. No casos de métricas ni proceso QA."
+            "salvo comportamiento funcional nuevo en el RN. No casos de métricas ni proceso QA. "
+            + (
+                "Genera SOLO cobertura de estas claves de Funcionalidad: "
+                + ", ".join(sorted({tid.upper() for tid, _ in tickets.get("functionality", [])}))
+                + ". No regeneres otras funcionalidades del RN."
+                if tickets.get("functionality")
+                else ""
+            )
         ),
         "release_note_text": rn_text[:60000],
     }
@@ -327,14 +336,32 @@ def _merge_last_resort(
     rn_filename: str,
     existing: list[dict[str, str]],
     already: list[GeneratedCaseCandidate],
+    tickets: dict[str, list[tuple[str, str]]] | None = None,
 ) -> list[GeneratedCaseCandidate]:
     covered: set[str] = set()
     for candidate in already:
         for key in (candidate.related_functionality, candidate.related_jira):
             if key:
                 covered.add(key.strip().upper())
-    extras = _from_evidence(pdf_bytes, rn_filename, existing)
+    extras = _from_evidence(pdf_bytes, rn_filename, existing, tickets=tickets)
     return already + [row for row in extras if (row.related_jira or "").upper() not in covered]
+
+
+def _keep_scoped_candidates(
+    candidates: list[GeneratedCaseCandidate],
+    allowed_keys: set[str] | None,
+) -> list[GeneratedCaseCandidate]:
+    if not allowed_keys:
+        return candidates
+    kept: list[GeneratedCaseCandidate] = []
+    for candidate in candidates:
+        keys = {
+            (candidate.related_functionality or "").strip().upper(),
+            (candidate.related_jira or "").strip().upper(),
+        }
+        if keys & allowed_keys:
+            kept.append(candidate)
+    return kept
 
 
 def generate_release_app_candidates(
@@ -347,11 +374,13 @@ def generate_release_app_candidates(
     pdf_bytes: bytes | None,
     release_context: dict[str, Any],
     existing_cases: list[dict[str, str]],
+    tickets: dict[str, list[tuple[str, str]]] | None = None,
+    restrict_to_functionality_keys: set[str] | None = None,
 ) -> GenerateCasesResponse:
     analyzer = RuleBasedPdfAnalyzer()
     rn_text = analyzer.extract_text(pdf_bytes) if pdf_bytes else ""
-    tickets = _tickets_by_section(pdf_bytes) if pdf_bytes else {}
-    functionality_keys = [tid for tid, _text in tickets.get("functionality", [])]
+    parsed_tickets = tickets if tickets is not None else (_tickets_by_section(pdf_bytes) if pdf_bytes else {})
+    functionality_keys = [tid for tid, _text in parsed_tickets.get("functionality", [])]
     jira_artifacts = fetch_artifacts_for_keys(functionality_keys) if functionality_keys else []
     stats = GenerationStats()
     jira_candidates = candidates_from_jira_artifacts(
@@ -363,26 +392,29 @@ def generate_release_app_candidates(
     if settings.openai_api_key and pdf_bytes:
         try:
             candidates = _from_llm(
-                rn_text, release_context, existing_cases, tickets, jira_artifacts
+                rn_text, release_context, existing_cases, parsed_tickets, jira_artifacts
             )
             engine = "llm"
             if not candidates:
                 candidates = jira_candidates or _from_evidence(
-                    pdf_bytes, rn_filename or "", existing_cases
+                    pdf_bytes, rn_filename or "", existing_cases, tickets=parsed_tickets
                 )
                 engine = "evidence-jira" if jira_candidates else "evidence-fallback"
         except Exception:
             candidates = jira_candidates or _from_evidence(
-                pdf_bytes, rn_filename or "", existing_cases
+                pdf_bytes, rn_filename or "", existing_cases, tickets=parsed_tickets
             )
             engine = "evidence-jira" if jira_candidates else "evidence-fallback"
     elif jira_candidates:
-        candidates = _merge_last_resort(pdf_bytes, rn_filename or "", existing_cases, jira_candidates)
+        candidates = _merge_last_resort(
+            pdf_bytes, rn_filename or "", existing_cases, jira_candidates, tickets=parsed_tickets
+        )
         engine = "evidence-jira"
     else:
-        candidates = _from_evidence(pdf_bytes, rn_filename or "", existing_cases)
+        candidates = _from_evidence(pdf_bytes, rn_filename or "", existing_cases, tickets=parsed_tickets)
 
     candidates = apply_qc_rules(candidates, release_context=release_context)
+    candidates = _keep_scoped_candidates(candidates, restrict_to_functionality_keys)
     message = (
         f"Se propusieron {len(candidates)} caso(s) candidato(s). La IA propone; QC decide. "
         "No se crearon Test Cases en la base de datos."

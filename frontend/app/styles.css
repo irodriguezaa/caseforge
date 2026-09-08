@@ -43,13 +43,14 @@ a { color: inherit; }
 .app-main::after {
   content: "";
   position: fixed;
-  right: -4%;
-  bottom: 2%;
-  width: min(46vw, 520px);
-  height: min(28vw, 280px);
+  right: 28px;
+  bottom: 24px;
+  width: min(42vw, 520px);
+  aspect-ratio: 3.2 / 1;
+  height: auto;
   z-index: -1;
   pointer-events: none;
-  background: url("/claro-video-logo.png") right bottom / contain no-repeat;
+  background: url("/qcpulse/claro-video-logo.png") center / contain no-repeat;
   opacity: 0.07;
   filter: saturate(1.05);
 }
@@ -87,9 +88,10 @@ a { color: inherit; }
 }
 .login-backdrop-logo {
   position: absolute;
-  right: -6%;
-  bottom: 6%;
-  width: min(72vw, 720px);
+  right: 28px;
+  bottom: 24px;
+  width: min(52vw, 560px);
+  max-width: calc(100% - 56px);
   height: auto;
   opacity: 0.14;
   pointer-events: none;
@@ -180,6 +182,9 @@ a { color: inherit; }
 .sidebar-sublink:hover { background: var(--surface-2); color: var(--text); }
 .sidebar-sublink.active { background: var(--accent-dim); color: #a9c8fb; }
 .sidebar-sublink.disabled { color: var(--text-dim); opacity: .55; cursor: default; }
+.sidebar-sublink-nested { margin-left: 40px; max-width: calc(100% - 40px); }
+.sidebar-subgroup-toggle { border: 0; background: transparent; cursor: pointer; font: inherit; width: calc(100% - 26px); max-width: none; text-align: left; }
+.sidebar-subgroup-toggle .sidebar-chevron { margin-left: auto; }
 
 main { padding: 24px; }
 .page { max-width: 1280px; }
@@ -212,6 +217,12 @@ section.hero { width: min(100%, 580px); }
    left an empty sixth track (the black gap next to Total de Cases). */
 .metrics-row { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; margin: 0 0 14px; }
 .metrics-row-compact { grid-template-columns: repeat(5, minmax(110px, 1fr)); }
+.metrics-row-volume { grid-template-columns: repeat(4, minmax(110px, 1fr)); }
+.metrics-row-cluster { grid-template-columns: repeat(2, minmax(110px, 1fr)); }
+.metrics-row-swf { grid-template-columns: repeat(2, minmax(110px, 1fr)); }
+.metrics-row-reval { grid-template-columns: repeat(4, minmax(110px, 1fr)); }
+.kpi-volume-block { margin: 0 0 14px; }
+.kpi-volume-caption { font-size: 11px; color: var(--text-dim); margin: 0 0 8px; }
 .metric-cell { background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; padding: 9px 11px; }
 .metric-cell .metric-label { display: flex; align-items: center; gap: 5px; font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .03em; }
 .metric-cell .metric-value { font-size: 19px; font-weight: 600; margin-top: 3px; }
@@ -240,6 +251,7 @@ section.hero { width: min(100%, 580px); }
 table.activity { width: 100%; border-collapse: collapse; font-size: 12px; }
 table.activity th { text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: .03em; color: var(--text-dim); font-weight: 500; padding: 7px 12px; border-bottom: 1px solid var(--border); }
 table.activity td { padding: 8px 12px; border-bottom: 1px solid var(--border); }
+table.activity th.num, table.activity td.num { text-align: right; font-variant-numeric: tabular-nums; }
 table.activity tr:last-child td { border-bottom: 0; }
 table.activity tr.clickable { cursor: pointer; }
 table.activity tr.clickable:hover { background: var(--surface-2); }
@@ -370,6 +382,13 @@ button.secondary, .button.secondary { background: var(--surface-2); border: 1px 
 button.secondary:hover, .button.secondary:hover { background: var(--border); }
 button.danger { background: var(--danger); }
 button.danger:hover:not(:disabled) { background: #d94f4c; }
+.row-actions { display: flex; gap: 6px; align-items: center; }
+.icon-btn { display: inline-flex; align-items: center; justify-content: center; padding: .35rem .45rem; background: var(--surface-2); border: 1px solid var(--border-strong); color: var(--text); }
+.icon-btn:hover:not(:disabled) { background: var(--border); }
+.icon-btn.danger { background: var(--danger-bg); border-color: var(--danger); color: var(--danger); }
+.icon-btn.danger:hover:not(:disabled) { background: var(--danger); color: white; }
+.modal-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, .55); z-index: 40; display: flex; align-items: flex-start; justify-content: center; padding: 4vh 16px; overflow: auto; }
+.modal-panel { width: min(760px, 100%); background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 1.25rem 1.35rem 1.4rem; box-shadow: 0 16px 48px rgba(0, 0, 0, .35); }
 
 .card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 1.25rem; margin-bottom: 1.25rem; }
 .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; }

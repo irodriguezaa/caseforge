@@ -1,8 +1,7 @@
 """Release CRUD endpoints.
 
-Apps and Operativas can be hard-deleted (including the stored Release Note). Release BE
-keeps the DRAFT-only delete rule. A Release that is origin of Revalidaciones cannot be
-deleted.
+Apps, Operativas and Release BE can be hard-deleted (including dependent rows).
+A Release that is origin of Revalidaciones cannot be deleted.
 """
 
 from urllib.parse import quote
@@ -16,6 +15,7 @@ from sqlalchemy.orm import Session
 from app.auth import AuthUser, Role
 from app.db import get_db
 from app.deps.auth import get_current_user, require_jefe
+from app.models.be_release import BeRelease
 from app.models.deliverable import Deliverable
 from app.models.epc import Epc
 from app.models.operativa_release import OperativaRelease
@@ -35,8 +35,12 @@ from app.schemas.release import (
     ReleaseUpdate,
     ReleaseWithCounts,
 )
-from app.services.ai_case_engine import generate_release_app_candidates
-from app.services.revalidation_engine import generate_revalidation_candidates
+from app.services.ai_case_engine import _tickets_by_section, generate_release_app_candidates
+from app.services.revalidation_engine import (
+    candidates_from_incremental_plan,
+    plan_incremental_generation,
+    stamp_incremental_traceability,
+)
 from app.services.case_persistence import (
     delete_engine_cases,
     engine_cases_for_release,
@@ -67,6 +71,72 @@ _VALID_TRANSITIONS: dict[ReleaseStatus, set[ReleaseStatus]] = {
 # Entregable / Tipo de Release / Release origen can only change while still DRAFT (product
 # decision) -- same posture as the existing DRAFT-only hard-delete rule below.
 _LINEAGE_FIELDS = {"deliverable_name", "release_type", "parent_release_id"}
+
+
+def _test_case_coverage_snapshot(row: TestCase) -> dict:
+    return {
+        "id": row.id,
+        "release_id": row.release_id,
+        "test_case_id": row.test_case_id,
+        "test_case_name": row.test_case_name,
+        "description": row.description or "",
+        "technical_story": row.technical_story or "",
+        "technical_epic": row.technical_epic or "",
+        "evidence": row.evidence or "",
+        "justification": row.justification or "",
+    }
+
+
+def _deliverable_baseline_coverage(
+    db: Session, release: Release
+) -> tuple[list[dict], dict[str, str], dict[str, str], dict[str, str]]:
+    """All Test Cases and prior RN cells from Releases of the same Entregable.
+
+    Coverage is decided from Test Case identity fields, not from RN appearance.
+    QA/QC and NCO cells are kept only to detect an explicit delta on an already-covered key.
+    """
+    if release.deliverable_id is None:
+        return [], {}, {}, {}
+    siblings = list(
+        db.execute(
+            select(Release)
+            .where(Release.deliverable_id == release.deliverable_id, Release.id != release.id)
+            .order_by(Release.id.asc())
+        )
+        .scalars()
+        .all()
+    )
+    if not siblings:
+        return [], {}, {}, {}
+    sibling_ids = [row.id for row in siblings]
+    cases = list(db.execute(select(TestCase).where(TestCase.release_id.in_(sibling_ids))).scalars().all())
+    snapshot = [_test_case_coverage_snapshot(row) for row in cases]
+    prior_functionality: dict[str, str] = {}
+    prior_qa_qc: dict[str, str] = {}
+    prior_nco: dict[str, str] = {}
+    for sibling in siblings:
+        analysis = (
+            db.execute(
+                select(ReleaseAnalysis)
+                .where(ReleaseAnalysis.release_id == sibling.id)
+                .order_by(ReleaseAnalysis.created_at.desc())
+            )
+            .scalars()
+            .first()
+        )
+        if analysis is None:
+            continue
+        prior_pdf = read_release_note_pdf(analysis.pdf_file_path)
+        if not prior_pdf:
+            continue
+        buckets = _tickets_by_section(prior_pdf)
+        for ticket_id, cell_text in buckets.get("functionality", []):
+            prior_functionality[ticket_id.upper()] = cell_text
+        for ticket_id, cell_text in buckets.get("qa_qc", []):
+            prior_qa_qc[ticket_id.upper()] = cell_text
+        for ticket_id, cell_text in buckets.get("nco", []):
+            prior_nco[ticket_id.upper()] = cell_text
+    return snapshot, prior_functionality, prior_qa_qc, prior_nco
 
 
 def to_release_read(release: Release) -> ReleaseRead:
@@ -172,14 +242,6 @@ def _validate_lineage(
             db,
             self_release_id,
             "Una Release de tipo Revalidación requiere una Release origen.",
-        )
-    elif release_type == ReleaseType.EVOLUTIVO:
-        _validate_origin_parent(
-            parent_release_id,
-            deliverable_id,
-            db,
-            self_release_id,
-            "Una Release de tipo Evolutivo requiere una Release origen.",
         )
     elif release_type == ReleaseType.NUEVO and parent_release_id is not None:
         raise HTTPException(
@@ -382,20 +444,15 @@ def hard_delete_release_and_notes(db: Session, release: Release) -> None:
             status.HTTP_409_CONFLICT,
             detail="No se puede eliminar una Release que es origen de otras Releases (Revalidaciones).",
         )
-    if release.be_release_id is not None and release.status != ReleaseStatus.DRAFT:
-        raise HTTPException(
-            status.HTTP_409_CONFLICT,
-            detail=(
-                "Only DRAFT Release BE can be deleted. Releases with activity must be moved to "
-                "CANCELLED instead of being deleted."
-            ),
-        )
     pdf_paths = [row.pdf_file_path for row in release.analyses if row.pdf_file_path]
     operativa = release.operativa_release
     operativa_id = operativa.id if operativa is not None else None
     if operativa and operativa.pdf_file_path:
         pdf_paths.append(operativa.pdf_file_path)
+    be = release.be_release
+    be_id = be.id if be is not None else None
     release.operativa_release_id = None
+    release.be_release_id = None
     db.flush()
     db.delete(release)
     db.flush()
@@ -403,6 +460,10 @@ def hard_delete_release_and_notes(db: Session, release: Release) -> None:
         leftover = db.get(OperativaRelease, operativa_id)
         if leftover is not None:
             db.delete(leftover)
+    if be_id is not None:
+        leftover_be = db.get(BeRelease, be_id)
+        if leftover_be is not None:
+            db.delete(leftover_be)
     db.commit()
     for path in pdf_paths:
         delete_release_note_pdf(path)
@@ -632,22 +693,10 @@ def generate_cases_from_rn(
             estimation_days=summary["estimation_days"],
         )
 
-    history_stmt = select(TestCase).where(TestCase.release_id == release.id)
-    if release.deliverable_id is not None:
-        sibling_ids = select(Release.id).where(Release.deliverable_id == release.deliverable_id)
-        history_stmt = select(TestCase).where(TestCase.release_id.in_(sibling_ids))
-    history_rows = list(db.execute(history_stmt).scalars().all())
-    existing = [
-        {
-            "test_case_id": row.test_case_id,
-            "test_case_name": row.test_case_name,
-            "description": row.description or "",
-        }
-        for row in history_rows
-        if not getattr(row, "generated_by_engine", False)
-    ]
     pdf_bytes = read_release_note_pdf(analysis.pdf_file_path)
     parent = release.parent
+    declared_origin_id = release.parent_release_id
+    declared_origin_name = f"{parent.name} v{parent.version}" if parent else None
     context = {
         "name": release.name,
         "version": release.version,
@@ -657,8 +706,8 @@ def generate_cases_from_rn(
         "validation_type": release.validation_type,
         "jira_issue_filter": release.jira_issue_filter,
         "release_type": release.release_type.value if release.release_type else None,
-        "parent_release_id": release.parent_release_id,
-        "parent_release_name": f"{parent.name} v{parent.version}" if parent else None,
+        "parent_release_id": declared_origin_id,
+        "parent_release_name": declared_origin_name,
         "analysis": {
             "pdf_filename": analysis.pdf_filename,
             "detected_name": analysis.detected_name,
@@ -669,37 +718,18 @@ def generate_cases_from_rn(
             "observations": analysis.observations,
         },
     }
-    if release.release_type == ReleaseType.REVALIDACION and release.parent_release_id is not None:
-        origin = db.get(Release, release.parent_release_id)
-        origin_rows = list(
-            db.execute(select(TestCase).where(TestCase.release_id == release.parent_release_id)).scalars().all()
-        )
-        origin_snapshot = [
-            {
-                "id": row.id,
-                "test_case_id": row.test_case_id,
-                "test_case_name": row.test_case_name,
-                "description": row.description or "",
-                "technical_story": row.technical_story or "",
-                "technical_epic": row.technical_epic or "",
-                "evidence": row.evidence or "",
-                "justification": row.justification or "",
-            }
-            for row in origin_rows
-        ]
-        proposal = generate_revalidation_candidates(
-            release_id=release.id,
-            release_name=release.name,
-            validation_type=release.validation_type,
-            rn_filename=analysis.pdf_filename,
-            pdf_bytes=pdf_bytes,
-            origin_release_id=release.parent_release_id,
-            origin_release_name=(
-                f"{origin.name} v{origin.version}" if origin else f"Release {release.parent_release_id}"
-            ),
-            origin_cases=origin_snapshot,
-        )
-    else:
+    baseline_cases, prior_functionality_cells, prior_qa_qc_cells, prior_nco_cells = (
+        _deliverable_baseline_coverage(db, release)
+    )
+    existing_reference = [
+        {
+            "test_case_id": row["test_case_id"],
+            "test_case_name": row["test_case_name"],
+            "description": row["description"],
+        }
+        for row in baseline_cases
+    ]
+    if not baseline_cases:
         proposal = generate_release_app_candidates(
             release_id=release.id,
             release_name=release.name,
@@ -708,7 +738,76 @@ def generate_cases_from_rn(
             rn_filename=analysis.pdf_filename,
             pdf_bytes=pdf_bytes,
             release_context=context,
-            existing_cases=existing,
+            existing_cases=existing_reference,
+        )
+    else:
+        tickets = _tickets_by_section(pdf_bytes) if pdf_bytes else {}
+        plan = plan_incremental_generation(
+            tickets,
+            baseline_cases,
+            prior_functionality_cells,
+            prior_qa_qc_cells=prior_qa_qc_cells,
+            prior_nco_cells=prior_nco_cells,
+        )
+        new_candidates = []
+        engine_name = "incremental-delta"
+        if plan.new_functionality:
+            scoped_tickets = {
+                "functionality": plan.new_functionality,
+                "nco": [],
+                "tri": [],
+                "qa_qc": [],
+            }
+            allowed = {tid.upper() for tid, _ in plan.new_functionality}
+            scoped = generate_release_app_candidates(
+                release_id=release.id,
+                release_name=release.name,
+                validation_type=release.validation_type,
+                analysis_present=True,
+                rn_filename=analysis.pdf_filename,
+                pdf_bytes=pdf_bytes,
+                release_context=context,
+                existing_cases=existing_reference,
+                tickets=scoped_tickets,
+                restrict_to_functionality_keys=allowed,
+            )
+            new_candidates = [
+                stamp_incremental_traceability(
+                    candidate,
+                    origin_release_id=declared_origin_id,
+                    origin_release_name=declared_origin_name,
+                    baseline_cases=baseline_cases,
+                )
+                for candidate in scoped.candidates
+            ]
+            engine_name = scoped.engine
+        delta_candidates = candidates_from_incremental_plan(
+            plan,
+            rn_filename=analysis.pdf_filename or "",
+            origin_release_id=declared_origin_id,
+            origin_release_name=declared_origin_name,
+            baseline_cases=baseline_cases,
+        )
+        merged = new_candidates + delta_candidates
+        if new_candidates and delta_candidates:
+            engine_name = f"{engine_name}+incremental-delta"
+        elif not new_candidates:
+            engine_name = "incremental-delta"
+        proposal = GenerateCasesResponse(
+            status="PROPOSED" if merged else "EMPTY",
+            message=(
+                f"Generación incremental respecto del histórico del Entregable: "
+                f"{len(merged)} caso(s) nuevos o afectados. "
+                f"No se copiaron los {len(baseline_cases)} Test Case(s) previos."
+            ),
+            release_id=release.id,
+            release_name=release.name,
+            validation_type=release.validation_type,
+            has_analysis=True,
+            engine=engine_name,
+            candidates=merged,
+            persisted=False,
+            analysis_details=plan.analysis_details,
         )
     if regenerate:
         delete_engine_cases(db, release.id)
@@ -804,7 +903,7 @@ def publish_operativa_cases_to_qco(
         status="PUBLISHED" if not errors else "PARTIAL",
         message=(
             f"{len(records)} enviados · {created} creados · {duplicates} duplicados · {errors} errores. "
-            "Los Test Cases de CaseForge no se modifican."
+            "Los Test Cases de QC Pulse no se modifican."
         ),
         release_id=release.id,
         sent=len(records),

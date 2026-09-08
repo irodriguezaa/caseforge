@@ -52,6 +52,7 @@ def test_tester_forbidden_on_delete_status_ics_dashboard_kpis(client) -> None:
     )
     assert ics.status_code == 403
     assert client.get("/api/v1/dashboard/qc-summary").status_code == 403
+    assert client.get("/api/v1/kpis/releases").status_code == 403
     assert client.get("/api/v1/dashboard/summary").status_code == 403
     assert client.get("/api/v1/calendar/week").status_code == 403
     assert client.get("/api/v1/qc-tickets/stats", params={"view": "OPERATIVAS"}).status_code == 403
@@ -73,6 +74,7 @@ def test_lider_can_change_status_but_not_delete_or_upload_ics(client) -> None:
     )
     assert ics.status_code == 403
     assert client.get("/api/v1/dashboard/qc-summary").status_code == 200
+    assert client.get("/api/v1/kpis/releases").status_code == 200
     assert client.get("/api/v1/qc-tickets/stats", params={"view": "OPERATIVAS"}).status_code == 200
 
 
@@ -111,6 +113,7 @@ def test_consulta_reads_dashboard_and_kpis_but_cannot_mutate(client) -> None:
     login_as(client, "consulta@test.com", "consulta-pass")
     assert client.get("/api/v1/auth/me").json()["role"] == "consulta"
     assert client.get("/api/v1/dashboard/qc-summary").status_code == 200
+    assert client.get("/api/v1/kpis/releases").status_code == 200
     assert client.get("/api/v1/calendar/week").status_code == 200
     assert client.get("/api/v1/qc-tickets/stats", params={"view": "OPERATIVAS"}).status_code == 200
     assert client.get("/api/v1/releases").status_code == 403

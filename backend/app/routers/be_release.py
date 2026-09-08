@@ -6,17 +6,21 @@ NOT implemented: Matriz QC, generación de casos, estimación, recursos QC.
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
+from app.auth import AuthUser
 from app.db import get_db
+from app.deps.auth import require_jefe
 from app.models.be_release import BeRelease
 from app.models.release import Release
-from app.routers.releases import _resolve_deliverable, to_release_read
+from app.routers.releases import _resolve_deliverable, hard_delete_release_and_notes, to_release_read
 from app.schemas.be_release import (
+    BE_SWF_VALUES,
     BeAnalysisResult,
     BeReleaseRead,
     BeReleaseUpdate,
     BeRegresivoScope,
+    be_clusters_as_release_label,
 )
 from app.schemas.release import ReleaseRead
 from app.services.be_rn_analyzer import extract_be_rn_header
@@ -28,7 +32,11 @@ BE_VERSION = "BE"
 
 
 def _get_be_or_404(be_release_id: int, db: Session) -> BeRelease:
-    be_release = db.get(BeRelease, be_release_id)
+    be_release = db.scalars(
+        select(BeRelease)
+        .options(selectinload(BeRelease.qc_release))
+        .where(BeRelease.id == be_release_id)
+    ).first()
     if be_release is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Release BE no encontrado.")
     return be_release
@@ -59,7 +67,6 @@ async def analyze_be_release_note(
     be_release = BeRelease(
         name=header.name,
         entregable=header.entregable,
-        swf=header.swf,
         pdf_filename=file.filename,
     )
     db.add(be_release)
@@ -70,7 +77,11 @@ async def analyze_be_release_note(
 
 @router.get("", response_model=list[BeReleaseRead])
 def list_be_releases(db: Session = Depends(get_db)) -> list[BeRelease]:
-    stmt = select(BeRelease).order_by(BeRelease.created_at.desc())
+    stmt = (
+        select(BeRelease)
+        .options(selectinload(BeRelease.qc_release))
+        .order_by(BeRelease.created_at.desc())
+    )
     return list(db.scalars(stmt).all())
 
 
@@ -90,6 +101,11 @@ def create_qc_release_from_be(be_release_id: int, db: Session = Depends(get_db))
             status.HTTP_400_BAD_REQUEST,
             detail="El Nombre es obligatorio para crear el Release BE.",
         )
+    if not be_release.swf or be_release.swf not in BE_SWF_VALUES:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail="El SWF solicitante es obligatorio para crear el Release BE.",
+        )
     if not be_release.regresivo_scope:
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
@@ -107,7 +123,7 @@ def create_qc_release_from_be(be_release_id: int, db: Session = Depends(get_db))
         name=be_release.name.strip(),
         version=BE_VERSION,
         platform=BE_PLATFORM,
-        cluster=None,
+        cluster=be_clusters_as_release_label(be_release.clusters),
         description=be_release.description,
         qc_resources=None,
         validation_type=None,
@@ -138,6 +154,21 @@ def create_qc_release_from_be(be_release_id: int, db: Session = Depends(get_db))
 @router.get("/{be_release_id}", response_model=BeReleaseRead)
 def get_be_release(be_release_id: int, db: Session = Depends(get_db)) -> BeRelease:
     return _get_be_or_404(be_release_id, db)
+
+
+@router.delete("/{be_release_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_be_release(
+    be_release_id: int,
+    db: Session = Depends(get_db),
+    _user: AuthUser = Depends(require_jefe),
+) -> None:
+    be_release = _get_be_or_404(be_release_id, db)
+    qc_release = be_release.qc_release
+    if qc_release is not None:
+        hard_delete_release_and_notes(db, qc_release)
+        return
+    db.delete(be_release)
+    db.commit()
 
 
 @router.patch("/{be_release_id}", response_model=BeReleaseRead)

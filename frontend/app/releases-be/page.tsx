@@ -1,19 +1,22 @@
 "use client";
 
 import { FileText, Upload } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { StatusBadge } from "@/app/components/StatusBadge";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { BE_REGRESIVO_SCOPE_LABEL, BE_REGRESIVO_SCOPES, BE_SWF_OPTIONS } from "@/lib/constants";
-import type { BeRegresivoScope, BeReleaseRead, BeReleaseUpdate, BeSwf } from "@/lib/types";
+import { BE_CLUSTER_OPTIONS, BE_CLUSTER_TODOS, BE_REGRESIVO_SCOPE_LABEL, BE_REGRESIVO_SCOPES, BE_SWF_OPTIONS } from "@/lib/constants";
+import type { BeCluster, BeRegresivoScope, BeReleaseRead, BeReleaseUpdate } from "@/lib/types";
 
 type RnSource = "with_rn" | "without_rn" | null;
 
 export default function ReleaseBePage(): React.ReactElement {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
-  const { canLoadRn } = useAuth();
+  const { canLoadRn, canSeeDashboard } = useAuth();
+  const editorRef = useRef<HTMLDivElement>(null);
 
   const [rnSource, setRnSource] = useState<RnSource>(null);
   const [pdfFile, setPdfFile] = useState<File | null>(null);
@@ -95,6 +98,31 @@ export default function ReleaseBePage(): React.ReactElement {
     if (!beRelease) return;
     const updated = await api.updateBeRelease(beRelease.id, payload);
     setBeRelease(updated);
+  };
+
+  const toggleCluster = (option: BeCluster): void => {
+    const current = (beRelease?.clusters ?? []) as BeCluster[];
+    if (option === BE_CLUSTER_TODOS) {
+      void patchRelease({ clusters: current.includes(BE_CLUSTER_TODOS) ? [] : [BE_CLUSTER_TODOS] });
+      return;
+    }
+    const withoutTodos = current.filter((item) => item !== BE_CLUSTER_TODOS);
+    const next: BeCluster[] = withoutTodos.includes(option)
+      ? withoutTodos.filter((item) => item !== option)
+      : [...withoutTodos, option];
+    void patchRelease({ clusters: next });
+  };
+
+  const clusterLabel = (clusters: string[] | null | undefined): string =>
+    clusters && clusters.length > 0 ? clusters.join(", ") : "—";
+
+  const listedReleases = rows.filter((row) => row.qc_release_id);
+
+  const handleRowClick = (row: BeReleaseRead): void => {
+    if (!row.qc_release_id) {
+      return;
+    }
+    router.push(`/releases/${row.qc_release_id}`);
   };
 
   const handleCreate = async (): Promise<void> => {
@@ -208,7 +236,7 @@ export default function ReleaseBePage(): React.ReactElement {
       </div>
 
       {beRelease && (
-        <div className="step-card" key={`info-${beRelease.id}`}>
+        <div className="step-card" key={`info-${beRelease.id}`} ref={editorRef}>
           <div className="step-card-header">
             <h2>Paso 2. Información del Release BE</h2>
             <span className="muted" style={{ fontSize: "12px" }}>
@@ -234,20 +262,45 @@ export default function ReleaseBePage(): React.ReactElement {
                 onBlur={(e) => void patchRelease({ name: e.target.value || null })}
               />
             </div>
-            <div className="form-field">
-              <label htmlFor="be-swf">SWF</label>
-              <select
-                id="be-swf"
-                value={beRelease.swf ?? ""}
-                onChange={(e) => void patchRelease({ swf: (e.target.value || null) as BeSwf | null })}
-              >
-                <option value="">No disponible</option>
+            <div className="form-field full">
+              <span id="be-swf-label">SWF solicitante</span>
+              <div role="radiogroup" aria-labelledby="be-swf-label" className="form-grid">
                 {BE_SWF_OPTIONS.map((swf) => (
-                  <option key={swf} value={swf}>
+                  <label
+                    key={swf}
+                    className="form-field"
+                    style={{ flexDirection: "row", alignItems: "center", gap: "8px" }}
+                  >
+                    <input
+                      type="radio"
+                      name="be-swf"
+                      checked={beRelease.swf === swf}
+                      onChange={() => void patchRelease({ swf })}
+                    />
                     {swf}
-                  </option>
+                  </label>
                 ))}
-              </select>
+              </div>
+            </div>
+            <div className="form-field full">
+              <span id="be-cluster-label">Cluster</span>
+              <div role="group" aria-labelledby="be-cluster-label" className="form-grid">
+                {BE_CLUSTER_OPTIONS.map((cluster) => (
+                  <label
+                    key={cluster}
+                    className="form-field"
+                    style={{ flexDirection: "row", alignItems: "center", gap: "8px" }}
+                  >
+                    <input
+                      type="checkbox"
+                      name="be-cluster"
+                      checked={(beRelease.clusters ?? []).includes(cluster)}
+                      onChange={() => toggleCluster(cluster)}
+                    />
+                    {cluster}
+                  </label>
+                ))}
+              </div>
             </div>
             <div className="form-field full">
               <label htmlFor="be-description">Descripción</label>
@@ -308,7 +361,11 @@ export default function ReleaseBePage(): React.ReactElement {
             <h2>Paso 4. Creación</h2>
           </div>
           <div className="form-actions">
-            <button type="button" disabled={creating} onClick={() => void handleCreate()}>
+            <button
+              type="button"
+              disabled={creating || !beRelease.swf}
+              onClick={() => void handleCreate()}
+            >
               {creating ? "Creando Release…" : "Crear Release"}
             </button>
           </div>
@@ -319,7 +376,7 @@ export default function ReleaseBePage(): React.ReactElement {
       )}
 
       <div className="section-header">
-        <h2>Listado de Release BE ({rows.length})</h2>
+        <h2>Listado de Release BE ({listedReleases.length})</h2>
       </div>
       {loadingList && <p className="muted">Cargando…</p>}
       {listError && <p className="error-text">{listError}</p>}
@@ -331,25 +388,40 @@ export default function ReleaseBePage(): React.ReactElement {
                 <th>Nombre</th>
                 <th>Entregable</th>
                 <th>SWF</th>
+                <th>Cluster</th>
                 <th>Alcance</th>
                 <th>RN</th>
+                <th>Estado</th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => (
-                <tr key={row.id}>
+              {listedReleases.map((row) => (
+                <tr
+                  key={row.id}
+                  className="clickable"
+                  onClick={() => handleRowClick(row)}
+                  title="Ver detalle de la Release"
+                >
                   <td style={{ fontWeight: 500 }}>{row.name ?? "—"}</td>
                   <td className="muted">{row.entregable ?? "—"}</td>
                   <td className="muted">{row.swf ?? "—"}</td>
+                  <td className="muted">{clusterLabel(row.clusters)}</td>
                   <td className="muted">
                     {row.regresivo_scope ? BE_REGRESIVO_SCOPE_LABEL[row.regresivo_scope] : "—"}
                   </td>
                   <td className="muted">{row.pdf_filename ?? "Sin RN"}</td>
+                  <td>
+                    {row.qc_release_status ? (
+                      <StatusBadge status={row.qc_release_status} />
+                    ) : (
+                      <span className="muted">Pendiente</span>
+                    )}
+                  </td>
                 </tr>
               ))}
-              {rows.length === 0 && (
+              {listedReleases.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="muted">
+                  <td colSpan={7} className="muted">
                     No hay Release BE todavía.
                   </td>
                 </tr>
@@ -357,6 +429,14 @@ export default function ReleaseBePage(): React.ReactElement {
             </tbody>
           </table>
         </div>
+      )}
+
+      {canSeeDashboard && (
+        <p style={{ marginTop: "1.5rem" }}>
+          <Link href="/" className="back-link">
+            ← Volver al Dashboard
+          </Link>
+        </p>
       )}
     </div>
   );

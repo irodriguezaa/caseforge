@@ -9,7 +9,7 @@ import { useAuth } from "@/lib/auth";
 import type { AuthRole } from "@/lib/types";
 
 type ReleaseChildId = "app" | "be" | "ope";
-type KpiChildId = "operativas" | "release";
+type DefectKpiChildId = "operativas" | "release";
 
 const RELEASE_CHILDREN: { id: ReleaseChildId; href: string; label: string }[] = [
   { id: "app", href: "/releases", label: "Release Apps" },
@@ -17,9 +17,9 @@ const RELEASE_CHILDREN: { id: ReleaseChildId; href: string; label: string }[] = 
   { id: "ope", href: "/operativas/release-notes", label: "Operativas" },
 ];
 
-const KPI_CHILDREN: { id: KpiChildId; href: string; label: string }[] = [
-  { id: "operativas", href: "/kpis/operativas", label: "Defectos Operativa" },
-  { id: "release", href: "/kpis/release", label: "Defectos Release" },
+const DEFECT_KPI_CHILDREN: { id: DefectKpiChildId; href: string; label: string }[] = [
+  { id: "operativas", href: "/kpis/operativas", label: "Operativa" },
+  { id: "release", href: "/kpis/release", label: "Release" },
 ];
 
 function pathIsAppsList(pathname: string): boolean {
@@ -43,6 +43,7 @@ export function Sidebar(): React.ReactElement {
   const [detailOrigin, setDetailOrigin] = useState<ReleaseChildId | null>(null);
   const [releaseOpen, setReleaseOpen] = useState(true);
   const [kpisOpen, setKpisOpen] = useState(true);
+  const [defectsKpiOpen, setDefectsKpiOpen] = useState(true);
 
   useEffect(() => {
     if (!canSeeReleases) {
@@ -87,20 +88,28 @@ export function Sidebar(): React.ReactElement {
 
   const dashboardActive = pathname === "/";
   const kpisActive = pathname.startsWith("/kpis");
-  const activeKpiChild: KpiChildId | null = pathname.startsWith("/kpis/release")
-    ? "release"
-    : pathname.startsWith("/kpis")
-      ? "operativas"
+  const releasesKpiActive = pathname === "/kpis/releases" || pathname.startsWith("/kpis/releases/");
+  const defectsOperativaActive = pathname.startsWith("/kpis/operativas");
+  const defectsReleaseActive = pathname.startsWith("/kpis/release") && !releasesKpiActive;
+  const defectsKpiActive = defectsOperativaActive || defectsReleaseActive;
+  const activeDefectChild: DefectKpiChildId | null = defectsOperativaActive
+    ? "operativas"
+    : defectsReleaseActive
+      ? "release"
       : null;
 
   useEffect(() => {
     if (kpisActive) setKpisOpen(true);
   }, [kpisActive]);
 
+  useEffect(() => {
+    if (defectsKpiActive) setDefectsKpiOpen(true);
+  }, [defectsKpiActive]);
+
   return (
     <aside className="sidebar">
       <Link href={canSeeDashboard ? "/" : "/releases"} className="sidebar-brand">
-        <img className="sidebar-logo" src="/claro-video-logo.png" alt="Claro video" />
+        <img className="sidebar-logo" src="/qcpulse/claro-video-logo.png" alt="Claro video" />
         <span className="brand-name">QC Pulse</span>
         <span className="brand-tag">Plataforma de Calidad</span>
       </Link>
@@ -169,15 +178,35 @@ export function Sidebar(): React.ReactElement {
           </button>
           {kpisOpen && (
             <div className="sidebar-subnav">
-              {KPI_CHILDREN.map((child) => (
-                <Link
-                  key={child.id}
-                  href={child.href}
-                  className={`sidebar-sublink${activeKpiChild === child.id ? " active" : ""}`}
-                >
-                  {child.label}
-                </Link>
-              ))}
+              <Link
+                href="/kpis/releases"
+                className={`sidebar-sublink sidebar-subgroup-toggle${releasesKpiActive ? " active" : ""}`}
+              >
+                Releases
+              </Link>
+              <button
+                type="button"
+                className={`sidebar-sublink sidebar-subgroup-toggle${defectsKpiActive ? " active" : ""}`}
+                aria-expanded={defectsKpiOpen}
+                onClick={() => setDefectsKpiOpen((open) => !open)}
+              >
+                <span>Defectos</span>
+                {defectsKpiOpen ? (
+                  <ChevronDown size={12} aria-hidden="true" className="sidebar-chevron" />
+                ) : (
+                  <ChevronRight size={12} aria-hidden="true" className="sidebar-chevron" />
+                )}
+              </button>
+              {defectsKpiOpen &&
+                DEFECT_KPI_CHILDREN.map((child) => (
+                  <Link
+                    key={child.id}
+                    href={child.href}
+                    className={`sidebar-sublink sidebar-sublink-nested${activeDefectChild === child.id ? " active" : ""}`}
+                  >
+                    {child.label}
+                  </Link>
+                ))}
             </div>
           )}
         </div>

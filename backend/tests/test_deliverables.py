@@ -27,12 +27,26 @@ def test_release_without_deliverable_name_stays_unclassified(client) -> None:
     assert release["release_type"] is None
 
 
-def test_nuevo_does_not_require_parent(client) -> None:
+def test_nuevo_first_release_does_not_require_parent(client) -> None:
     release = _create_release(
         client, version="1.0.0", deliverable_name="WEB - X", release_type="NUEVO"
     )
     assert release["release_type"] == "NUEVO"
     assert release["parent_release_id"] is None
+
+
+def test_evolutivo_is_not_an_accepted_release_type(client) -> None:
+    response = client.post(
+        "/api/v1/releases",
+        json={
+            "name": "CV WEB",
+            "version": "1.0.0",
+            "platform": "WEB",
+            "deliverable_name": "WEB - X",
+            "release_type": "EVOLUTIVO",
+        },
+    )
+    assert response.status_code == 422
 
 
 def test_nuevo_rejects_parent_release_id(client) -> None:
@@ -45,47 +59,6 @@ def test_nuevo_rejects_parent_release_id(client) -> None:
         },
     )
     assert response.status_code == 422
-
-
-def test_evolutivo_requires_parent_of_same_deliverable(client) -> None:
-    v1 = _create_release(client, version="1.0.0", deliverable_name="WEB - X", release_type="NUEVO")
-    created = client.post(
-        "/api/v1/releases",
-        json={
-            "name": "CV WEB", "version": "1.0.1", "platform": "WEB",
-            "deliverable_name": "WEB - X", "release_type": "EVOLUTIVO", "parent_release_id": v1["id"],
-        },
-    )
-    assert created.status_code == 201, created.text
-    body = created.json()
-    assert body["release_type"] == "EVOLUTIVO"
-    assert body["parent_release_id"] == v1["id"]
-    assert body["parent_release_name"] == f"{v1['name']} v{v1['version']}"
-
-
-def test_evolutivo_without_parent_is_rejected(client) -> None:
-    _create_release(client, version="1.0.0", deliverable_name="WEB - X", release_type="NUEVO")
-    response = client.post(
-        "/api/v1/releases",
-        json={
-            "name": "CV WEB", "version": "1.0.1", "platform": "WEB",
-            "deliverable_name": "WEB - X", "release_type": "EVOLUTIVO",
-        },
-    )
-    assert response.status_code == 422
-
-
-def test_evolutivo_parent_must_belong_to_same_deliverable(client) -> None:
-    v1 = _create_release(client, version="1.0.0", deliverable_name="WEB - X", release_type="NUEVO")
-    response = client.post(
-        "/api/v1/releases",
-        json={
-            "name": "CV WEB", "version": "1.0.1", "platform": "WEB",
-            "deliverable_name": "WEB - Y",
-            "release_type": "EVOLUTIVO", "parent_release_id": v1["id"],
-        },
-    )
-    assert response.status_code == 409
 
 
 def test_revalidacion_requires_parent(client) -> None:
@@ -126,7 +99,7 @@ def test_multiple_revalidaciones_of_the_same_deliverable(client) -> None:
 
     deliverable = client.get(f"/api/v1/deliverables/{v1['deliverable_id']}").json()
     assert deliverable["total_versions"] == 3
-    assert deliverable["total_evolutivas"] == 0
+    assert deliverable["total_evolutivas"] == 1
     assert deliverable["total_revalidaciones"] == 2
     assert deliverable["latest_release_id"] == v3["id"]
 
@@ -154,7 +127,7 @@ def test_origin_dropdown_lists_same_entregable_even_when_release_names_differ(cl
         name="HBO WEB 16.10",
         version="16.10.0",
         deliverable_name="HBO WEB",
-        release_type="EVOLUTIVO",
+        release_type="REVALIDACION",
         parent_release_id=v1["id"],
     )
     other = _create_release(

@@ -48,7 +48,7 @@ def get_deliverable(deliverable_id: int, db: Session = Depends(get_db)) -> Deliv
     )
 
     total_versions = len(releases)
-    total_evolutivas = sum(1 for r in releases if r.release_type == ReleaseType.EVOLUTIVO)
+    total_evolutivas = sum(1 for r in releases if r.release_type == ReleaseType.NUEVO)
     total_revalidaciones = sum(1 for r in releases if r.release_type == ReleaseType.REVALIDACION)
 
     total_defects = 0

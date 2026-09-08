@@ -33,14 +33,13 @@ class ReleaseStatus(str, enum.Enum):
 
 
 class ReleaseType(str, enum.Enum):
-    """Distinguishes a fresh feature cycle from a re-test of a prior one, within a Deliverable.
+    """Why this QC cycle exists within a Deliverable.
 
-    Orthogonal to ReleaseStatus (which tracks whether QC has *finished* the cycle) -- this
-    tracks *why* the cycle exists at all. Nullable at the DB level so existing Releases that
-    predate this concept aren't forced into a classification nobody made."""
+    NUEVO: first Release of an Entregable; no origin; full RN generation.
+    REVALIDACION: later version of the same Entregable; origin required; incremental generation.
+    """
 
     NUEVO = "NUEVO"
-    EVOLUTIVO = "EVOLUTIVO"
     REVALIDACION = "REVALIDACION"
 
 
