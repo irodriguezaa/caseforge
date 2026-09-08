@@ -80,6 +80,11 @@ services:
       context: ./frontend
     environment:
       BACKEND_URL: ${BACKEND_URL:?Set BACKEND_URL in .env}
+    volumes:
+      - ./frontend/app:/app/app
+      - ./frontend/lib:/app/lib
+      - ./frontend/public:/app/public
+      - ./frontend/next.config.ts:/app/next.config.ts
     ports:
       - "127.0.0.1:3000:3000"
     depends_on:

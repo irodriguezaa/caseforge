@@ -59,7 +59,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
       await api.logout();
     } finally {
       setUser(null);
-      window.location.assign("/login");
+      window.location.assign("/qcpulse/login");
     }
   }, []);
 

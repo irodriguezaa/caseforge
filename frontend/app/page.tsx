@@ -131,7 +131,10 @@ export default function DashboardPage(): React.ReactElement {
         return "error";
       }
     };
-    const [backend, database] = await Promise.all([check("/api/health"), check("/api/health/db")]);
+    const [backend, database] = await Promise.all([
+      check("/qcpulse/api/health"),
+      check("/qcpulse/api/health/db"),
+    ]);
     setSystem({ backend, database });
   }, []);
 

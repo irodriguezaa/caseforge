@@ -35,6 +35,7 @@ import type {
   QcCalendarDayResponse,
   QcCalendarWeekResponse,
   Release,
+  ReleaseKpisRead,
   ReleaseAnalysis,
   ReleaseNoteAnalyzeResponse,
   ReleaseStatus,
@@ -348,6 +349,7 @@ export const api = {
     const suffix = query.toString() ? `?${query.toString()}` : "";
     return request<QcDashboardSummary>(`/api/dashboard/qc-summary${suffix}`);
   },
+  getReleaseKpis: () => request<ReleaseKpisRead>("/api/kpis/releases"),
   getCalendarDay: (date?: string) => {
     const suffix = date ? `?date=${encodeURIComponent(date)}` : "";
     return request<QcCalendarDayResponse>(`/api/calendar/day${suffix}`);
