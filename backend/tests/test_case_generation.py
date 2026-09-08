@@ -23,6 +23,37 @@ _WEB_FEATURES = {"WEBCL-3721", "WEBCL-3153", "WEBCL-3779", "WEBCL-3762", "WEBCL-
 _AAF_FEATURES = {"STVCL-2234", "STVCL-2250"}
 
 
+def _gherkin_artifacts(keys: list[str] | None = None) -> list[dict]:
+    keys = keys or ["WEBCL-3767"]
+    artifacts = []
+    for key in keys:
+        description = (
+            f"Feature: {key}\n"
+            f"Scenario: Completar el pago de {key}\n"
+            "  When el usuario selecciona pagar con PayPal\n"
+            "  Then se muestra el modal de confirmación y el usuario ve el resultado\n"
+        )
+        artifacts.append(
+            {
+                "key": key,
+                "issuetype": "Epic",
+                "summary": f"Feature {key}",
+                "description": description,
+                "acceptance_criteria": "El usuario ve el resultado",
+                "children": [
+                    {
+                        "key": key,
+                        "issuetype": "Story",
+                        "summary": f"Feature {key}",
+                        "description": description,
+                        "acceptance_criteria": "El usuario ve el resultado",
+                    }
+                ],
+            }
+        )
+    return artifacts
+
+
 def _disable_llm(monkeypatch) -> None:
     monkeypatch.setattr(
         "app.services.ai_case_engine.settings",
@@ -209,7 +240,10 @@ def test_llm_structured_payload_is_returned(client, monkeypatch, tmp_path) -> No
         "app.services.ai_case_engine.settings",
         replace(settings, openai_api_key="sk-test", openai_model="gpt-4o-mini"),
     )
-    monkeypatch.setattr("app.services.ai_case_engine.fetch_artifacts_for_keys", lambda _keys: [])
+    monkeypatch.setattr(
+        "app.services.ai_case_engine.fetch_artifacts_for_keys",
+        lambda _keys: _gherkin_artifacts(["WEBCL-3767"]),
+    )
     payload = {
         "candidates": [
             {
@@ -232,6 +266,7 @@ def test_llm_structured_payload_is_returned(client, monkeypatch, tmp_path) -> No
                 "possible_duplicate_of": None,
                 "confidence": "high",
                 "review_required": True,
+                "covers": ["COV-001"],
             }
         ]
     }
@@ -264,9 +299,142 @@ def test_llm_structured_payload_is_returned(client, monkeypatch, tmp_path) -> No
     assert body["persisted"] is True
     assert len(body["candidates"]) == 1
     assert body["candidates"][0]["related_jira"] == "WEBCL-3767"
+    assert body["candidates"][0]["covers"] == ["COV-001"]
+    assert body["coverage_unit_count"] >= 1
+    posted = json.loads(fake_client.post.call_args.kwargs["json"]["messages"][1]["content"])
+    assert "coverage_inventory" in posted
+    assert posted["coverage_inventory"]
+    assert "coverage_id" in posted["coverage_inventory"][0]
     stored = client.get(f"/api/v1/releases/{release_id}/test-cases").json()
     assert len(stored) == 1
     assert stored[0]["test_case_name"] == "Validar checkout PayPal"
+
+
+def test_llm_logs_attempt_and_success_without_leaking_api_key(
+    client, monkeypatch, tmp_path, caplog
+) -> None:
+    import logging
+
+    caplog.set_level(logging.INFO, logger="app.services.ai_case_engine")
+    secret = "sk-secret-must-not-appear-xyz"
+    _store_dir(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        "app.services.ai_case_engine.settings",
+        replace(settings, openai_api_key=secret, openai_model="gpt-4o-mini"),
+    )
+    monkeypatch.setattr(
+        "app.services.ai_case_engine.fetch_artifacts_for_keys",
+        lambda _keys: _gherkin_artifacts(["WEBCL-3767"]),
+    )
+    payload = {
+        "candidates": [
+            {
+                "name": "Validar checkout PayPal",
+                "description": "Comportamiento de checkout descrito en el RN.",
+                "precondition": None,
+                "requires_condition": False,
+                "steps": [
+                    {
+                        "step_number": 1,
+                        "action": "Completar el flujo PayPal descrito en el RN.",
+                        "expected_result": "El pago se confirma según el RN.",
+                    }
+                ],
+                "related_functionality": "WEBCL-3767",
+                "related_jira": "WEBCL-3767",
+                "related_rn": WEB_RN.name,
+                "evidence": "WEBCL-3767: Integración PayPal",
+                "justification": "Ticket de Funcionalidad en el RN.",
+                "possible_duplicate_of": None,
+                "confidence": "high",
+                "review_required": True,
+                "covers": ["COV-001"],
+            }
+        ]
+    }
+    fake_response = MagicMock()
+    fake_response.status_code = 200
+    fake_response.text = f"ok {secret}"
+    fake_response.json.return_value = {
+        "choices": [{"message": {"content": json.dumps(payload)}}]
+    }
+    fake_client = MagicMock()
+    fake_client.post.return_value = fake_response
+    analyzed = client.post(
+        "/api/v1/releases/analyze-rn",
+        files={"file": (WEB_RN.name, WEB_RN.read_bytes(), "application/pdf")},
+    ).json()["analysis"]
+    release_id = client.post(
+        "/api/v1/releases",
+        json={
+            "name": "WEB LLM LOG",
+            "version": "16.9.0",
+            "platform": "WEB",
+            "analysis_data": analyzed,
+        },
+    ).json()["id"]
+    with patch("app.services.ai_case_engine.httpx.Client") as client_cls:
+        client_cls.return_value.__enter__.return_value = fake_client
+        response = client.post(f"/api/v1/releases/{release_id}/generate-cases")
+    assert response.status_code == 200
+    assert response.json()["engine"] == "llm"
+    messages = [record.getMessage() for record in caplog.records]
+    blob = "\n".join(messages)
+    assert any("LLM attempt" in msg and "gpt-4o-mini" in msg for msg in messages)
+    assert any("LLM responded correctly" in msg and "candidates=1" in msg for msg in messages)
+    assert secret not in blob
+    assert "Bearer sk-" not in blob
+
+
+def test_llm_error_logs_fallback_without_leaking_api_key(
+    client, monkeypatch, tmp_path, caplog
+) -> None:
+    import logging
+
+    caplog.set_level(logging.INFO, logger="app.services.ai_case_engine")
+    secret = "sk-secret-must-not-appear-xyz"
+    _store_dir(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        "app.services.ai_case_engine.settings",
+        replace(settings, openai_api_key=secret, openai_model="gpt-4o-mini"),
+    )
+    monkeypatch.setattr(
+        "app.services.ai_case_engine.fetch_artifacts_for_keys",
+        lambda _keys: _gherkin_artifacts(["WEBCL-3767"]),
+    )
+    fake_response = MagicMock()
+    fake_response.status_code = 401
+    fake_response.text = f"Unauthorized token {secret}"
+    fake_client = MagicMock()
+    fake_client.post.return_value = fake_response
+    analyzed = client.post(
+        "/api/v1/releases/analyze-rn",
+        files={"file": (WEB_RN.name, WEB_RN.read_bytes(), "application/pdf")},
+    ).json()["analysis"]
+    release_id = client.post(
+        "/api/v1/releases",
+        json={
+            "name": "WEB LLM FAIL",
+            "version": "16.9.0",
+            "platform": "WEB",
+            "analysis_data": analyzed,
+        },
+    ).json()["id"]
+    with patch("app.services.ai_case_engine.httpx.Client") as client_cls:
+        client_cls.return_value.__enter__.return_value = fake_client
+        response = client.post(f"/api/v1/releases/{release_id}/generate-cases")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["engine"] in {"evidence", "evidence-fallback", "evidence-jira"}
+    assert body["engine"] != "llm"
+    messages = [record.getMessage() for record in caplog.records]
+    blob = "\n".join(messages)
+    assert any("LLM attempt" in msg for msg in messages)
+    assert any("LLM HTTP error" in msg and "401" in msg for msg in messages)
+    assert any("LLM call failed" in msg and "RuntimeError" in msg for msg in messages)
+    assert any("LLM fallback activated" in msg for msg in messages)
+    assert secret not in blob
+    assert "Bearer sk-" not in blob
 
 
 def test_evidence_fallback_skips_untracked_alcance_tickets() -> None:

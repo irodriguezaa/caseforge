@@ -10,7 +10,12 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from app.schemas.case_generation import CandidateStep, GeneratedCaseCandidate, GenerationStats
+from app.schemas.case_generation import (
+    CandidateStep,
+    CoverageUnit,
+    GeneratedCaseCandidate,
+    GenerationStats,
+)
 from app.services.qc_candidate_rules import (
     apply_qc_rules,
     classify_confidence,
@@ -317,15 +322,61 @@ def _append_materialized(
     record_classification(stats, classification, candidate.name)
 
 
-def candidates_from_jira_artifacts(
+def _coverage_unit(
+    *,
+    coverage_id: str,
+    clf: ScenarioClassification,
+    title: str,
+    body: str,
+    evidence: str,
+    epic_key: str,
+    story_key: str,
+    rn_filename: str,
+    vocab: str,
+    extra_test_data: str | None,
+    requires_condition: bool,
+    strategy: str,
+    technical_group: str | None,
+    condition_b: str | None,
+    trace: str,
+) -> CoverageUnit:
+    behavior = functional_title(title, clf.observable_then or [title])
+    return CoverageUnit(
+        coverage_id=coverage_id,
+        role=clf.role if clf.role in {"A", "G"} else "A",
+        behavior=behavior[:250],
+        scenario=title,
+        evidence=evidence[:2000],
+        jira_key=story_key or epic_key,
+        rn_key=epic_key or None,
+        feature_story=story_key or epic_key,
+        condition_b=condition_b,
+        outline_strategy=strategy,
+        technical_group=technical_group,
+        traceability=trace,
+        body=body,
+        extra_test_data=extra_test_data,
+        requires_condition=requires_condition,
+        description=(vocab or title)[:2000],
+        rn_filename=rn_filename,
+        artifact_key=epic_key,
+        story_key=story_key,
+        observable_then=list(clf.observable_then or []),
+        technical_notes=list(clf.technical_notes or []),
+        special_condition=clf.special_condition,
+        normal_precondition=clf.normal_precondition,
+    )
+
+
+def build_coverage_inventory(
     artifacts: list[dict[str, Any]],
     rn_filename: str,
-    existing: list[dict[str, str]],
-    duplicate_of,
     stats: GenerationStats | None = None,
-) -> list[GeneratedCaseCandidate]:
-    out: list[GeneratedCaseCandidate] = []
+) -> list[CoverageUnit]:
+    """A/G coverage units from Jira Gherkin. Not Test Cases."""
     stats = stats or GenerationStats()
+    units: list[CoverageUnit] = []
+    seq = 0
     for artifact in artifacts:
         epic_key = artifact.get("key") or ""
         sources = artifact.get("children") or []
@@ -358,6 +409,8 @@ def candidates_from_jira_artifacts(
 
             if support_notes:
                 stats.attached_support += 1
+            condition_b = "; ".join(dict.fromkeys(support_conditions)) or None
+            extra_support = "; ".join(dict.fromkeys(support_notes)) or None
 
             for block, clf in classified:
                 if clf.role not in {"A", "G"}:
@@ -365,52 +418,51 @@ def candidates_from_jira_artifacts(
                 title = block["title"]
                 body = block["body"]
                 evidence = f"{story_key}: {title}\n{body[:1500]}"
-                justification = (
-                    "Comportamiento funcional derivado del Gherkin de la Technical Story; "
-                    "detalle técnico en Datos de Prueba. No es 1 Scenario = 1 Test Case."
-                )
-                if vocab:
-                    justification += " Vocabulario de usuario tomado de customfield_19114 cuando existe."
-                extra_support = "; ".join(dict.fromkeys(support_notes)) or None
                 needs_story_condition = bool(support_conditions)
                 if needs_story_condition and not clf.special_condition:
-                    clf.special_condition = "; ".join(dict.fromkeys(support_conditions))
+                    clf.special_condition = condition_b
                 examples = block["examples"] if block["outline"] else []
                 strategy = example_strategy(examples) if examples else "single"
+                trace = f"RN={epic_key}; Story={story_key}; Scenario={title}"
+
+                def _next_id() -> str:
+                    nonlocal seq
+                    seq += 1
+                    return f"COV-{seq:03d}"
 
                 if strategy == "group" and examples:
                     extra = format_examples(examples)
+                    tech_group = None
                     if _examples_are_http_same_behavior(examples):
                         codes = []
                         for example in examples:
                             codes.extend(
                                 value for value in example.values() if _HTTP_CODE.match(value.strip())
                             )
+                        tech_group = "HTTP " + ", ".join(dict.fromkeys(codes))
                         extra = (
                             "Códigos HTTP explícitos en Examples (mismo comportamiento): "
                             + ", ".join(dict.fromkeys(codes))
                         )
                     extra = "; ".join(part for part in (extra, extra_support) if part)
-                    _append_materialized(
-                        out,
-                        _candidate(
-                            name=title,
-                            description=(vocab or title),
-                            artifact_key=epic_key,
+                    units.append(
+                        _coverage_unit(
+                            coverage_id=_next_id(),
+                            clf=clf,
+                            title=title,
+                            body=body,
+                            evidence=evidence,
+                            epic_key=epic_key,
                             story_key=story_key,
                             rn_filename=rn_filename,
-                            evidence=evidence,
-                            justification=justification
-                            + " Variantes técnicas agrupadas: mismo comportamiento de usuario.",
-                            body=body,
+                            vocab=vocab,
                             extra_test_data=extra,
                             requires_condition=needs_story_condition,
-                            existing=existing,
-                            duplicate_of=duplicate_of,
-                            classification=clf,
-                        ),
-                        stats,
-                        clf,
+                            strategy=strategy,
+                            technical_group=tech_group,
+                            condition_b=condition_b,
+                            trace=trace,
+                        )
                     )
                     continue
 
@@ -419,26 +471,24 @@ def candidates_from_jira_artifacts(
                         extra = "; ".join(
                             part for part in (format_examples(group), extra_support) if part
                         )
-                        _append_materialized(
-                            out,
-                            _candidate(
-                                name=f"{title} ({outcome})"[:250],
-                                description=(vocab or title),
-                                artifact_key=epic_key,
+                        units.append(
+                            _coverage_unit(
+                                coverage_id=_next_id(),
+                                clf=clf,
+                                title=f"{title} ({outcome})"[:250],
+                                body=body,
+                                evidence=evidence + "\n" + extra,
+                                epic_key=epic_key,
                                 story_key=story_key,
                                 rn_filename=rn_filename,
-                                evidence=evidence + "\n" + extra,
-                                justification=justification
-                                + f" Agrupado por resultado observable de usuario: {outcome}.",
-                                body=body,
+                                vocab=vocab,
                                 extra_test_data=extra,
                                 requires_condition=needs_story_condition,
-                                existing=existing,
-                                duplicate_of=duplicate_of,
-                                classification=clf,
-                            ),
-                            stats,
-                            clf,
+                                strategy=strategy,
+                                technical_group=f"outcome:{outcome}",
+                                condition_b=condition_b,
+                                trace=trace + f"; outcome={outcome}",
+                            )
                         )
                     continue
 
@@ -450,47 +500,99 @@ def candidates_from_jira_artifacts(
                             for part in ("Example funcional explícito: " + label, extra_support)
                             if part
                         )
-                        _append_materialized(
-                            out,
-                            _candidate(
-                                name=f"{title} ({label})"[:250],
-                                description=(vocab or title),
-                                artifact_key=epic_key,
+                        units.append(
+                            _coverage_unit(
+                                coverage_id=_next_id(),
+                                clf=clf,
+                                title=f"{title} ({label})"[:250],
+                                body=body,
+                                evidence=evidence + "\n" + label,
+                                epic_key=epic_key,
                                 story_key=story_key,
                                 rn_filename=rn_filename,
-                                evidence=evidence + "\n" + label,
-                                justification=justification
-                                + " Example materializado porque representa una condición funcional independiente.",
-                                body=body,
+                                vocab=vocab,
                                 extra_test_data=extra,
                                 requires_condition=needs_story_condition,
-                                existing=existing,
-                                duplicate_of=duplicate_of,
-                                classification=clf,
-                            ),
-                            stats,
-                            clf,
+                                strategy=strategy,
+                                technical_group=None,
+                                condition_b=condition_b,
+                                trace=trace + f"; example={label}",
+                            )
                         )
                     continue
 
-                _append_materialized(
-                    out,
-                    _candidate(
-                        name=title,
-                        description=(vocab or title),
-                        artifact_key=epic_key,
+                units.append(
+                    _coverage_unit(
+                        coverage_id=_next_id(),
+                        clf=clf,
+                        title=title,
+                        body=body,
+                        evidence=evidence,
+                        epic_key=epic_key,
                         story_key=story_key,
                         rn_filename=rn_filename,
-                        evidence=evidence,
-                        justification=justification,
-                        body=body,
+                        vocab=vocab,
                         extra_test_data=extra_support,
                         requires_condition=needs_story_condition,
-                        existing=existing,
-                        duplicate_of=duplicate_of,
-                        classification=clf,
-                    ),
-                    stats,
-                    clf,
+                        strategy=strategy,
+                        technical_group=None,
+                        condition_b=condition_b,
+                        trace=trace,
+                    )
                 )
+    return units
+
+
+def materialize_coverage_units(
+    units: list[CoverageUnit],
+    existing: list[dict[str, str]],
+    duplicate_of,
+    stats: GenerationStats | None = None,
+) -> list[GeneratedCaseCandidate]:
+    stats = stats or GenerationStats()
+    out: list[GeneratedCaseCandidate] = []
+    for unit in units:
+        clf = ScenarioClassification(
+            role=unit.role,
+            observable_then=list(unit.observable_then),
+            technical_notes=list(unit.technical_notes),
+            special_condition=unit.special_condition,
+            normal_precondition=unit.normal_precondition,
+        )
+        candidate = _candidate(
+            name=unit.scenario,
+            description=unit.description or unit.behavior,
+            artifact_key=unit.artifact_key,
+            story_key=unit.story_key,
+            rn_filename=unit.rn_filename,
+            evidence=unit.evidence,
+            justification=(
+                "Materialización determinista de CoverageUnit "
+                f"{unit.coverage_id} ({unit.role})."
+            ),
+            body=unit.body,
+            extra_test_data=unit.extra_test_data,
+            requires_condition=unit.requires_condition,
+            existing=existing,
+            duplicate_of=duplicate_of,
+            classification=clf,
+        )
+        if candidate is None:
+            continue
+        candidate.covers = [unit.coverage_id]
+        candidate.review_required = True
+        _append_materialized(out, candidate, stats, clf)
+    return out
+
+
+def candidates_from_jira_artifacts(
+    artifacts: list[dict[str, Any]],
+    rn_filename: str,
+    existing: list[dict[str, str]],
+    duplicate_of,
+    stats: GenerationStats | None = None,
+) -> list[GeneratedCaseCandidate]:
+    stats = stats or GenerationStats()
+    units = build_coverage_inventory(artifacts, rn_filename, stats=stats)
+    out = materialize_coverage_units(units, existing, duplicate_of, stats=stats)
     return apply_qc_rules(out, stats=stats)

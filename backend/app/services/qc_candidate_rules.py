@@ -532,6 +532,8 @@ def merge_candidates(group: list[GeneratedCaseCandidate]) -> GeneratedCaseCandid
     extra_jira = []
     extra_epic = []
     extra_pre = []
+    extra_covers: list[str] = []
+    extra_rules: list[str] = []
     for item in group:
         if item.test_data:
             extra_data.append(item.test_data)
@@ -544,6 +546,8 @@ def merge_candidates(group: list[GeneratedCaseCandidate]) -> GeneratedCaseCandid
             )
         if item.precondition:
             extra_pre.append(item.precondition)
+        extra_covers.extend(item.covers or [])
+        extra_rules.extend(item.applied_rules or [])
     jiras = list(dict.fromkeys(extra_jira))
     epics = list(dict.fromkeys(extra_epic))
     steps = [rewrite_step_language(step, primary.name) for step in primary.steps]
@@ -584,6 +588,12 @@ def merge_candidates(group: list[GeneratedCaseCandidate]) -> GeneratedCaseCandid
         basic_validation=primary.basic_validation,
         priority=classify_priority(name, steps, test_data),
         user_type=user_type,
+        covers=list(dict.fromkeys(extra_covers)),
+        applied_rules=list(dict.fromkeys(extra_rules)),
+        generation_origin=primary.generation_origin,
+        origin_release_id=primary.origin_release_id,
+        origin_release_name=primary.origin_release_name,
+        related_origin_case_ids=list(primary.related_origin_case_ids or []),
     )
 
 
@@ -635,10 +645,18 @@ def apply_qc_rules(
         )
         if candidate_lacks_observable_qc(candidate):
             continue
-        cluster_key = (
-            f"{candidate.related_jira or candidate.related_functionality or ''}|"
-            f"{ux_fingerprint(original_name, rewritten_steps, candidate.test_data)}"
-        )
+        if candidate.covers:
+            cluster_key = (
+                "covers:"
+                + "|".join(sorted(candidate.covers))
+                + "|"
+                + ux_fingerprint(original_name, rewritten_steps, candidate.test_data)
+            )
+        else:
+            cluster_key = (
+                f"{candidate.related_jira or candidate.related_functionality or ''}|"
+                f"{ux_fingerprint(original_name, rewritten_steps, candidate.test_data)}"
+            )
         if candidate.user_type is None:
             candidate.user_type = extract_user_type(
                 f"{candidate.precondition or ''} {candidate.test_data or ''} {candidate.name}"

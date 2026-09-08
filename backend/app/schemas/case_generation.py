@@ -15,6 +15,50 @@ class CandidateStep(BaseModel):
     test_data: str | None = None
 
 
+class CoverageUnit(BaseModel):
+    """What must be covered. Not a Test Case."""
+
+    coverage_id: str
+    role: Literal["A", "G"]
+    behavior: str
+    scenario: str
+    evidence: str
+    jira_key: str | None = None
+    rn_key: str | None = None
+    feature_story: str | None = None
+    condition_b: str | None = None
+    outline_strategy: str = "single"
+    technical_group: str | None = None
+    traceability: str = ""
+    body: str = ""
+    extra_test_data: str | None = None
+    requires_condition: bool = False
+    description: str = ""
+    rn_filename: str = ""
+    artifact_key: str = ""
+    story_key: str = ""
+    observable_then: list[str] = Field(default_factory=list)
+    technical_notes: list[str] = Field(default_factory=list)
+    special_condition: str | None = None
+    normal_precondition: str | None = None
+
+    def for_llm(self) -> dict:
+        return {
+            "coverage_id": self.coverage_id,
+            "role": self.role,
+            "behavior": self.behavior,
+            "scenario": self.scenario,
+            "evidence": (self.evidence or "")[:1200],
+            "jira_key": self.jira_key,
+            "rn_key": self.rn_key,
+            "feature_story": self.feature_story,
+            "condition_b": self.condition_b,
+            "outline_strategy": self.outline_strategy,
+            "technical_group": self.technical_group,
+            "traceability": self.traceability,
+        }
+
+
 class GeneratedCaseCandidate(BaseModel):
     name: str
     description: str
@@ -57,6 +101,7 @@ class GeneratedCaseCandidate(BaseModel):
     group_id: str | None = None
     interaction_points: list[str] = Field(default_factory=list)
     hn_source: str | None = None
+    covers: list[str] = Field(default_factory=list)
 
 
 class GenerationStats(BaseModel):
@@ -97,6 +142,9 @@ class GenerateCasesResponse(BaseModel):
     estimation_days: float = 0
     generation_stats: GenerationStats | None = None
     analysis_details: list[str] = Field(default_factory=list)
+    coverage_unit_count: int = 0
+    covered_coverage_ids: list[str] = Field(default_factory=list)
+    uncovered_coverage_ids: list[str] = Field(default_factory=list)
     brfs_analyzed: int = 0
     device_review_count: int = 0
     possible_duplicate_count: int = 0

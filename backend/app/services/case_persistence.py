@@ -48,6 +48,8 @@ def _audit_justification(candidate: GeneratedCaseCandidate) -> str:
         parts.append(f"duplicateStatus={candidate.duplicate_status}; duplicateWith=[{related}]")
     if candidate.device_source and f"Fuente dispositivo: {candidate.device_source}" not in parts[0]:
         parts.append(f"Fuente dispositivo: {candidate.device_source}")
+    if candidate.covers:
+        parts.append("covers=" + ",".join(candidate.covers))
     return " ".join(part for part in parts if part).strip()
 
 

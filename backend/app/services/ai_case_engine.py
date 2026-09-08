@@ -11,19 +11,44 @@ Does not write TestCase/TestStep rows.
 from __future__ import annotations
 
 import json
+import logging
 import re
 from typing import Any
 
 import httpx
 
 from app.config import settings
-from app.schemas.case_generation import CandidateStep, GeneratedCaseCandidate, GenerateCasesResponse, GenerationStats
-from app.services.gherkin_coverage import candidates_from_jira_artifacts, extract_technical, sanitize_user_text
+from app.schemas.case_generation import (
+    CandidateStep,
+    CoverageUnit,
+    GeneratedCaseCandidate,
+    GenerateCasesResponse,
+    GenerationStats,
+)
+from app.services.gherkin_coverage import (
+    build_coverage_inventory,
+    extract_technical,
+    materialize_coverage_units,
+    sanitize_user_text,
+)
 from app.services.jira_generation import fetch_artifacts_for_keys
 from app.services.qc_candidate_rules import apply_qc_rules
-from app.services.release_note_analyzer import RuleBasedPdfAnalyzer, iter_rn_ticket_rows
+from app.services.release_note_analyzer import iter_rn_ticket_rows
 
 ENGINE_VERSION = "ai-v4"
+logger = logging.getLogger(__name__)
+
+
+def _llm_safe_text(value: object) -> str:
+    """Strip API key material from log text. Never log Authorization."""
+    text = str(value) if value is not None else ""
+    key = (settings.openai_api_key or "").strip()
+    if key:
+        text = text.replace(key, "[redacted]")
+    text = re.sub(r"(?i)(authorization\s*[:=]\s*)(\S+)", r"\1[redacted]", text)
+    text = re.sub(r"(?i)bearer\s+\S+", "Bearer [redacted]", text)
+    return text[:300]
+
 
 _ENGINE_RULES = """
 Eres el motor de generación de Test Cases de CaseForge para RELEASE APPS.
@@ -32,8 +57,9 @@ NO persistir. NO generar Smoke. NO generar Regression. NO usar matrices de no-af
 NO estimar. NO generar Excel ni Zephyr Export. NO asignar Test Type
 (Smoke/Regression/Happy Path/Negative/Edge); QC lo hará después.
 
-Entradas: RN del Release + Jira relacionado (issuetype, hijas Feature, Gherkin, AC) +
-histórico de casos del entregable (referencia, no verdad automática).
+Entradas permitidas: coverage_inventory + tickets/evidencia de FUNCIONALIDAD +
+Jira/Gherkin de esas keys + histórico de casos del entregable (referencia, no verdad automática).
+No recibes el RN/PDF completo ni tablas NCO, TRI, QA Bugs o QC Bugs.
 
 Cruce de dos fuentes (Prompt v4):
 - Fuente A: Technical Epic → Technical Stories hijas (JQL parent = epic).
@@ -103,9 +129,17 @@ Casos de estudio (principios, no recetas inventadas):
 - WEBCL-3785, WEBCL-3723, WEBCL-3725, WEBCL-3844, WEBCL-3846, WEBCL-3779:
   cubrir escenarios funcionales evidentes, no 1 Jira = 1 caso.
 
-Un Test Case = un flujo funcional completo y observable. No fragmentar en pruebas unitarias.
-NO uses tickets NCO/TRI/QA-QC ni alcance no entregado como fuente de casos
-salvo que el RN declare un comportamiento funcional nuevo.
+La fuente principal de QUÉ cubrir es coverage_inventory (unidades A/G).
+NO resumas el RN a un caso por fila de Funcionalidad.
+NO inventes un número objetivo de casos. El número es consecuencia de las unidades.
+Agrupa unidades solo si son el mismo comportamiento observable y la misma validación.
+Separa unidades si cambia comportamiento, estado, error observable, persistencia,
+condición de negocio, resultado esperado o escenario funcional independiente.
+NO un caso por endpoint, HTTP status o Jira técnico.
+Cada candidato DEBE listar covers con coverage_id de las unidades que cubre.
+NO dejes unidades A/G sin covers.
+Las únicas fuentes permitidas para generar casos mediante LLM son coverage_inventory
+y la evidencia/tickets de FUNCIONALIDAD. Ignora NCO, TRI, QA Bugs y QC Bugs.
 """
 
 _JSON_INSTRUCTIONS = """
@@ -125,13 +159,14 @@ Responde SOLO con un JSON de la forma:
   "possible_duplicate_of": string|null,
   "confidence": "high"|"medium"|"low",
   "review_required": true,
-  "basic_validation": boolean
+  "basic_validation": boolean,
+  "covers": ["COV-001"]
 }]}
 Sin markdown, sin texto fuera del JSON.
 No asignes test type Smoke/Regression. No inventes escenarios.
-NO devuelvas un candidato por cada Scenario técnico.
-Clasifica A–G. Consolida el mismo UX entre Stories. Excluye métricas/BI/proceso QA.
-Cubre los flujos funcionales evidentes; no un único caso por Epic si hay varios UX distintos.
+covers es obligatorio: ids de coverage_inventory cubiertos por ese caso.
+Agrupa en covers solo unidades con el mismo comportamiento observable.
+No colapses unidades independientes en un solo caso porque compartan Funcionalidad.
 No inventes un resultado observable genérico.
 """
 
@@ -263,6 +298,14 @@ def _parse_llm_candidates(payload: dict[str, Any], existing: list[dict[str, str]
             if tech and not candidate.test_data:
                 candidate.test_data = tech
         candidate.review_required = True
+        raw_covers = item.get("covers") or []
+        if isinstance(raw_covers, str):
+            raw_covers = [raw_covers]
+        candidate.covers = [
+            str(cid).strip()
+            for cid in raw_covers
+            if str(cid).strip()
+        ]
         if not candidate.possible_duplicate_of:
             candidate.possible_duplicate_of = _duplicate_of(
                 candidate.name, candidate.related_jira, existing
@@ -271,30 +314,108 @@ def _parse_llm_candidates(payload: dict[str, Any], existing: list[dict[str, str]
     return apply_qc_rules(out)
 
 
+def _functionality_tickets_for_llm(
+    tickets: dict[str, list[tuple[str, str]]],
+) -> list[dict[str, str]]:
+    return [
+        {"jira": tid, "evidence": text}
+        for tid, text in tickets.get("functionality", [])
+    ]
+
+
+def _jira_artifacts_for_llm(artifacts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    compact: list[dict[str, Any]] = []
+    for art in artifacts:
+        if not isinstance(art, dict):
+            continue
+        children: list[dict[str, Any]] = []
+        for child in art.get("children") or []:
+            if not isinstance(child, dict):
+                continue
+            children.append(
+                {
+                    "key": child.get("key"),
+                    "issuetype": child.get("issuetype"),
+                    "summary": child.get("summary"),
+                    "description": (child.get("description") or "")[:4000],
+                    "acceptance_criteria": (child.get("acceptance_criteria") or "")[:1500],
+                }
+            )
+        compact.append(
+            {
+                "key": art.get("key"),
+                "issuetype": art.get("issuetype"),
+                "summary": art.get("summary"),
+                "description": (art.get("description") or "")[:4000],
+                "acceptance_criteria": (art.get("acceptance_criteria") or "")[:1500],
+                "children": children,
+            }
+        )
+    return compact
+
+
+def _llm_functionality_keys(
+    tickets: dict[str, list[tuple[str, str]]],
+    inventory: list[CoverageUnit],
+) -> set[str]:
+    keys = {tid.strip().upper() for tid, _text in tickets.get("functionality", []) if tid}
+    for unit in inventory:
+        for raw in (unit.jira_key, unit.rn_key):
+            if raw:
+                keys.add(raw.strip().upper())
+    return keys
+
+
+def _keep_llm_functionality_candidates(
+    candidates: list[GeneratedCaseCandidate],
+    allowed_keys: set[str],
+    allowed_covers: set[str],
+) -> list[GeneratedCaseCandidate]:
+    kept: list[GeneratedCaseCandidate] = []
+    for candidate in candidates:
+        jira = (candidate.related_jira or "").strip().upper()
+        func = (candidate.related_functionality or "").strip().upper()
+        if jira and jira not in allowed_keys:
+            continue
+        if func and func not in allowed_keys:
+            continue
+        candidate.covers = [cid for cid in candidate.covers if cid in allowed_covers]
+        kept.append(candidate)
+    return kept
+
+
 def _from_llm(
-    rn_text: str,
     context: dict[str, Any],
     existing: list[dict[str, str]],
     tickets: dict[str, list[tuple[str, str]]],
     jira_artifacts: list[dict[str, Any]],
+    inventory: list[CoverageUnit],
 ) -> list[GeneratedCaseCandidate]:
+    logger.info("LLM attempt: using model %s", settings.openai_model)
+    allowed_ids = {unit.coverage_id for unit in inventory}
+    allowed_keys = _llm_functionality_keys(tickets, inventory)
     user_payload = {
         "release": context,
         "existing_cases_reference": existing,
         "tickets_from_rn": {
-            section: [{"jira": tid, "evidence": text} for tid, text in rows]
-            for section, rows in tickets.items()
+            "functionality": _functionality_tickets_for_llm(tickets),
         },
-        "jira_dual_source": jira_artifacts,
+        "coverage_inventory": [unit.for_llm() for unit in inventory],
+        "functionality_jira_artifacts": _jira_artifacts_for_llm(jira_artifacts),
+        "jira_dual_source_note": (
+            "Jira crudo es contexto de Funcionalidad. La fuente de cobertura es coverage_inventory."
+        ),
         "product_brief_field_note": "customfield_19094 es resumen; no es fuente única de casos.",
         "instruction": (
-            "Cruza RN + jira_dual_source. Fuente A = description/Gherkin de Feature children. "
-            "Fuente B = acceptance_criteria (customfield_19114). "
-            "Traduce a usuario final. NO 1 Scenario = 1 TC. Agrupa HTTP/orígenes/flags con el mismo UX. "
-            "No inventes tickets ni combinaciones. No uses qa_qc/nco/tri como fuente "
-            "salvo comportamiento funcional nuevo en el RN. No casos de métricas ni proceso QA."
+            "Traduce coverage_inventory a casos ejecutables de usuario final. "
+            "Cada candidato debe incluir covers con coverage_id. "
+            "Agrupa unidades solo si el usuario observa el mismo resultado y la misma validación. "
+            "No resumas una Funcionalidad en un solo caso si hay varias unidades independientes. "
+            "Las únicas fuentes permitidas para generar casos mediante LLM son "
+            "coverage_inventory y la evidencia/tickets de FUNCIONALIDAD. "
+            "Ignora NCO, TRI, QA Bugs y QC Bugs. "
+            "No inventes tickets ni combinaciones. No casos de métricas ni proceso QA."
         ),
-        "release_note_text": rn_text[:60000],
     }
     body = {
         "model": settings.openai_model,
@@ -316,10 +437,25 @@ def _from_llm(
             json=body,
         )
     if response.status_code != 200:
+        logger.warning(
+            "LLM HTTP error: type=RuntimeError status=%s message=%s",
+            response.status_code,
+            _llm_safe_text(response.text),
+        )
         raise RuntimeError(f"LLM HTTP {response.status_code}: {response.text[:400]}")
     content = response.json()["choices"][0]["message"]["content"]
     parsed = json.loads(content)
-    return _parse_llm_candidates(parsed, existing)
+    candidates = _keep_llm_functionality_candidates(
+        _parse_llm_candidates(parsed, existing),
+        allowed_keys,
+        allowed_ids,
+    )
+    logger.info(
+        "LLM responded correctly: candidates=%s model=%s",
+        len(candidates),
+        settings.openai_model,
+    )
+    return candidates
 
 
 def _merge_last_resort(
@@ -337,6 +473,42 @@ def _merge_last_resort(
     return already + [row for row in extras if (row.related_jira or "").upper() not in covered]
 
 
+def _keep_scoped_candidates(
+    candidates: list[GeneratedCaseCandidate],
+    allowed_keys: set[str] | None,
+) -> list[GeneratedCaseCandidate]:
+    if not allowed_keys:
+        return candidates
+    kept: list[GeneratedCaseCandidate] = []
+    for candidate in candidates:
+        keys = {
+            (candidate.related_functionality or "").strip().upper(),
+            (candidate.related_jira or "").strip().upper(),
+        }
+        if keys & allowed_keys:
+            kept.append(candidate)
+    return kept
+
+
+def _covered_ids(candidates: list[GeneratedCaseCandidate]) -> set[str]:
+    covered: set[str] = set()
+    for candidate in candidates:
+        covered.update(candidate.covers or [])
+    return covered
+
+
+def _dedupe_candidates(candidates: list[GeneratedCaseCandidate]) -> list[GeneratedCaseCandidate]:
+    seen: set[tuple[str, tuple[str, ...]]] = set()
+    out: list[GeneratedCaseCandidate] = []
+    for candidate in candidates:
+        key = (_normalize(candidate.name), tuple(sorted(candidate.covers or [])))
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(candidate)
+    return out
+
+
 def generate_release_app_candidates(
     *,
     release_id: int,
@@ -347,31 +519,88 @@ def generate_release_app_candidates(
     pdf_bytes: bytes | None,
     release_context: dict[str, Any],
     existing_cases: list[dict[str, str]],
+    tickets: dict[str, list[tuple[str, str]]] | None = None,
+    restrict_to_functionality_keys: set[str] | None = None,
 ) -> GenerateCasesResponse:
-    analyzer = RuleBasedPdfAnalyzer()
-    rn_text = analyzer.extract_text(pdf_bytes) if pdf_bytes else ""
-    tickets = _tickets_by_section(pdf_bytes) if pdf_bytes else {}
-    functionality_keys = [tid for tid, _text in tickets.get("functionality", [])]
+    parsed_tickets = tickets if tickets is not None else (_tickets_by_section(pdf_bytes) if pdf_bytes else {})
+    allowed = {key.upper() for key in (restrict_to_functionality_keys or set()) if key}
+    if allowed:
+        parsed_tickets = {
+            **parsed_tickets,
+            "functionality": [
+                (tid, text)
+                for tid, text in parsed_tickets.get("functionality", [])
+                if tid.upper() in allowed
+            ],
+        }
+    functionality_keys = [tid for tid, _text in parsed_tickets.get("functionality", [])]
     jira_artifacts = fetch_artifacts_for_keys(functionality_keys) if functionality_keys else []
     stats = GenerationStats()
-    jira_candidates = candidates_from_jira_artifacts(
-        jira_artifacts, rn_filename or "", existing_cases, _duplicate_of, stats=stats
+    inventory = build_coverage_inventory(jira_artifacts, rn_filename or "", stats=stats)
+    if allowed:
+        inventory = [
+            unit
+            for unit in inventory
+            if (unit.rn_key or "").upper() in allowed or (unit.jira_key or "").upper() in allowed
+        ]
+    jira_candidates = materialize_coverage_units(
+        inventory, existing_cases, _duplicate_of, stats=stats
     )
 
     engine = "evidence"
     candidates: list[GeneratedCaseCandidate] = []
-    if settings.openai_api_key and pdf_bytes:
+    analysis_details: list[str] = []
+    if settings.openai_api_key and pdf_bytes and inventory:
         try:
+            llm_tickets = {"functionality": list(parsed_tickets.get("functionality", []))}
             candidates = _from_llm(
-                rn_text, release_context, existing_cases, tickets, jira_artifacts
+                release_context,
+                existing_cases,
+                llm_tickets,
+                jira_artifacts,
+                inventory,
             )
             engine = "llm"
+            missing = [unit for unit in inventory if unit.coverage_id not in _covered_ids(candidates)]
+            if missing:
+                logger.info("LLM coverage check: missing=%s", len(missing))
+                second = _from_llm(
+                    release_context,
+                    existing_cases,
+                    llm_tickets,
+                    jira_artifacts,
+                    missing,
+                )
+                candidates = _dedupe_candidates(candidates + second)
+            still_missing = [unit for unit in inventory if unit.coverage_id not in _covered_ids(candidates)]
+            if still_missing:
+                filled = materialize_coverage_units(
+                    still_missing, existing_cases, _duplicate_of, stats=stats
+                )
+                for row in filled:
+                    row.review_required = True
+                    row.generation_origin = row.generation_origin or "coverage-fill"
+                candidates = _dedupe_candidates(candidates + filled)
+                engine = "llm+coverage-fill"
+                analysis_details.append(
+                    f"Coverage check: {len(still_missing)} unidad(es) materializadas de forma determinista."
+                )
             if not candidates:
                 candidates = jira_candidates or _from_evidence(
                     pdf_bytes, rn_filename or "", existing_cases
                 )
                 engine = "evidence-jira" if jira_candidates else "evidence-fallback"
-        except Exception:
+        except Exception as exc:
+            status = getattr(exc, "status_code", None) or getattr(
+                getattr(exc, "response", None), "status_code", None
+            )
+            logger.error(
+                "LLM call failed: type=%s status=%s message=%s",
+                type(exc).__name__,
+                status,
+                _llm_safe_text(exc),
+            )
+            logger.warning("LLM fallback activated")
             candidates = jira_candidates or _from_evidence(
                 pdf_bytes, rn_filename or "", existing_cases
             )
@@ -382,7 +611,11 @@ def generate_release_app_candidates(
     else:
         candidates = _from_evidence(pdf_bytes, rn_filename or "", existing_cases)
 
-    candidates = apply_qc_rules(candidates, release_context=release_context)
+    candidates = _keep_scoped_candidates(candidates, allowed or None)
+    candidates = apply_qc_rules(candidates, release_context=release_context, stats=stats)
+    covered = sorted(_covered_ids(candidates))
+    required = [unit.coverage_id for unit in inventory]
+    uncovered = [cid for cid in required if cid not in set(covered)]
     message = (
         f"Se propusieron {len(candidates)} caso(s) candidato(s). La IA propone; QC decide. "
         "No se crearon Test Cases en la base de datos."
@@ -405,4 +638,8 @@ def generate_release_app_candidates(
         candidates=candidates,
         persisted=False,
         generation_stats=stats,
+        analysis_details=analysis_details,
+        coverage_unit_count=len(inventory),
+        covered_coverage_ids=covered,
+        uncovered_coverage_ids=uncovered,
     )
