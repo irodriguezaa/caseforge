@@ -73,8 +73,15 @@ export default function OperativaReleaseNotesPage(): React.ReactElement {
 
   const patchRelease = async (payload: OperativaReleaseUpdate): Promise<void> => {
     if (!operativaRelease) return;
-    const updated = await api.updateOperativaRelease(operativaRelease.id, payload);
-    setOperativaRelease(updated);
+    const previous = operativaRelease;
+    setOperativaRelease({ ...operativaRelease, ...payload });
+    try {
+      const updated = await api.updateOperativaRelease(operativaRelease.id, payload);
+      setOperativaRelease(updated);
+    } catch (err: unknown) {
+      setOperativaRelease(previous);
+      setCreateError(err instanceof Error ? err.message : "No se pudo guardar la Operativa.");
+    }
   };
 
   const patchEpc = async (epcId: number, payload: EpcUpdate): Promise<void> => {
