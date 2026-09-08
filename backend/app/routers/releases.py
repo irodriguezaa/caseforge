@@ -178,14 +178,6 @@ def _validate_lineage(
             self_release_id,
             "Una Release de tipo Revalidación requiere una Release origen.",
         )
-    elif release_type == ReleaseType.EVOLUTIVO:
-        _validate_origin_parent(
-            parent_release_id,
-            deliverable_id,
-            db,
-            self_release_id,
-            "Una Release de tipo Evolutivo requiere una Release origen.",
-        )
     elif release_type == ReleaseType.NUEVO and parent_release_id is not None:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY,

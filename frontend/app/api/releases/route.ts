@@ -8,11 +8,19 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 }
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
-  const payload = await request.json();
+  const payload = await request.text();
   const response = await proxyToBackend("/api/v1/releases", {
     method: "POST",
-    body: JSON.stringify(payload),
+    body: payload,
   });
-  const body = await response.json();
+  const raw = await response.text();
+  let body: unknown = {};
+  if (raw) {
+    try {
+      body = JSON.parse(raw) as unknown;
+    } catch {
+      body = { detail: raw.slice(0, 200) };
+    }
+  }
   return NextResponse.json(body, { status: response.status });
 }
