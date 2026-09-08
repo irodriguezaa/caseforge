@@ -62,6 +62,7 @@ export default function ReleaseDetailPage(): React.ReactElement {
   const [publishResult, setPublishResult] = useState<PublishCasesResponse | null>(null);
   const [exporting, setExporting] = useState(false);
   const [editingCase, setEditingCase] = useState<TestCase | null>(null);
+  const [statusBusy, setStatusBusy] = useState(false);
 
   const load = (): void => {
     setLoadError(null);
@@ -91,11 +92,14 @@ export default function ReleaseDetailPage(): React.ReactElement {
 
   const handleStatusChange = async (status: ReleaseStatus): Promise<void> => {
     setActionError(null);
+    setStatusBusy(true);
     try {
       const updated = await api.updateRelease(releaseId, { status });
       setRelease(updated);
     } catch (err) {
       setActionError(err instanceof ApiRequestError ? err.message : "No se pudo actualizar el estado.");
+    } finally {
+      setStatusBusy(false);
     }
   };
 
@@ -491,19 +495,26 @@ export default function ReleaseDetailPage(): React.ReactElement {
 
       {/* Lifecycle Actions */}
       {(canChangeReleaseStatus || canDeleteRelease) && (
-      <div className="card">
+      <div className="card" style={{ position: "relative", zIndex: 2 }}>
         <h2>Acciones de Ciclo de Vida</h2>
+        {actionError && <p className="error-text">{actionError}</p>}
         <div className="form-actions">
           {canChangeReleaseStatus && (NEXT_STATUS[release.status] ?? []).map((next) => (
-            <button key={next} type="button" onClick={() => handleStatusChange(next)}>
-              Mover a {next}
+            <button
+              key={next}
+              type="button"
+              disabled={statusBusy}
+              onClick={() => void handleStatusChange(next)}
+            >
+              {statusBusy ? "Guardando…" : `Mover a ${next}`}
             </button>
           ))}
           {canDeleteRelease && (
           <button
             type="button"
             className="danger"
-            onClick={handleDelete}
+            disabled={statusBusy}
+            onClick={() => void handleDelete()}
           >
             Eliminar
           </button>
