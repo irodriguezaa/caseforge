@@ -9,7 +9,7 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
 const backendUrl = process.env.BACKEND_URL ?? "http://backend:8000";
-const defaultTimeoutMs = 5_000;
+const defaultTimeoutMs = 30_000;
 
 export async function cookieHeaderFromSession(): Promise<string | null> {
   const store = await cookies();

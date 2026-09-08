@@ -94,17 +94,19 @@ export default function ReleaseBePage(): React.ReactElement {
     }
   };
 
-  const patchRelease = async (payload: BeReleaseUpdate): Promise<void> => {
-    if (!beRelease) return;
+  const patchRelease = async (payload: BeReleaseUpdate): Promise<boolean> => {
+    if (!beRelease) return false;
     const previous = beRelease;
     setBeRelease({ ...beRelease, ...payload });
     setCreateError(null);
     try {
       const updated = await api.updateBeRelease(beRelease.id, payload);
       setBeRelease(updated);
+      return true;
     } catch (err: unknown) {
       setBeRelease(previous);
       setCreateError(err instanceof Error ? err.message : "No se pudo guardar el Release BE.");
+      return false;
     }
   };
 
@@ -135,9 +137,19 @@ export default function ReleaseBePage(): React.ReactElement {
 
   const handleCreate = async (): Promise<void> => {
     if (!beRelease) return;
+    const name = (beRelease.name ?? "").trim() || (beRelease.entregable ?? "").trim();
+    const entregable = (beRelease.entregable ?? "").trim() || name;
     setCreating(true);
     setCreateError(null);
     try {
+      const saved = await patchRelease({ name: name || null, entregable: entregable || null });
+      if (!saved) {
+        return;
+      }
+      if (!name) {
+        setCreateError("El Nombre es obligatorio para crear el Release BE.");
+        return;
+      }
       const created = await api.createReleaseFromBe(beRelease.id);
       router.push(`/releases/${created.id}`);
     } catch (err: unknown) {
@@ -257,8 +269,9 @@ export default function ReleaseBePage(): React.ReactElement {
               <input
                 id="be-entregable"
                 placeholder="No disponible"
-                defaultValue={beRelease.entregable ?? ""}
-                onBlur={(e) => void patchRelease({ entregable: e.target.value || null })}
+                value={beRelease.entregable ?? ""}
+                onChange={(e) => setBeRelease({ ...beRelease, entregable: e.target.value || null })}
+                onBlur={(e) => void patchRelease({ entregable: e.target.value.trim() || null })}
               />
             </div>
             <div className="form-field">
@@ -266,8 +279,9 @@ export default function ReleaseBePage(): React.ReactElement {
               <input
                 id="be-name"
                 placeholder="No disponible"
-                defaultValue={beRelease.name ?? ""}
-                onBlur={(e) => void patchRelease({ name: e.target.value || null })}
+                value={beRelease.name ?? ""}
+                onChange={(e) => setBeRelease({ ...beRelease, name: e.target.value || null })}
+                onBlur={(e) => void patchRelease({ name: e.target.value.trim() || null })}
               />
             </div>
             <div className="form-field full">

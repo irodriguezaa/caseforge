@@ -63,12 +63,17 @@ function apiUrl(path: string): string {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(apiUrl(path), {
-    ...init,
-    cache: "no-store",
-    credentials: "include",
-    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
-  });
+  let response: Response;
+  try {
+    response = await fetch(apiUrl(path), {
+      ...init,
+      cache: "no-store",
+      credentials: "include",
+      headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+    });
+  } catch {
+    throw new ApiRequestError(0, "No se pudo contactar el servidor. Reintenta en unos segundos.");
+  }
 
   if (response.status === 401 && !path.startsWith("/api/auth")) {
     if (typeof window !== "undefined" && window.location.pathname !== apiUrl("/login")) {
