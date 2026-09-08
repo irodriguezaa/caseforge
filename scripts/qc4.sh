@@ -82,16 +82,16 @@ diagnose() {
   curl -sS -o /dev/null -w 'GET 3001/qcpulse/ -> %{http_code}\n' --max-time 10 http://127.0.0.1:3001/qcpulse/ || echo "3001 FAIL"
   echo "==== curl via :80 ===="
   curl -sS -o /dev/null -w 'GET :80/qcpulse/ -> %{http_code}\n' --max-time 10 http://127.0.0.1/qcpulse/ || echo ":80 FAIL"
-  echo "==== PATCH via :80 (401/403/409 ok; 000 = nginx roto) ===="
-  curl -sS -o /dev/null -w 'PATCH :80 -> %{http_code}\n' --max-time 10 \
-    -X PATCH http://127.0.0.1/qcpulse/api/releases/1 \
+  echo "==== POST via :80 (401/403/409 ok; 000 = nginx/Next colgado) ===="
+  curl -sS -o /dev/null -w 'POST :80 -> %{http_code}\n' --max-time 10 \
+    -X POST http://127.0.0.1/qcpulse/api/releases/1 \
     -H 'Content-Type: application/json' \
-    -d '{"status":"IN_PROGRESS"}' || echo "PATCH :80 FAIL"
-  echo "==== PATCH via 3001 ===="
-  curl -sS -o /dev/null -w 'PATCH 3001 -> %{http_code}\n' --max-time 10 \
-    -X PATCH http://127.0.0.1:3001/qcpulse/api/releases/1 \
+    -d '{"status":"IN_PROGRESS"}' || echo "POST :80 FAIL"
+  echo "==== POST via 3001 ===="
+  curl -sS -o /dev/null -w 'POST 3001 -> %{http_code}\n' --max-time 10 \
+    -X POST http://127.0.0.1:3001/qcpulse/api/releases/1 \
     -H 'Content-Type: application/json' \
-    -d '{"status":"IN_PROGRESS"}' || echo "PATCH 3001 FAIL"
+    -d '{"status":"IN_PROGRESS"}' || echo "POST 3001 FAIL"
 }
 
 usage() {

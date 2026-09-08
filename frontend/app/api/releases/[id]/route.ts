@@ -13,15 +13,20 @@ export async function GET(_request: NextRequest, { params }: RouteParams): Promi
 }
 
 export async function PATCH(request: NextRequest, { params }: RouteParams): Promise<NextResponse> {
+  console.info("[bff] releases/[id] mutation entered");
   const { id, body } = await idAndBody(request, params);
-  console.info(`[bff] PATCH /api/v1/releases/${id} bytes=${body.length}`);
+  console.info(`[bff] /api/v1/releases/${id} bytes=${body.length}`);
   const response = await proxyToBackend(`/api/v1/releases/${id}`, {
     method: "PATCH",
     body,
   });
-  console.info(`[bff] PATCH /api/v1/releases/${id} -> ${response.status}`);
+  console.info(`[bff] /api/v1/releases/${id} -> ${response.status}`);
   const payload = await response.json();
   return NextResponse.json(payload, { status: response.status });
+}
+
+export async function POST(request: NextRequest, ctx: RouteParams): Promise<NextResponse> {
+  return PATCH(request, ctx);
 }
 
 export async function DELETE(

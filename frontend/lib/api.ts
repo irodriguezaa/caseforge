@@ -159,7 +159,7 @@ export const api = {
     request<Release>("/api/releases", { method: "POST", body: JSON.stringify(payload) }),
   getRelease: (id: number) => request<Release>(`/api/releases/${id}`),
   updateRelease: (id: number, payload: Partial<ReleaseInput & { status: ReleaseStatus }>) =>
-    request<Release>(`/api/releases/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+    request<Release>(`/api/releases/${id}`, { method: "POST", body: JSON.stringify(payload) }),
   deleteRelease: (id: number) => request<void>(`/api/releases/${id}`, { method: "DELETE" }),
 
   analyzeReleaseNote: async (file: File): Promise<ReleaseNoteAnalyzeResponse> => {
@@ -202,17 +202,17 @@ export const api = {
     request<EpcRead[]>(`/api/operativa/qc-releases/${qcReleaseId}/epcs`),
   updateOperativaRelease: (id: number, payload: OperativaReleaseUpdate) =>
     request<OperativaReleaseRead>(`/api/operativa/${id}`, {
-      method: "PATCH",
+      method: "POST",
       body: JSON.stringify(payload),
     }),
   updateEpc: (epcId: number, payload: EpcUpdate) =>
-    request<EpcRead>(`/api/operativa/epcs/${epcId}`, { method: "PATCH", body: JSON.stringify(payload) }),
+    request<EpcRead>(`/api/operativa/epcs/${epcId}`, { method: "POST", body: JSON.stringify(payload) }),
   createBeReleaseWithoutRn: () =>
     request<BeReleaseRead>("/api/releases-be", { method: "POST" }),
   listBeReleases: () => request<BeReleaseRead[]>("/api/releases-be"),
   getBeRelease: (id: number) => request<BeReleaseRead>(`/api/releases-be/${id}`),
   updateBeRelease: (id: number, payload: BeReleaseUpdate) =>
-    request<BeReleaseRead>(`/api/releases-be/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+    request<BeReleaseRead>(`/api/releases-be/${id}`, { method: "POST", body: JSON.stringify(payload) }),
   analyzeBeRn: async (file: File): Promise<BeAnalysisResult> => {
     const formData = new FormData();
     formData.append("file", file);
@@ -290,7 +290,7 @@ export const api = {
   getTestCase: (id: number) => request<TestCaseWithSteps>(`/api/test-cases/${id}`),
   updateTestCase: (id: number, payload: Partial<TestCaseInput> & { status?: TestCase["status"] }) =>
     request<TestCaseWithSteps>(`/api/test-cases/${id}`, {
-      method: "PATCH",
+      method: "POST",
       body: JSON.stringify(payload),
     }),
   deleteTestCase: (id: number) => request<void>(`/api/test-cases/${id}`, { method: "DELETE" }),
@@ -301,7 +301,7 @@ export const api = {
       body: JSON.stringify(payload),
     }),
   updateStep: (stepId: number, payload: Partial<TestStepInput>) =>
-    request<TestStep>(`/api/steps/${stepId}`, { method: "PATCH", body: JSON.stringify(payload) }),
+    request<TestStep>(`/api/steps/${stepId}`, { method: "POST", body: JSON.stringify(payload) }),
   deleteStep: (stepId: number) => request<void>(`/api/steps/${stepId}`, { method: "DELETE" }),
   reorderSteps: (testCaseId: number, steps: { id: number; step_number: number }[]) =>
     request<TestStep[]>(`/api/test-cases/${testCaseId}/steps/reorder`, {

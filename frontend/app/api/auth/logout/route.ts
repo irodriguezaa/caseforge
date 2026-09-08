@@ -1,8 +1,9 @@
-import { NextResponse } from "next/server";
-import { fetchBackend, passThroughAuth } from "@/lib/backend";
+import { NextRequest, NextResponse } from "next/server";
+import { drainBody, fetchBackend, passThroughAuth } from "@/lib/backend";
 
-export async function POST(): Promise<NextResponse> {
+export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
+    await drainBody(request);
     const response = await fetchBackend("/api/v1/auth/logout", { method: "POST" });
     return passThroughAuth(response);
   } catch {

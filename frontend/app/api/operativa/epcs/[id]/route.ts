@@ -11,3 +11,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams): Prom
   const responseBody = await response.json();
   return NextResponse.json(responseBody, { status: response.status });
 }
+
+export async function POST(request: NextRequest, ctx: RouteParams): Promise<NextResponse> {
+  return PATCH(request, ctx);
+}

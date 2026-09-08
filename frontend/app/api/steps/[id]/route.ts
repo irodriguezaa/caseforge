@@ -15,6 +15,10 @@ export async function PATCH(request: NextRequest, { params }: RouteParams): Prom
   return NextResponse.json(payload, { status: response.status });
 }
 
+export async function POST(request: NextRequest, ctx: RouteParams): Promise<NextResponse> {
+  return PATCH(request, ctx);
+}
+
 export async function DELETE(
   _request: NextRequest,
   { params }: RouteParams,

@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { proxyToBackend } from "@/lib/backend";
+import { idAfterDrain, proxyToBackend } from "@/lib/backend";
 
 export async function POST(
   request: NextRequest,
   context: { params: Promise<{ id: string }> }
 ): Promise<NextResponse> {
-  const { id } = await context.params;
+  const id = await idAfterDrain(request, context.params);
   const search = request.nextUrl.search || "";
   const response = await proxyToBackend(
     `/api/v1/releases/${id}/generate-cases${search}`,
