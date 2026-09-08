@@ -248,3 +248,89 @@ def test_revalidation_http_does_not_mutate_origin_cases(client, monkeypatch) -> 
     persisted = client.get(f"/api/v1/releases/{reval['id']}/test-cases").json()
     assert len(persisted) == 1
     assert persisted[0]["test_case_name"] != "Validar FEAT-1"
+
+
+def test_revalidation_keeps_revalidation_delta_engine_without_llm(
+    client, monkeypatch
+) -> None:
+    from dataclasses import replace
+    from unittest.mock import MagicMock, patch
+
+    from app.config import settings
+
+    monkeypatch.setattr(
+        "app.services.ai_case_engine.settings",
+        replace(settings, openai_api_key="sk-test", openai_model="gpt-4o-mini"),
+    )
+    origin = client.post(
+        "/api/v1/releases",
+        json={
+            "name": "Origen llm guard",
+            "version": "1.0.0",
+            "platform": "WEB",
+            "deliverable_name": "Entregable reval llm",
+            "release_type": "NUEVO",
+            "analysis_data": {
+                "pdf_filename": "origin.pdf",
+                "features_count": 1,
+                "qa_qc_issues_count": 0,
+                "nco_issues_count": 0,
+                "tri_issues_count": 0,
+                "observations": [],
+            },
+        },
+    ).json()
+    created = client.post(
+        f"/api/v1/releases/{origin['id']}/test-cases/bulk",
+        json={
+            "test_cases": [
+                {
+                    "test_case_id": "QC-001",
+                    "component": "WEB",
+                    "test_case_name": "Validar FEAT-1",
+                    "description": "FEAT-1",
+                    "technical_story": "FEAT-1",
+                }
+            ]
+        },
+    )
+    assert created.status_code == 201, created.text
+    reval = client.post(
+        "/api/v1/releases",
+        json={
+            "name": "Reval llm guard",
+            "version": "1.0.1",
+            "platform": "WEB",
+            "deliverable_name": "Entregable reval llm",
+            "release_type": "REVALIDACION",
+            "parent_release_id": origin["id"],
+            "analysis_data": {
+                "pdf_filename": "reval.pdf",
+                "pdf_file_path": "reval.pdf",
+                "features_count": 1,
+                "qa_qc_issues_count": 1,
+                "nco_issues_count": 0,
+                "tri_issues_count": 0,
+                "observations": [],
+            },
+        },
+    ).json()
+    tickets = {
+        "functionality": [("FEAT-1", "FEAT-1: A")],
+        "qa_qc": [("BUG-1", "BUG-1: Se corrigió el error visible al usuario en el listado FEAT-1")],
+        "nco": [],
+    }
+    monkeypatch.setattr(
+        "app.services.revalidation_engine._tickets_by_section",
+        lambda _pdf: tickets,
+    )
+    monkeypatch.setattr("app.routers.releases.read_release_note_pdf", lambda _path: b"%PDF-fake")
+    fake_client = MagicMock()
+    with patch("app.services.ai_case_engine.httpx.Client") as client_cls:
+        client_cls.return_value.__enter__.return_value = fake_client
+        generated = client.post(f"/api/v1/releases/{reval['id']}/generate-cases")
+    assert generated.status_code == 200, generated.text
+    body = generated.json()
+    assert body["engine"] == "revalidation-delta"
+    assert fake_client.post.call_count == 0
+    assert {row["related_jira"] for row in body["candidates"]} == {"BUG-1"}
