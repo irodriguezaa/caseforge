@@ -28,13 +28,16 @@ const emptyForm = {
   parentReleaseId: "",
 };
 
-function needsReleaseOrigin(releaseType: ReleaseType): boolean {
-  return releaseType === "EVOLUTIVO" || releaseType === "REVALIDACION";
+function originIsRequired(releaseType: ReleaseType): boolean {
+  return releaseType === "REVALIDACION";
+}
+
+function showOriginSelector(releaseType: ReleaseType): boolean {
+  return releaseType === "REVALIDACION";
 }
 
 function releaseTypeLabel(releaseType: ReleaseType | null | undefined): string {
   if (releaseType === "NUEVO") return "Nuevo";
-  if (releaseType === "EVOLUTIVO") return "Evolutivo";
   if (releaseType === "REVALIDACION") return "Revalidación";
   return "—";
 }
@@ -84,7 +87,7 @@ export default function ReleasesPage(): React.ReactElement {
   // Look up "Release origen" candidates whenever the typed Entregable + Revalidación combo
   // could resolve to an existing Deliverable. Debounced so we don't fire on every keystroke.
   useEffect(() => {
-    if (!needsReleaseOrigin(form.releaseType) || !form.deliverableName.trim()) {
+    if (!showOriginSelector(form.releaseType) || !form.deliverableName.trim()) {
       setOriginCandidates([]);
       return;
     }
@@ -176,7 +179,10 @@ export default function ReleasesPage(): React.ReactElement {
         analysis_data: analysisResult || undefined,
         deliverable_name: form.deliverableName || null,
         release_type: form.releaseType,
-        parent_release_id: needsReleaseOrigin(form.releaseType) && form.parentReleaseId ? Number(form.parentReleaseId) : null,
+        parent_release_id:
+          showOriginSelector(form.releaseType) && form.parentReleaseId
+            ? Number(form.parentReleaseId)
+            : null,
       });
 
       // Also create an initial ReleaseWindow if dates were provided
@@ -206,8 +212,8 @@ export default function ReleasesPage(): React.ReactElement {
 
   return (
     <div className="page page-wide">
-      <p className="eyebrow">CaseForge</p>
-      <h1>Release</h1>
+      <p className="eyebrow">Apps</p>
+      <h1>Release Notes Apps</h1>
       <p className="subtitle">Gestión de releases y ciclo de calidad QC</p>
 
       {/* Structured 5-Block Creation Form */}
@@ -370,11 +376,10 @@ export default function ReleasesPage(): React.ReactElement {
                 }
               >
                 <option value="NUEVO">Nuevo</option>
-                <option value="EVOLUTIVO">Evolutivo</option>
                 <option value="REVALIDACION">Revalidación</option>
               </select>
             </div>
-            {needsReleaseOrigin(form.releaseType) && (
+            {showOriginSelector(form.releaseType) && (
               <div className="form-field">
                 <label htmlFor="parentReleaseId">Release origen</label>
                 <select
@@ -384,7 +389,11 @@ export default function ReleasesPage(): React.ReactElement {
                   onChange={(e) => setForm({ ...form, parentReleaseId: e.target.value })}
                 >
                   <option value="" disabled>
-                    {loadingOrigins ? "Buscando…" : originCandidates.length ? "Selecciona una Release" : "Sin coincidencias para este Entregable"}
+                    {loadingOrigins
+                      ? "Buscando…"
+                      : originCandidates.length
+                        ? "Selecciona una Release"
+                        : "Sin coincidencias para este Entregable"}
                   </option>
                   {originCandidates.map((r) => (
                     <option key={r.id} value={r.id}>
@@ -393,7 +402,7 @@ export default function ReleasesPage(): React.ReactElement {
                   ))}
                 </select>
                 <span className="muted" style={{ fontSize: "11px" }}>
-                  Solo aparecen versiones previas del mismo Entregable (deliverable_id), aunque el nombre del Release sea distinto.
+                  Obligatorio en Revalidación. La generación incremental usa todo el histórico del Entregable, no solo este origen.
                 </span>
               </div>
             )}
@@ -568,11 +577,9 @@ export default function ReleasesPage(): React.ReactElement {
                       ? `${release.deliverable_name}${
                           release.release_type === "REVALIDACION"
                             ? " · Revalidación"
-                            : release.release_type === "EVOLUTIVO"
-                              ? " · Evolutivo"
-                              : release.release_type === "NUEVO"
-                                ? " · Nuevo"
-                                : ""
+                            : release.release_type === "NUEVO"
+                              ? " · Nuevo"
+                              : ""
                         }`
                       : "—"}
                   </td>

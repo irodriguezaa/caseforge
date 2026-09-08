@@ -121,7 +121,9 @@ def create_qc_release_from_operativa(
 
     execution_days = calculate_business_days(operativa_release.start_date, operativa_release.end_date)
     jira_filter = operativa_release.jira_filter_url or operativa_release.jira_filter_manual
-    deliverable = _resolve_deliverable(operativa_release.entregable, db)
+    deliverable = _resolve_deliverable(
+        operativa_release.name or operativa_release.entregable, db
+    )
 
     release = Release(
         name=operativa_release.name.strip(),

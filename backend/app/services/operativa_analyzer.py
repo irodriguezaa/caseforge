@@ -103,7 +103,8 @@ def extract_rn_header(pdf_bytes: bytes) -> RnHeader:
     page1 = _extract_page1_text(pdf_bytes)
     name = _extract_name(page1)
     cluster = _cluster_from_ope_code(name)
-    entregable = _extract_entregable(page1)
+    # Entregable is the same identity as Nombre (OPE code), not the product heading.
+    entregable = name or _extract_entregable(page1)
     return RnHeader(entregable=entregable, name=name, cluster=cluster)
 
 

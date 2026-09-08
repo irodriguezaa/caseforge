@@ -15,7 +15,8 @@ export async function GET(_request: NextRequest, { params }: RouteParams): Promi
 export async function PATCH(request: NextRequest, { params }: RouteParams): Promise<NextResponse> {
   const { id } = await params;
   const payload = await request.json();
-  const response = await proxyToBackend(`/api/v1/test-cases/${id}`, {
+  const qs = request.nextUrl.search;
+  const response = await proxyToBackend(`/api/v1/test-cases/${id}${qs}`, {
     method: "PATCH",
     body: JSON.stringify(payload),
   });
@@ -24,11 +25,12 @@ export async function PATCH(request: NextRequest, { params }: RouteParams): Prom
 }
 
 export async function DELETE(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: RouteParams,
 ): Promise<NextResponse> {
   const { id } = await params;
-  const response = await proxyToBackend(`/api/v1/test-cases/${id}`, { method: "DELETE" });
+  const qs = request.nextUrl.search;
+  const response = await proxyToBackend(`/api/v1/test-cases/${id}${qs}`, { method: "DELETE" });
   if (response.status === 204) {
     return new NextResponse(null, { status: 204 });
   }

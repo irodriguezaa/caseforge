@@ -281,7 +281,7 @@ def test_qc_summary_origin_kinds_and_in_progress_counts(client, db_session) -> N
     be_draft = client.post("/api/v1/releases-be").json()
     client.patch(
         f"/api/v1/releases-be/{be_draft['id']}",
-        json={"name": "BE Cycle", "regresivo_scope": "SMOKE"},
+        json={"name": "BE Cycle", "swf": "BE Hitss", "regresivo_scope": "SMOKE"},
     )
     be = client.post(f"/api/v1/releases-be/{be_draft['id']}/create-release").json()
     client.patch(f"/api/v1/releases/{be['id']}", json={"status": "IN_PROGRESS"})

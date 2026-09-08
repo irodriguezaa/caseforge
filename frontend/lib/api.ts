@@ -55,8 +55,14 @@ export class ApiRequestError extends Error {
   }
 }
 
+const BASE_PATH = "/qcpulse";
+
+function apiUrl(path: string): string {
+  return `${BASE_PATH}${path.startsWith("/") ? path : `/${path}`}`;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(path, {
+  const response = await fetch(apiUrl(path), {
     ...init,
     cache: "no-store",
     credentials: "include",
@@ -64,8 +70,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   });
 
   if (response.status === 401 && !path.startsWith("/api/auth")) {
-    if (typeof window !== "undefined" && window.location.pathname !== "/login") {
-      window.location.assign("/login");
+    if (typeof window !== "undefined" && window.location.pathname !== apiUrl("/login")) {
+      window.location.assign(apiUrl("/login"));
     }
   }
 
@@ -149,7 +155,7 @@ export const api = {
   analyzeReleaseNote: async (file: File): Promise<ReleaseNoteAnalyzeResponse> => {
     const formData = new FormData();
     formData.append("file", file);
-    const response = await fetch("/api/releases/analyze-rn", {
+    const response = await fetch(apiUrl("/api/releases/analyze-rn"), {
       method: "POST",
       body: formData,
       cache: "no-store",
@@ -165,7 +171,7 @@ export const api = {
   analyzeOperativaRn: async (file: File): Promise<OperativaAnalysisResult> => {
     const formData = new FormData();
     formData.append("file", file);
-    const response = await fetch("/api/operativa/analyze-rn", {
+    const response = await fetch(apiUrl("/api/operativa/analyze-rn"), {
       method: "POST",
       body: formData,
       cache: "no-store",
@@ -200,7 +206,7 @@ export const api = {
   analyzeBeRn: async (file: File): Promise<BeAnalysisResult> => {
     const formData = new FormData();
     formData.append("file", file);
-    const response = await fetch("/api/releases-be/analyze-rn", {
+    const response = await fetch(apiUrl("/api/releases-be/analyze-rn"), {
       method: "POST",
       body: formData,
       cache: "no-store",
@@ -230,7 +236,7 @@ export const api = {
   exportReleaseTestCases: async (releaseId: number, releaseName: string): Promise<void> => {
     let response: Response;
     try {
-      response = await fetch(`/api/releases/${releaseId}/test-cases/export`, {
+      response = await fetch(apiUrl(`/api/releases/${releaseId}/test-cases/export`), {
         cache: "no-store",
       });
     } catch {
@@ -300,7 +306,7 @@ export const api = {
   listImportSheets: async (releaseId: number, file: File): Promise<ImportSheetsResult> => {
     const formData = new FormData();
     formData.append("file", file);
-    const response = await fetch(`/api/releases/${releaseId}/test-cases/import/sheets`, {
+    const response = await fetch(apiUrl(`/api/releases/${releaseId}/test-cases/import/sheets`), {
       method: "POST",
       body: formData,
       cache: "no-store",
@@ -315,7 +321,7 @@ export const api = {
     const formData = new FormData();
     formData.append("file", file);
     if (sheetName) formData.append("sheet_name", sheetName);
-    const response = await fetch(`/api/releases/${releaseId}/test-cases/import/preview`, {
+    const response = await fetch(apiUrl(`/api/releases/${releaseId}/test-cases/import/preview`), {
       method: "POST",
       body: formData,
       cache: "no-store",
@@ -353,7 +359,7 @@ export const api = {
   uploadCalendarIcs: async (file: File): Promise<{ status: string; bytes: number }> => {
     const formData = new FormData();
     formData.append("file", file);
-    const response = await fetch("/api/calendar/ics", { method: "POST", body: formData, cache: "no-store" });
+    const response = await fetch(apiUrl("/api/calendar/ics"), { method: "POST", body: formData, cache: "no-store" });
     const body = (await response.json().catch(() => ({}))) as { status?: string; bytes?: number; detail?: string; message?: string };
     if (!response.ok) {
       const raw = body.detail ?? body.message ?? "No se pudo cargar el .ics";
@@ -376,7 +382,7 @@ export const api = {
     formData.append("file", file);
     formData.append("view", view);
     formData.append("source", source);
-    const response = await fetch("/api/qc-tickets/import/preview", {
+    const response = await fetch(apiUrl("/api/qc-tickets/import/preview"), {
       method: "POST",
       body: formData,
       cache: "no-store",

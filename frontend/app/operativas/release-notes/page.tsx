@@ -1,6 +1,7 @@
 "use client";
 
 import { FileText, Upload } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { OperativaEpcTable } from "@/app/components/OperativaEpcTable";
@@ -14,7 +15,7 @@ import type { EpcUpdate, OperativaReleaseRead, OperativaReleaseUpdate } from "@/
 export default function OperativaReleaseNotesPage(): React.ReactElement {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
-  const { canLoadRn } = useAuth();
+  const { canLoadRn, canSeeDashboard } = useAuth();
 
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
@@ -26,6 +27,7 @@ export default function OperativaReleaseNotesPage(): React.ReactElement {
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const editorRef = useRef<HTMLDivElement>(null);
+  const entregableInputRef = useRef<HTMLInputElement>(null);
 
   // Defer native `disabled` until after hydrate. SSR + first client paint omit the
   // attribute (false). Applying disabled={true} on the first paint mismatches HTML
@@ -95,7 +97,10 @@ export default function OperativaReleaseNotesPage(): React.ReactElement {
     setAnalysisError(null);
     setPdfFile(null);
     try {
-      const fresh = await api.getOperativaRelease(row.id);
+      let fresh = await api.getOperativaRelease(row.id);
+      if (fresh.name && fresh.entregable !== fresh.name) {
+        fresh = await api.updateOperativaRelease(fresh.id, { entregable: fresh.name });
+      }
       setOperativaRelease(fresh);
     } catch {
       setOperativaRelease(row);
@@ -221,8 +226,9 @@ export default function OperativaReleaseNotesPage(): React.ReactElement {
               <label htmlFor="entregable">Entregable</label>
               <input
                 id="entregable"
+                ref={entregableInputRef}
                 placeholder="No disponible"
-                defaultValue={operativaRelease.entregable ?? ""}
+                defaultValue={operativaRelease.name ?? operativaRelease.entregable ?? ""}
                 onBlur={(e) => void patchRelease({ entregable: e.target.value || null })}
               />
             </div>
@@ -232,7 +238,13 @@ export default function OperativaReleaseNotesPage(): React.ReactElement {
                 id="operativa-name"
                 placeholder="No disponible"
                 defaultValue={operativaRelease.name ?? ""}
-                onBlur={(e) => void patchRelease({ name: e.target.value || null })}
+                onBlur={(e) => {
+                  const name = e.target.value || null;
+                  void patchRelease({ name, entregable: name });
+                  if (entregableInputRef.current) {
+                    entregableInputRef.current.value = e.target.value;
+                  }
+                }}
               />
             </div>
             <div className="form-field">
@@ -418,6 +430,14 @@ export default function OperativaReleaseNotesPage(): React.ReactElement {
             </tbody>
           </table>
         </div>
+      )}
+
+      {canSeeDashboard && (
+        <p style={{ marginTop: "1.5rem" }}>
+          <Link href="/" className="back-link">
+            ← Volver al Dashboard
+          </Link>
+        </p>
       )}
     </div>
   );

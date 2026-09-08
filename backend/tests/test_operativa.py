@@ -40,7 +40,7 @@ def test_analyze_real_rn_extracts_header_from_document_not_filename(client, real
     body = response.json()["operativa_release"]
     assert body["name"] == "OPE-AGOSTO-2026-AUP"
     assert body["cluster"] == "AUP"
-    assert body["entregable"] == "Release Claro video"
+    assert body["entregable"] == body["name"]
     assert body["pdf_filename"] == FIXTURE_PATH.name
     assert not body["name"].startswith("APMOGH")
     assert body["start_date"] is None
@@ -220,7 +220,7 @@ def test_create_qc_release_from_operativa(client, real_rn_bytes) -> None:
     assert body["qc_resources"] is None
     assert body["validation_type"] is None
     assert body["cluster"] == "AUP"
-    assert body["deliverable_name"] == "Release Claro video"
+    assert body["deliverable_name"] == "OPE-AGOSTO-2026-AUP"
     assert body["execution_days"] == 10
     assert body["status"] == "DRAFT"
 

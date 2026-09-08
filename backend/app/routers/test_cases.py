@@ -153,6 +153,27 @@ def bulk_create_test_cases(
     return TestCaseBulkCreateResult(created=rows, errors=[])
 
 
+def _assert_test_case_belongs_to_release(test_case: TestCase, release_id: int | None) -> None:
+    if release_id is not None and test_case.release_id != release_id:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND,
+            detail="Test case not found in this Release.",
+        )
+
+
+def _replace_steps(db: Session, test_case: TestCase, steps: list[dict]) -> None:
+    test_case.steps.clear()
+    db.flush()
+    for row in steps:
+        test_case.steps.append(
+            TestStep(
+                step_number=row["step_number"],
+                test_step=row["test_step"],
+                expected_result=row["expected_result"],
+            )
+        )
+
+
 @router.get("/test-cases/{test_case_id}", response_model=TestCaseReadWithSteps)
 def get_test_case(test_case_id: int, db: Session = Depends(get_db)) -> TestCase:
     stmt = (
@@ -168,12 +189,19 @@ def get_test_case(test_case_id: int, db: Session = Depends(get_db)) -> TestCase:
 
 @router.patch("/test-cases/{test_case_id}", response_model=TestCaseReadWithSteps)
 def update_test_case(
-    test_case_id: int, payload: TestCaseUpdate, db: Session = Depends(get_db)
+    test_case_id: int,
+    payload: TestCaseUpdate,
+    release_id: int | None = Query(default=None),
+    db: Session = Depends(get_db),
 ) -> TestCase:
     test_case = get_test_case_or_404(test_case_id, db)
+    _assert_test_case_belongs_to_release(test_case, release_id)
     updates = payload.model_dump(exclude_unset=True)
+    incoming_steps = updates.pop("steps", None)
     for field, value in updates.items():
         setattr(test_case, field, value)
+    if incoming_steps is not None:
+        _replace_steps(db, test_case, incoming_steps)
 
     try:
         db.commit()
@@ -184,11 +212,21 @@ def update_test_case(
             detail="test_case_id already exists in this release.",
         ) from exc
     db.refresh(test_case)
-    return test_case
+    stmt = (
+        select(TestCase)
+        .where(TestCase.id == test_case.id)
+        .options(selectinload(TestCase.steps))
+    )
+    return db.execute(stmt).scalar_one()
 
 
 @router.delete("/test-cases/{test_case_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_test_case(test_case_id: int, db: Session = Depends(get_db)) -> None:
+def delete_test_case(
+    test_case_id: int,
+    release_id: int | None = Query(default=None),
+    db: Session = Depends(get_db),
+) -> None:
     test_case = get_test_case_or_404(test_case_id, db)
+    _assert_test_case_belongs_to_release(test_case, release_id)
     db.delete(test_case)
     db.commit()

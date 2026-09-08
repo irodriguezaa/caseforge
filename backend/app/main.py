@@ -6,6 +6,7 @@ from starlette.responses import Response
 
 from app.auth import COOKIE_NAME, Role, read_session
 from app.routers.auth import router as auth_router
+from app.routers.kpis import router as kpis_router
 from app.routers.dashboard import router as dashboard_router
 from app.routers.defects import router as defects_router
 from app.routers.deliverables import router as deliverables_router
@@ -29,6 +30,7 @@ _MUTATING = {"POST", "PUT", "PATCH", "DELETE"}
 _CONSULTA_ALLOWED_PREFIXES = (
     "/api/v1/auth",
     "/api/v1/dashboard",
+    "/api/v1/kpis",
     "/api/v1/calendar",
     "/api/v1/qc-tickets",
 )
@@ -83,6 +85,7 @@ app.include_router(release_windows_router)
 app.include_router(defects_router)
 app.include_router(qc_tickets_router)
 app.include_router(dashboard_router)
+app.include_router(kpis_router)
 app.include_router(calendar_router)
 
 # Deliverable / Release lineage / Revalidations (Alternative C)

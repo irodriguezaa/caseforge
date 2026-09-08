@@ -8,7 +8,7 @@ the QC Release after Paso 4, not selected in the wizard.
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, String, Text, func
+from sqlalchemy import JSON, DateTime, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -24,6 +24,8 @@ class BeRelease(Base):
     name: Mapped[str | None] = mapped_column(String(200), nullable=True)
     entregable: Mapped[str | None] = mapped_column(String(200), nullable=True)
     swf: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    # JSON list: ["Todos"] or one-or-more of Global/AUP/CENAM/Andina/Dominicana. Not a sixth cluster.
+    clusters: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Optional: some BE regresivos arrive with no Release Note.
     pdf_filename: Mapped[str | None] = mapped_column(String(255), nullable=True)

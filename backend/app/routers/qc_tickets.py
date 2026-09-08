@@ -68,7 +68,7 @@ async def preview_qc_ticket_import(
         if (ticket.issue_key, ticket.view, ticket.source) in existing_keys:
             errors.append(
                 QcTicketImportRowError(
-                    issue_key=ticket.issue_key, message=f"'{ticket.issue_key}' ya existe en CaseForge."
+                    issue_key=ticket.issue_key, message=f"'{ticket.issue_key}' ya existe en QC Pulse."
                 )
             )
         else:
@@ -391,7 +391,7 @@ def preview_jira_sync(
         identity = (ticket.issue_key, ticket.view, ticket.source)
         if identity in existing_pairs:
             errors.append(
-                QcTicketImportRowError(issue_key=ticket.issue_key, message=f"'{ticket.issue_key}' ya existe en CaseForge.")
+                QcTicketImportRowError(issue_key=ticket.issue_key, message=f"'{ticket.issue_key}' ya existe en QC Pulse.")
             )
         elif identity in seen_in_batch:
             errors.append(
