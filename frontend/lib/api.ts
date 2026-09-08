@@ -74,6 +74,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       cache: "no-store",
       credentials: "include",
       headers,
+      signal: init?.signal ?? AbortSignal.timeout(20_000),
     });
   } catch {
     throw new ApiRequestError(0, "No se pudo contactar el servidor. Reintenta en unos segundos.");

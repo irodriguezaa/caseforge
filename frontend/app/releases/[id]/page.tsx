@@ -91,12 +91,16 @@ export default function ReleaseDetailPage(): React.ReactElement {
   useEffect(load, [releaseId]);
 
   const handleStatusChange = async (status: ReleaseStatus): Promise<void> => {
+    if (!release) return;
+    const previous = release;
     setActionError(null);
     setStatusBusy(true);
+    setRelease({ ...release, status });
     try {
       const updated = await api.updateRelease(releaseId, { status });
       setRelease(updated);
     } catch (err) {
+      setRelease(previous);
       setActionError(err instanceof ApiRequestError ? err.message : "No se pudo actualizar el estado.");
     } finally {
       setStatusBusy(false);
