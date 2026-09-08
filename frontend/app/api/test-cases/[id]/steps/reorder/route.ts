@@ -11,6 +11,6 @@ export async function PUT(request: NextRequest, { params }: RouteParams): Promis
     method: "PUT",
     body,
   });
-  const body = await response.json();
-  return NextResponse.json(body, { status: response.status });
+  const payload = await response.json();
+  return NextResponse.json(payload, { status: response.status });
 }

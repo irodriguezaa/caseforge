@@ -18,6 +18,6 @@ export async function POST(request: NextRequest, { params }: RouteParams): Promi
     method: "POST",
     body,
   });
-  const body = await response.json();
-  return NextResponse.json(body, { status: response.status });
+  const payload = await response.json();
+  return NextResponse.json(payload, { status: response.status });
 }

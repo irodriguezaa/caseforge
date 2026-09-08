@@ -15,8 +15,8 @@ export async function POST(request: NextRequest, { params }: RouteParams): Promi
       { method: "POST", body, headers: { "Content-Type": "application/json" } },
       { timeoutMs: bulkImportTimeoutMs },
     );
-    const body = await response.json();
-    return NextResponse.json(body, { status: response.status });
+    const payload = await response.json();
+    return NextResponse.json(payload, { status: response.status });
   } catch {
     return NextResponse.json({ status: "error", message: "Backend unavailable" }, { status: 503 });
   }

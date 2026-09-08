@@ -11,8 +11,8 @@ export async function PATCH(request: NextRequest, { params }: RouteParams): Prom
     method: "PATCH",
     body,
   });
-  const body = await response.json();
-  return NextResponse.json(body, { status: response.status });
+  const payload = await response.json();
+  return NextResponse.json(payload, { status: response.status });
 }
 
 export async function DELETE(
