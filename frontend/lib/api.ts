@@ -64,12 +64,16 @@ function apiUrl(path: string): string {
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
+  const headers = new Headers(init?.headers);
+  if (init?.body != null && init.body !== "" && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
   try {
     response = await fetch(apiUrl(path), {
       ...init,
       cache: "no-store",
       credentials: "include",
-      headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+      headers,
     });
   } catch {
     throw new ApiRequestError(0, "No se pudo contactar el servidor. Reintenta en unos segundos.");
