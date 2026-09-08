@@ -1,6 +1,7 @@
 # QC-4 production stack. Do not use docker-compose.yml bind mounts on this host.
 # Postgres is not published to the host (Django already owns :5432).
 #
+#   ./scripts/qc4.sh up
 #   docker compose -f docker-compose.qc4.yml --env-file .env up -d --build
 #
 name: qcpulse
