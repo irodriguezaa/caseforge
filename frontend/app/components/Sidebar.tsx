@@ -100,7 +100,7 @@ export function Sidebar(): React.ReactElement {
   return (
     <aside className="sidebar">
       <Link href={canSeeDashboard ? "/" : "/releases"} className="sidebar-brand">
-        <img className="sidebar-logo" src="/claro-video-logo.png" alt="Claro video" />
+        <img className="sidebar-logo" src="/qcpulse/claro-video-logo.png" alt="Claro video" />
         <span className="brand-name">QC Pulse</span>
         <span className="brand-tag">Plataforma de Calidad</span>
       </Link>

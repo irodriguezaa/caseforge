@@ -31,10 +31,10 @@ export default function LoginPage(): React.ReactElement {
   return (
     <div className="login-page">
       <div className="login-backdrop" aria-hidden="true">
-        <img className="login-backdrop-logo" src="/claro-video-logo.png" alt="" />
+        <img className="login-backdrop-logo" src="/qcpulse/claro-video-logo.png" alt="" />
       </div>
       <form className="login-card" onSubmit={(event) => void handleSubmit(event)}>
-        <img className="login-claro-logo" src="/claro-video-logo.png" alt="Claro video" />
+        <img className="login-claro-logo" src="/qcpulse/claro-video-logo.png" alt="Claro video" />
         <div className="login-heading">
           <h1 className="login-title">QC Pulse</h1>
           <p className="login-subtitle">Plataforma de Calidad</p>

@@ -49,7 +49,7 @@ a { color: inherit; }
   height: min(28vw, 280px);
   z-index: -1;
   pointer-events: none;
-  background: url("/claro-video-logo.png") right bottom / contain no-repeat;
+  background: url("/qcpulse/claro-video-logo.png") right bottom / contain no-repeat;
   opacity: 0.07;
   filter: saturate(1.05);
 }
@@ -87,9 +87,11 @@ a { color: inherit; }
 }
 .login-backdrop-logo {
   position: absolute;
-  right: -6%;
-  bottom: 6%;
-  width: min(72vw, 720px);
+  right: 4%;
+  bottom: 8%;
+  width: auto;
+  max-width: min(72vw, 720px);
+  max-height: 28vh;
   height: auto;
   opacity: 0.14;
   pointer-events: none;
