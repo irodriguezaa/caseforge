@@ -23,6 +23,25 @@ def test_login_sets_httponly_cookie_and_me_returns_role(client) -> None:
     assert "qc_session" in client.cookies
 
 
+def test_successful_login_is_recorded(client, db_session) -> None:
+    from app.models.login_event import LoginEvent
+
+    login_as(client, "tester@test.com", "tester-pass")
+    login_as(client, "tester@test.com", "tester-pass")
+    rows = db_session.query(LoginEvent).filter(LoginEvent.email == "tester@test.com").all()
+    assert len(rows) == 2
+    assert rows[0].role == "tester"
+
+
+def test_failed_login_is_not_recorded(client, db_session) -> None:
+    from app.models.login_event import LoginEvent
+
+    before = db_session.query(LoginEvent).count()
+    client.cookies.clear()
+    client.post("/api/v1/auth/login", json={"email": "jefe@test.com", "password": "wrong"})
+    assert db_session.query(LoginEvent).count() == before
+
+
 def test_login_rejects_bad_password(client) -> None:
     client.cookies.clear()
     response = client.post(

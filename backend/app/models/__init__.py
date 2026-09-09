@@ -4,6 +4,7 @@ from app.models.defect import Defect, DefectStatus
 from app.models.be_release import BeRelease
 from app.models.deliverable import Deliverable
 from app.models.epc import Epc, QcSuggestion
+from app.models.login_event import LoginEvent
 from app.models.operativa_release import OperativaRelease
 from app.models.qc_ticket import QcTicket, QcTicketPriority, QcTicketSource, QcTicketView
 from app.models.release import Release, ReleaseStatus, ReleaseType
@@ -21,6 +22,7 @@ __all__ = [
     "Deliverable",
     "Epc",
     "QcSuggestion",
+    "LoginEvent",
     "OperativaRelease",
     "QcTicket",
     "QcTicketPriority",
