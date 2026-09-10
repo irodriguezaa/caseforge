@@ -1,8 +1,7 @@
 """Release CRUD endpoints.
 
-Apps and Operativas can be hard-deleted (including the stored Release Note). Release BE
-keeps the DRAFT-only delete rule. A Release that is origin of Revalidaciones cannot be
-deleted.
+Apps, Operativas and Release BE can be hard-deleted (including the stored Release Note).
+A Release that is origin of Revalidaciones cannot be deleted.
 """
 
 from urllib.parse import quote
@@ -18,6 +17,7 @@ from app.db import get_db
 from app.deps.auth import get_current_user, require_jefe
 from app.models.deliverable import Deliverable
 from app.models.epc import Epc
+from app.models.be_release import BeRelease
 from app.models.operativa_release import OperativaRelease
 from app.models.release import Release, ReleaseStatus, ReleaseType
 from app.models.release_analysis import ReleaseAnalysis
@@ -379,20 +379,15 @@ def hard_delete_release_and_notes(db: Session, release: Release) -> None:
             status.HTTP_409_CONFLICT,
             detail="No se puede eliminar una Release que es origen de otras Releases (Revalidaciones).",
         )
-    if release.be_release_id is not None and release.status != ReleaseStatus.DRAFT:
-        raise HTTPException(
-            status.HTTP_409_CONFLICT,
-            detail=(
-                "Only DRAFT Release BE can be deleted. Releases with activity must be moved to "
-                "CANCELLED instead of being deleted."
-            ),
-        )
     pdf_paths = [row.pdf_file_path for row in release.analyses if row.pdf_file_path]
     operativa = release.operativa_release
     operativa_id = operativa.id if operativa is not None else None
+    be = release.be_release
+    be_id = be.id if be is not None else None
     if operativa and operativa.pdf_file_path:
         pdf_paths.append(operativa.pdf_file_path)
     release.operativa_release_id = None
+    release.be_release_id = None
     db.flush()
     db.delete(release)
     db.flush()
@@ -400,6 +395,10 @@ def hard_delete_release_and_notes(db: Session, release: Release) -> None:
         leftover = db.get(OperativaRelease, operativa_id)
         if leftover is not None:
             db.delete(leftover)
+    if be_id is not None:
+        leftover_be = db.get(BeRelease, be_id)
+        if leftover_be is not None:
+            db.delete(leftover_be)
     db.commit()
     for path in pdf_paths:
         delete_release_note_pdf(path)

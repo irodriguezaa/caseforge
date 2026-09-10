@@ -454,3 +454,17 @@ def test_can_delete_in_progress_be_release(client) -> None:
     assert response.status_code == 204
     assert client.get(f"/api/v1/releases/{qc['id']}").status_code == 404
     assert client.get(f"/api/v1/releases-be/{created['id']}").status_code == 404
+
+
+def test_can_delete_cancelled_be_release(client) -> None:
+    created = client.post("/api/v1/releases-be").json()
+    client.patch(
+        f"/api/v1/releases-be/{created['id']}",
+        json={"name": "BE-CANCELLED", "swf": "BE Hitss", "regresivo_scope": "SMOKE"},
+    )
+    qc = client.post(f"/api/v1/releases-be/{created['id']}/create-release").json()
+    client.patch(f"/api/v1/releases/{qc['id']}", json={"status": "CANCELLED"})
+    response = client.delete(f"/api/v1/releases/{qc['id']}")
+    assert response.status_code == 204, response.text
+    assert client.get(f"/api/v1/releases/{qc['id']}").status_code == 404
+    assert client.get(f"/api/v1/releases-be/{created['id']}").status_code == 404
