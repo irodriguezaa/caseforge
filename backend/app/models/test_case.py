@@ -96,6 +96,7 @@ class TestCase(Base):
     technical_epic: Mapped[str | None] = mapped_column(String(250), nullable=True)
     technical_story: Mapped[str | None] = mapped_column(String(500), nullable=True)
     scenario_origin: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
     related_rn: Mapped[str | None] = mapped_column(String(250), nullable=True)
     confidence: Mapped[str | None] = mapped_column(String(16), nullable=True)
     complexity: Mapped[str | None] = mapped_column(String(16), nullable=True)

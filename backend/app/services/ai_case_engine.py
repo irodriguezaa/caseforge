@@ -34,6 +34,7 @@ from app.services.gherkin_coverage import (
 from app.services.jira_generation import fetch_artifacts_for_keys
 from app.services.qc_candidate_rules import apply_qc_rules
 from app.services.release_note_analyzer import iter_rn_ticket_rows
+from app.services.rn_source_type import stamp_source_types
 
 ENGINE_VERSION = "ai-v4"
 logger = logging.getLogger(__name__)
@@ -255,6 +256,8 @@ def _candidate_from_functionality_ticket(
         review_required=True,
         basic_validation=True,
         priority="CRITICAL",
+        generation_origin="nuevo-functionality",
+        source_type="functionality",
     )
 
 
@@ -613,6 +616,7 @@ def generate_release_app_candidates(
 
     candidates = _keep_scoped_candidates(candidates, allowed or None)
     candidates = apply_qc_rules(candidates, release_context=release_context, stats=stats)
+    stamp_source_types(candidates)
     covered = sorted(_covered_ids(candidates))
     required = [unit.coverage_id for unit in inventory]
     uncovered = [cid for cid in required if cid not in set(covered)]

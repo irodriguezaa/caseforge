@@ -139,6 +139,59 @@ def _search_children(client, parent_key: str) -> list[dict[str, Any]]:
     return issues
 
 
+def fetch_issuetypes_for_keys(keys: list[str]) -> dict[str, str]:
+    """One JQL search for issuetype only. Empty if Jira is missing or a key 404s.
+
+    Used to split RN QA/QC rows into QA Bug vs QC Bug. Does not load epics, children, or Gherkin.
+    """
+    unique: list[str] = []
+    seen: set[str] = set()
+    for key in keys:
+        normalized = (key or "").strip().upper()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        unique.append(normalized)
+    if not unique:
+        return {}
+    try:
+        client_cm = _client(timeout=_GENERATION_TIMEOUT)
+    except JiraNotConfiguredError:
+        return {}
+
+    found: dict[str, str] = {}
+    try:
+        with client_cm as client:
+            for start in range(0, len(unique), 50):
+                chunk = unique[start : start + 50]
+                jql = "key in (" + ", ".join(chunk) + ")"
+                next_page_token: str | None = None
+                while True:
+                    body: dict[str, Any] = {
+                        "jql": jql,
+                        "maxResults": 100,
+                        "fields": ["issuetype"],
+                    }
+                    if next_page_token:
+                        body["nextPageToken"] = next_page_token
+                    response = client.post("/rest/api/3/search/jql", json=body)
+                    if response.status_code != 200:
+                        break
+                    payload = response.json()
+                    for issue in payload.get("issues") or []:
+                        key = str(issue.get("key") or "").strip().upper()
+                        fields = issue.get("fields") or {}
+                        name = ((fields.get("issuetype") or {}).get("name") or "").strip()
+                        if key and name:
+                            found[key] = name
+                    next_page_token = payload.get("nextPageToken") or None
+                    if not next_page_token:
+                        break
+    except JiraApiError:
+        return found
+    return found
+
+
 def fetch_artifacts_for_keys(keys: list[str]) -> list[dict[str, Any]]:
     """Loads RN functionality tickets from Jira. Empty if Jira is not configured or a key 404s.
 

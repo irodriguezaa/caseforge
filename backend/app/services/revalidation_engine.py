@@ -17,6 +17,7 @@ from app.schemas.case_generation import (
     GenerateCasesResponse,
 )
 from app.services.ai_case_engine import _tickets_by_section
+from app.services.rn_source_type import stamp_source_types
 
 _JIRA_KEY = re.compile(r"\b[A-Z][A-Z0-9]+-\d+\b")
 _OBSERVABLE = re.compile(
@@ -233,6 +234,7 @@ def _incremental_fix_candidate(
         basic_validation=False,
         priority="CRITICAL",
         generation_origin=f"incremental-{kind}",
+        source_type="nco" if kind == "nco" else None,
         origin_release_id=origin_release_id,
         origin_release_name=origin_release_name,
         related_origin_case_ids=related_origin,
@@ -279,6 +281,7 @@ def _functional_change_candidate(
         basic_validation=False,
         priority="CRITICAL",
         generation_origin="incremental-functional-change",
+        source_type="functionality",
         origin_release_id=origin_release_id,
         origin_release_name=origin_release_name,
         related_origin_case_ids=related_origin,
@@ -334,6 +337,7 @@ def candidates_from_incremental_plan(
                 kind="nco",
             )
         )
+    stamp_source_types(candidates)
     return candidates
 
 
@@ -355,6 +359,8 @@ def stamp_incremental_traceability(
     candidate.related_origin_case_ids = related
     if not candidate.generation_origin:
         candidate.generation_origin = "incremental-new-functionality"
+    if not candidate.source_type:
+        candidate.source_type = "functionality"
     note = "Generación incremental: funcionalidad nueva del RN; pipeline completo (Jira/Gherkin/motor). "
     if origin_release_name:
         note += f"Release origen declarado: {origin_release_name}. "
@@ -438,6 +444,7 @@ def _fix_candidate(
         basic_validation=False,
         priority="CRITICAL",
         generation_origin=f"revalidation-{kind}",
+        source_type="nco" if kind == "nco" else None,
         origin_release_id=origin_release_id,
         origin_release_name=origin_release_name,
         related_origin_case_ids=related_origin,
@@ -479,6 +486,7 @@ def _functional_delta_candidate(
         basic_validation=False,
         priority="CRITICAL",
         generation_origin="revalidation-functional-delta",
+        source_type="functionality",
         origin_release_id=origin_release_id,
         origin_release_name=origin_release_name,
         applied_rules=["revalidation-delta"],
@@ -614,6 +622,7 @@ def generate_revalidation_candidates(
                 "marcado para revisión de QC. No se inventó un Test Case."
             )
 
+    stamp_source_types(candidates)
     message = (
         f"Revalidación respecto de {origin_release_name}: se propusieron {len(candidates)} caso(s) de delta "
         f"(fixes/cambios). No se copiaron los {len(origin_cases)} Test Case(s) del origen. La IA propone; QC decide."

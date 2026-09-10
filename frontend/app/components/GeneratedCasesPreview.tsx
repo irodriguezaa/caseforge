@@ -5,6 +5,7 @@ import { useState } from "react";
 import { downloadCandidatesExcel } from "@/lib/exportGeneratedCandidates";
 import { stripDeviceFromCaseName } from "@/lib/qcEffort";
 import type { GenerateCasesResponse } from "@/lib/types";
+import { formatRnSourceType } from "@/lib/types";
 
 export function GeneratedCasesPreview({
   result,
@@ -74,6 +75,9 @@ export function GeneratedCasesPreview({
                 )}
                 {candidate.basic_validation && (
                   <span className="badge badge-neutral">validación básica</span>
+                )}
+                {candidate.source_type && (
+                  <span className="badge badge-neutral">{formatRnSourceType(candidate.source_type)}</span>
                 )}
               </div>
               <p>{candidate.description}</p>

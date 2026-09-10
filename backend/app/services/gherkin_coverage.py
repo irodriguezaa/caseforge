@@ -307,6 +307,7 @@ def _candidate(
         review_required=True,
         basic_validation=False,
         priority=classify_priority(functional_name, steps, "; ".join(test_data_parts) or None),
+        source_type="functionality",
     )
 
 

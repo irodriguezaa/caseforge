@@ -591,6 +591,7 @@ def merge_candidates(group: list[GeneratedCaseCandidate]) -> GeneratedCaseCandid
         covers=list(dict.fromkeys(extra_covers)),
         applied_rules=list(dict.fromkeys(extra_rules)),
         generation_origin=primary.generation_origin,
+        source_type=primary.source_type,
         origin_release_id=primary.origin_release_id,
         origin_release_name=primary.origin_release_name,
         related_origin_case_ids=list(primary.related_origin_case_ids or []),

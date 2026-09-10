@@ -139,6 +139,7 @@ def persist_candidates(
             technical_epic=(candidate.related_functionality or None),
             technical_story=(candidate.related_jira or None),
             scenario_origin=_scenario_origin(candidate),
+            source_type=(candidate.source_type or None),
             related_rn=(candidate.related_rn or None),
             confidence=candidate.confidence,
             complexity=complexity,

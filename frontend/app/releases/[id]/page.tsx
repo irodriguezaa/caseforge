@@ -16,6 +16,7 @@ import { useAuth } from "@/lib/auth";
 import { BE_REGRESIVO_SCOPE_LABEL, SHOW_QCO_ZEPHYR_PUBLISH } from "@/lib/constants";
 import { QC_ESTIMATION_TOOLTIP, QC_OPERATIVA_ESTIMATION_TOOLTIP, estimateOperativaEffort, estimateReleaseEffort, stripDeviceFromCaseName } from "@/lib/qcEffort";
 import type { CoverageMatrixResponse, EpcRead, GenerateCasesResponse, PublishCasesResponse, Release, ReleaseAnalysis, ReleaseStatus, TestCase } from "@/lib/types";
+import { formatRnSourceType } from "@/lib/types";
 
 const emptyForm = {
   test_case_id: "",
@@ -279,6 +280,8 @@ export default function ReleaseDetailPage(): React.ReactElement {
 
   const isBe = Boolean(release.be_release_id);
   const isOperativa = Boolean(release.operativa_release_id);
+  const isApp = !isBe && !isOperativa;
+  const caseTableCols = isApp ? 9 : 8;
   const backHref = isBe ? "/releases-be" : isOperativa ? "/operativas/release-notes" : "/releases";
   const backLabel = isBe
     ? "← Volver a Release BE"
@@ -722,6 +725,7 @@ export default function ReleaseDetailPage(): React.ReactElement {
           <tr>
             <th>ID</th>
             <th>Nombre</th>
+            {isApp ? <th>Type</th> : null}
             <th>Componente</th>
             <th>Ecosistema</th>
             <th>Dispositivo</th>
@@ -739,6 +743,7 @@ export default function ReleaseDetailPage(): React.ReactElement {
             >
               <td>{testCase.test_case_id}</td>
               <td>{isOperativa ? stripDeviceFromCaseName(testCase.test_case_name, testCase.device) : testCase.test_case_name}</td>
+              {isApp ? <td>{formatRnSourceType(testCase.source_type)}</td> : null}
               <td>{testCase.component}</td>
               <td>{testCase.ecosystem ?? "—"}</td>
               <td>{testCase.device ?? "—"}</td>
@@ -790,7 +795,7 @@ export default function ReleaseDetailPage(): React.ReactElement {
           ))}
           {visibleCases.length === 0 && (
             <tr>
-              <td colSpan={8} className="muted">
+              <td colSpan={caseTableCols} className="muted">
                 {testCases.length === 0 ? "Sin test cases todavía." : "Ningún Test Case para ese dispositivo."}
               </td>
             </tr>

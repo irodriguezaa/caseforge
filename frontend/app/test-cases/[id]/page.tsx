@@ -7,6 +7,7 @@ import { StatusBadge } from "@/app/components/StatusBadge";
 import { api, ApiRequestError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import type { TestCase, TestCaseWithSteps, TestStep } from "@/lib/types";
+import { formatRnSourceType } from "@/lib/types";
 
 const emptyStepForm = { step_number: 1, test_step: "", expected_result: "" };
 
@@ -110,6 +111,7 @@ export default function TestCaseDetailPage(): React.ReactElement {
       </p>
       <p>
         <StatusBadge status={testCase.priority} /> <StatusBadge status={testCase.test_type} />{" "}
+        {testCase.source_type ? <StatusBadge status={formatRnSourceType(testCase.source_type)} /> : null}{" "}
         <StatusBadge status={testCase.status} />
       </p>
       {testCase.description && <p>{testCase.description}</p>}

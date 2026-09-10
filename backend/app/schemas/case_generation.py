@@ -83,6 +83,7 @@ class GeneratedCaseCandidate(BaseModel):
     component: str | None = None
     applied_rules: list[str] = Field(default_factory=list)
     generation_origin: str | None = None
+    source_type: str | None = None
     origin_release_id: int | None = None
     origin_release_name: str | None = None
     related_origin_case_ids: list[str] = Field(default_factory=list)

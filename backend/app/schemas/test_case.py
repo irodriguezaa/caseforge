@@ -32,6 +32,7 @@ class TestCaseBase(BaseModel):
     technical_epic: str | None = Field(default=None, max_length=250)
     technical_story: str | None = Field(default=None, max_length=500)
     scenario_origin: str | None = None
+    source_type: str | None = Field(default=None, max_length=32)
     related_rn: str | None = Field(default=None, max_length=250)
     confidence: str | None = Field(default=None, max_length=16)
     complexity: str | None = Field(default=None, max_length=16)

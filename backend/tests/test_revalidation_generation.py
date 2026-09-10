@@ -1,6 +1,16 @@
 """Revalidación delta generation for Release Apps."""
 
+import pytest
+
 from app.services.revalidation_engine import generate_revalidation_candidates, nco_has_validation_evidence
+
+
+@pytest.fixture(autouse=True)
+def _stub_issuetypes(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.services.jira_generation.fetch_issuetypes_for_keys",
+        lambda _keys: {},
+    )
 
 
 def _origin_cases(*keys: str) -> list[dict]:
@@ -117,6 +127,30 @@ def test_qc_bug_generates_fix_coverage_not_full_feature_set() -> None:
     assert result.candidates[0].origin_release_id == 1
     assert "QC-001" in result.candidates[0].related_origin_case_ids
     assert result.candidates[0].generation_origin == "revalidation-qa-qc"
+    assert result.candidates[0].source_type == "qa_qc"
+
+
+def test_qa_qc_source_type_splits_from_jira_issuetype(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.services.jira_generation.fetch_issuetypes_for_keys",
+        lambda keys: {
+            "WEBCL-3849": "QA Bug",
+            "WEBCL-3900": "QC Bug",
+        },
+    )
+    result = _run(
+        {
+            "functionality": [("FEAT-1", "FEAT-1: Funcionalidad A")],
+            "qa_qc": [
+                ("WEBCL-3849", "WEBCL-3849: parametro de api_version"),
+                ("WEBCL-3900", "WEBCL-3900: Error 404 al no tener región"),
+            ],
+            "nco": [],
+        }
+    )
+    by_jira = {row.related_jira: row.source_type for row in result.candidates}
+    assert by_jira["WEBCL-3849"] == "qa_bug"
+    assert by_jira["WEBCL-3900"] == "qc_bug"
 
 
 def test_qa_bug_generates_fix_coverage() -> None:
@@ -129,6 +163,7 @@ def test_qa_bug_generates_fix_coverage() -> None:
     )
     assert {row.related_jira for row in result.candidates} == {"QABG-22"}
     assert result.candidates[0].origin_release_id == 1
+    assert result.candidates[0].source_type == "qa_qc"
 
 
 def test_nco_without_evidence_is_not_invented() -> None:
@@ -159,6 +194,7 @@ def test_nco_with_evidence_generates_coverage() -> None:
     )
     assert {row.related_jira for row in result.candidates} == {"NCO-9"}
     assert result.candidates[0].generation_origin == "revalidation-nco"
+    assert result.candidates[0].source_type == "nco"
 
 
 def test_new_functionality_key_generates_delta_only() -> None:
@@ -174,6 +210,7 @@ def test_new_functionality_key_generates_delta_only() -> None:
     )
     assert {row.related_jira for row in result.candidates} == {"FEAT-99"}
     assert result.candidates[0].generation_origin == "revalidation-functional-delta"
+    assert result.candidates[0].source_type == "functionality"
 
 
 def test_nuevo_still_uses_standard_generation(client, monkeypatch, tmp_path) -> None:

@@ -3,12 +3,22 @@
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from app.services.revalidation_engine import plan_incremental_generation
 from tests.test_case_generation import (
     WEB_RN,
     _WEB_FEATURES,
     _create_app_release_from_pdf,
 )
+
+
+@pytest.fixture(autouse=True)
+def _stub_issuetypes(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.services.jira_generation.fetch_issuetypes_for_keys",
+        lambda _keys: {},
+    )
 
 
 def _origin_cases(*keys: str, generated: bool = True) -> list[dict]:
@@ -214,3 +224,5 @@ def test_incremental_qa_nco_is_deterministic_and_does_not_call_llm(
     assert set(by_jira) == {"QCBG-10", "NCO-9"}
     assert by_jira["QCBG-10"]["generation_origin"] == "incremental-qa-qc"
     assert by_jira["NCO-9"]["generation_origin"] == "incremental-nco"
+    assert by_jira["QCBG-10"]["source_type"] == "qa_qc"
+    assert by_jira["NCO-9"]["source_type"] == "nco"

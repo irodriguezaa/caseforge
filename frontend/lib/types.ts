@@ -62,6 +62,22 @@ export interface BulkCreateResult {
 export type TestCaseType = "FUNCTIONAL" | "REGRESSION" | "SMOKE" | "UI" | "PERFORMANCE" | "OTHER";
 export type TestCaseStatus = "UNEXECUTED" | "PASS" | "FAIL" | "BLOCKED" | "N_A";
 
+const RN_SOURCE_TYPE_LABEL: Record<string, string> = {
+  functionality: "Funcionalidad",
+  nco: "NCO",
+  tri: "TRI",
+  qa_bug: "QA Bug",
+  qc_bug: "QC Bug",
+  qa_qc: "QA/QC Bug",
+};
+
+export function formatRnSourceType(value?: string | null): string {
+  if (!value) {
+    return "—";
+  }
+  return RN_SOURCE_TYPE_LABEL[value] ?? value;
+}
+
 export interface ReleaseAnalysis {
   id?: number;
   release_id?: number | null;
@@ -133,6 +149,7 @@ export interface GeneratedCaseCandidate {
   group_id?: string | null;
   interaction_points?: string[];
   hn_source?: string | null;
+  source_type?: string | null;
 }
 
 export interface GenerateCasesResponse {
@@ -323,6 +340,7 @@ export interface TestCase {
   duplicate_status?: string | null;
   group_id?: string | null;
   hn_source?: string | null;
+  source_type?: string | null;
   created_at: string;
   updated_at: string;
 }

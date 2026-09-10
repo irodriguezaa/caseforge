@@ -183,6 +183,8 @@ def test_generate_from_web_rn_proposes_functionality_candidates_without_persisti
     after = client.get(f"/api/v1/releases/{release_id}/test-cases").json()
     assert len(after) == 5
     assert all(row["generated_by_engine"] is True for row in after)
+    assert all(row["source_type"] == "functionality" for row in after)
+    assert all(row["source_type"] == "functionality" for row in body["candidates"])
     assert body["test_case_count"] == 5
     from app.services.qc_effort import estimate_release
 
