@@ -14,6 +14,7 @@ from app.schemas.matrix_preview import (
     PreviewTestCase,
 )
 from app.services.operativa_engine.coverage_matrix import CHANNEL_EMAIL
+from app.services.operativa_engine.devices import ecosystem_of
 from app.services.operativa_engine.matrix_steps import extract_countries
 from app.services.operativa_engine.use_cases import FunctionalUseCase, extract_use_cases
 
@@ -154,7 +155,7 @@ def _preview_case(
         behavior_title=row.behavior_title,
         interaction_points=list(row.interaction_points),
         channel=row.channel,
-        ecosystem=row.ecosystem,
+        ecosystem=ecosystem_of(device) if device else row.ecosystem,
         device=device,
         country=country,
         use_case_key=use_case.key,

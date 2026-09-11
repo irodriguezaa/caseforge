@@ -59,14 +59,17 @@ def test_ott_and_iptv_title_keeps_all_three_devices() -> None:
     devices = set()
     for row in in_scope:
         devices.update(row.applicable_devices)
-    assert devices == {"ADR", "ADT"}
-    assert all(row.ecosystem == "OTT" for row in in_scope)
+    assert devices == {"ADR", "ADT", "STB"}
     preview = expand_matrix_preview(matrix)
-    assert {item.device for item in preview} == {"ADR", "ADT"}
-    assert len(preview) == 2
+    assert {item.device for item in preview} == {"ADR", "ADT", "STB"}
+    assert len(preview) == 3
+    by_device = {item.device: item.ecosystem for item in preview}
+    assert by_device["ADR"] == "OTT"
+    assert by_device["ADT"] == "OTT"
+    assert by_device["STB"] == "IPTV"
 
 
-def test_android_hns_expand_adr_and_adt_not_stb_when_header_mentions_iptv() -> None:
+def test_android_hns_expand_adr_adt_and_stb_when_release_has_three_devices() -> None:
     epc = Epc(
         id=1,
         operativa_release_id=1,
@@ -80,7 +83,7 @@ def test_android_hns_expand_adr_and_adt_not_stb_when_header_mentions_iptv() -> N
         qc_suggestion=QcSuggestion.SUGERIDO_INCLUIR,
         include_in_qc=True,
         alcance_funcional=None,
-        dispositivos_aplicables=["STB"],
+        dispositivos_aplicables=["Android", "Android TV para STV", "STB (Android TV)"],
     )
     blob = (
         "HN001 BRF-17892_CENAM | OTT e IPTV | Deshabilitar politicas de Google en dispositivos Android\n"
@@ -96,8 +99,10 @@ def test_android_hns_expand_adr_and_adt_not_stb_when_header_mentions_iptv() -> N
     in_scope = [row for row in matrix.rows if row.scope_status == "IN_SCOPE"]
     assert len(in_scope) == 3
     for row in in_scope:
-        assert row.ecosystem == "OTT"
-        assert set(row.applicable_devices) == {"ADR", "ADT"}
+        assert set(row.applicable_devices) == {"ADR", "ADT", "STB"}
     preview = expand_matrix_preview(matrix)
-    assert len(preview) == 6
-    assert {item.device for item in preview} == {"ADR", "ADT"}
+    assert len(preview) == 9
+    assert {item.device for item in preview} == {"ADR", "ADT", "STB"}
+    assert sum(1 for item in preview if item.device == "STB" and item.ecosystem == "IPTV") == 3
+    assert sum(1 for item in preview if item.device == "ADR" and item.ecosystem == "OTT") == 3
+    assert sum(1 for item in preview if item.device == "ADT" and item.ecosystem == "OTT") == 3

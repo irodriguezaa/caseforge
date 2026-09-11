@@ -33,7 +33,7 @@ from app.services.operativa_engine.hn_roles import (
 )
 from app.services.operativa_engine.jira_context import BrfContextBundle, fetch_brf_context_bundle
 
-ENGINE_VERSION = "operativa-v4.2"
+ENGINE_VERSION = "operativa-v4.3"
 
 CHANNEL_EMAIL = "Email"
 
@@ -474,13 +474,13 @@ def _behavior_ecosystem(hn: HistoriaNegocio, group: _BrfGroup, channel: str | No
         return None
     title = hn_title(hn.text).lower()
     text = hn.text.lower()
-    if _hn_android_family(hn):
-        return ECOSYSTEM_OTT
     title_ott = bool(re.search(r"\bott\b", title))
     title_iptv = bool(re.search(r"\biptv\b", title))
     blob = f"{title} {text}"
     # "OTT e IPTV" in the BRF header copied into the HN is dual, not IPTV-only.
     if (title_ott and title_iptv) or re.search(r"\bott\s+[ey]\s+iptv\b", blob):
+        return None
+    if _hn_android_family(hn) and group.ecosystem is None:
         return None
     if "paquetes iptv" in text or (title_iptv and not title_ott):
         return ECOSYSTEM_IPTV
@@ -597,31 +597,28 @@ def _brf_device_labels(group: _BrfGroup, evidence: str) -> list[str]:
 
 
 def _ensure_android_family_on_dual_brf(group: _BrfGroup, labels: list[str]) -> list[str]:
-    """Android + Android TV STV on an OTT e IPTV BRF are ADR/ADT, even if QC only stored STB."""
+    """OTT e IPTV + Android: ADR, ADT and STB when the Release named that set."""
     title = group.title or ""
     ott, iptv = infer_ecosystems(title)
     if not (ott and iptv):
         return labels
-    if not re.search(r"\bandroid\b", title, re.I):
-        return labels
     found = list(labels)
-    for extra in ("ADR", "ADT"):
-        if extra not in found:
-            found.append(extra)
+    if re.search(r"\bandroid\b", title, re.I):
+        for extra in ("ADR", "ADT", "STB"):
+            if extra not in found:
+                found.append(extra)
     return found
 
 
 def _hn_android_family(hn: HistoriaNegocio) -> bool:
-    """HN scoped to 'dispositivos Android' = OTT ADR (móvil) + ADT (STV), not IPTV STB."""
+    """HN talks about dispositivos Android; on a dual BRF that is ADR+ADT+STB, not STB-only."""
     title = hn_title(hn.text)
-    if re.search(r"\bstb\b", title, re.I):
-        return False
     return bool(re.search(r"dispositivos?\s+android\b", title, re.I))
 
 
-def _android_ott_devices(brf_devices: list[str]) -> list[str]:
-    named = [label for label in brf_devices if label in {"ADR", "ADT"}]
-    return named or ["ADR", "ADT"]
+def _declared_execution_devices(brf_devices: list[str]) -> list[str]:
+    named = [label for label in brf_devices if label in {"ADR", "ADT", "STB"}]
+    return named or list(brf_devices)
 
 
 def _applicable_devices(
@@ -638,7 +635,7 @@ def _applicable_devices(
     if "aplica para dispositivos con experiencia de tele" in lowered:
         return list(_TV_DEVICES)
     if _hn_android_family(hn):
-        return _android_ott_devices(brf_devices)
+        return _declared_execution_devices(brf_devices)
     explicit = _explicit_hn_devices(hn)
     if explicit:
         return explicit
