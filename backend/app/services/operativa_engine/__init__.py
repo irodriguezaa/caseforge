@@ -27,7 +27,7 @@ from app.services.operativa_engine.coverage_matrix import build_coverage_matrix
 from app.services.operativa_engine.matrix_official import materialize_official_candidates
 from app.services.operativa_engine.tri import extract_tris
 
-ENGINE_VERSION = "operativa-v4.1"
+ENGINE_VERSION = "operativa-v4.2"
 
 
 @dataclass

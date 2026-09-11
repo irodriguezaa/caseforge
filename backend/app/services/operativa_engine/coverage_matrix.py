@@ -33,7 +33,7 @@ from app.services.operativa_engine.hn_roles import (
 )
 from app.services.operativa_engine.jira_context import BrfContextBundle, fetch_brf_context_bundle
 
-ENGINE_VERSION = "operativa-v4.1"
+ENGINE_VERSION = "operativa-v4.2"
 
 CHANNEL_EMAIL = "Email"
 
@@ -474,9 +474,13 @@ def _behavior_ecosystem(hn: HistoriaNegocio, group: _BrfGroup, channel: str | No
         return None
     title = hn_title(hn.text).lower()
     text = hn.text.lower()
+    if _hn_android_family(hn):
+        return ECOSYSTEM_OTT
     title_ott = bool(re.search(r"\bott\b", title))
     title_iptv = bool(re.search(r"\biptv\b", title))
-    if title_ott and title_iptv:
+    blob = f"{title} {text}"
+    # "OTT e IPTV" in the BRF header copied into the HN is dual, not IPTV-only.
+    if (title_ott and title_iptv) or re.search(r"\bott\s+[ey]\s+iptv\b", blob):
         return None
     if "paquetes iptv" in text or (title_iptv and not title_ott):
         return ECOSYSTEM_IPTV
@@ -578,15 +582,46 @@ def _is_transactional_text(text: str) -> bool:
 
 def _brf_device_labels(group: _BrfGroup, evidence: str) -> list[str]:
     if group.dispositivos:
-        return list(group.dispositivos)
-    extracted = extract_devices_from_text(evidence, source=group.brf_key)
-    if extracted:
-        return [target.label for target in extracted]
-    if group.ecosystem == ECOSYSTEM_IPTV:
-        return [target.label for target in iptv_matrix()]
-    if group.ecosystem == ECOSYSTEM_OTT:
-        return list(QC_OTT_EXECUTION_MATRIX)
-    return list(QC_OTT_EXECUTION_MATRIX) + [target.label for target in iptv_matrix()]
+        labels = list(group.dispositivos)
+    else:
+        extracted = extract_devices_from_text(evidence, source=group.brf_key)
+        if extracted:
+            labels = [target.label for target in extracted]
+        elif group.ecosystem == ECOSYSTEM_IPTV:
+            labels = [target.label for target in iptv_matrix()]
+        elif group.ecosystem == ECOSYSTEM_OTT:
+            labels = list(QC_OTT_EXECUTION_MATRIX)
+        else:
+            labels = list(QC_OTT_EXECUTION_MATRIX) + [target.label for target in iptv_matrix()]
+    return _ensure_android_family_on_dual_brf(group, labels)
+
+
+def _ensure_android_family_on_dual_brf(group: _BrfGroup, labels: list[str]) -> list[str]:
+    """Android + Android TV STV on an OTT e IPTV BRF are ADR/ADT, even if QC only stored STB."""
+    title = group.title or ""
+    ott, iptv = infer_ecosystems(title)
+    if not (ott and iptv):
+        return labels
+    if not re.search(r"\bandroid\b", title, re.I):
+        return labels
+    found = list(labels)
+    for extra in ("ADR", "ADT"):
+        if extra not in found:
+            found.append(extra)
+    return found
+
+
+def _hn_android_family(hn: HistoriaNegocio) -> bool:
+    """HN scoped to 'dispositivos Android' = OTT ADR (móvil) + ADT (STV), not IPTV STB."""
+    title = hn_title(hn.text)
+    if re.search(r"\bstb\b", title, re.I):
+        return False
+    return bool(re.search(r"dispositivos?\s+android\b", title, re.I))
+
+
+def _android_ott_devices(brf_devices: list[str]) -> list[str]:
+    named = [label for label in brf_devices if label in {"ADR", "ADT"}]
+    return named or ["ADR", "ADT"]
 
 
 def _applicable_devices(
@@ -602,6 +637,8 @@ def _applicable_devices(
     lowered = hn.text.lower()
     if "aplica para dispositivos con experiencia de tele" in lowered:
         return list(_TV_DEVICES)
+    if _hn_android_family(hn):
+        return _android_ott_devices(brf_devices)
     explicit = _explicit_hn_devices(hn)
     if explicit:
         return explicit

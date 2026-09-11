@@ -59,6 +59,45 @@ def test_ott_and_iptv_title_keeps_all_three_devices() -> None:
     devices = set()
     for row in in_scope:
         devices.update(row.applicable_devices)
-    assert devices == {"ADR", "ADT", "STB"}
+    assert devices == {"ADR", "ADT"}
+    assert all(row.ecosystem == "OTT" for row in in_scope)
     preview = expand_matrix_preview(matrix)
-    assert {item.device for item in preview} >= {"ADR", "ADT", "STB"}
+    assert {item.device for item in preview} == {"ADR", "ADT"}
+    assert len(preview) == 2
+
+
+def test_android_hns_expand_adr_and_adt_not_stb_when_header_mentions_iptv() -> None:
+    epc = Epc(
+        id=1,
+        operativa_release_id=1,
+        release_id=10,
+        brf_key="BRF-17892",
+        epc_key="EPC-21987",
+        titulo="BRF-17892_CENAM | OTT e IPTV | Habilitar medios de pago en dispositivos Android",
+        alcance="Total",
+        nota_rte=None,
+        estado_jira="In Validate",
+        qc_suggestion=QcSuggestion.SUGERIDO_INCLUIR,
+        include_in_qc=True,
+        alcance_funcional=None,
+        dispositivos_aplicables=["STB"],
+    )
+    blob = (
+        "HN001 BRF-17892_CENAM | OTT e IPTV | Deshabilitar politicas de Google en dispositivos Android\n"
+        "HN002 BRF-17892_CENAM | OTT e IPTV | Habilitar medios de pago en dispositivos Android.\n"
+        "HN003 BRF-17892_CENAM | OTT e IPTV | Habilitar botón transaccional en dispositivos Android\n"
+    )
+    matrix = build_coverage_matrix(
+        release_id=10,
+        release_name="OPE-SEPTIEMBRE-2026-CENAM",
+        epcs=[epc],
+        context_loader=lambda _key: BrfContextBundle(brf_key="BRF-17892", jira_blob=blob),
+    )
+    in_scope = [row for row in matrix.rows if row.scope_status == "IN_SCOPE"]
+    assert len(in_scope) == 3
+    for row in in_scope:
+        assert row.ecosystem == "OTT"
+        assert set(row.applicable_devices) == {"ADR", "ADT"}
+    preview = expand_matrix_preview(matrix)
+    assert len(preview) == 6
+    assert {item.device for item in preview} == {"ADR", "ADT"}
