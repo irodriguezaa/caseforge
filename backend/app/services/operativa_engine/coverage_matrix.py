@@ -37,7 +37,7 @@ ENGINE_VERSION = "operativa-v4.1"
 
 CHANNEL_EMAIL = "Email"
 
-_TV_DEVICES: tuple[str, ...] = ("tvOS", "Android TV STV", "Roku", "Fire TV")
+_TV_DEVICES: tuple[str, ...] = ("tvOS", "ADT", "Roku", "Fire TV")
 
 # Ordered longest-first so "landing comercial" wins over incidental fragments.
 _INTERACTION_POINT_PATTERNS: tuple[tuple[str, str], ...] = (
@@ -191,12 +191,16 @@ def _infer_ecosystem(epc: Epc) -> str | None:
         part for part in (epc.titulo, epc.alcance, epc.alcance_funcional) if part
     )
     ott, iptv = infer_ecosystems(blob)
-    if ott and not iptv:
+    declared = parse_declared_devices(epc.dispositivos_aplicables)
+    device_ott = any(item.ecosystem == ECOSYSTEM_OTT for item in declared)
+    device_iptv = any(item.ecosystem == ECOSYSTEM_IPTV for item in declared)
+    # "OTT e IPTV" (or ADR+ADT+STB) is dual: Android=ADR, Android TV STV=ADT, STB=IPTV.
+    if (ott and iptv) or (device_ott and device_iptv):
+        return None
+    if ott or (device_ott and not device_iptv):
         return ECOSYSTEM_OTT
-    if iptv and not ott:
+    if iptv or device_iptv:
         return ECOSYSTEM_IPTV
-    if ott:
-        return ECOSYSTEM_OTT
     return None
 
 
@@ -470,15 +474,19 @@ def _behavior_ecosystem(hn: HistoriaNegocio, group: _BrfGroup, channel: str | No
         return None
     title = hn_title(hn.text).lower()
     text = hn.text.lower()
-    if "paquetes iptv" in text or re.search(r"\biptv\b", title):
+    title_ott = bool(re.search(r"\bott\b", title))
+    title_iptv = bool(re.search(r"\biptv\b", title))
+    if title_ott and title_iptv:
+        return None
+    if "paquetes iptv" in text or (title_iptv and not title_ott):
         return ECOSYSTEM_IPTV
     if any(token in title for token in ("timeshift", "npvr")) and "ott" not in title:
         return ECOSYSTEM_IPTV
     if "tv everywhere" in title:
-        return group.ecosystem or ECOSYSTEM_OTT
-    if "paquetes de ott" in text or "paquetes ott" in text or re.search(r"\bott\b", title):
+        return group.ecosystem
+    if "paquetes de ott" in text or "paquetes ott" in text or (title_ott and not title_iptv):
         return ECOSYSTEM_OTT
-    return group.ecosystem or ECOSYSTEM_OTT
+    return group.ecosystem
 
 
 def _is_dependency_title(title: str) -> bool:
@@ -574,9 +582,11 @@ def _brf_device_labels(group: _BrfGroup, evidence: str) -> list[str]:
     extracted = extract_devices_from_text(evidence, source=group.brf_key)
     if extracted:
         return [target.label for target in extracted]
-    if group.ecosystem == ECOSYSTEM_OTT or group.ecosystem is None:
+    if group.ecosystem == ECOSYSTEM_IPTV:
+        return [target.label for target in iptv_matrix()]
+    if group.ecosystem == ECOSYSTEM_OTT:
         return list(QC_OTT_EXECUTION_MATRIX)
-    return [target.label for target in ott_matrix()]
+    return list(QC_OTT_EXECUTION_MATRIX) + [target.label for target in iptv_matrix()]
 
 
 def _applicable_devices(
@@ -597,13 +607,26 @@ def _applicable_devices(
         return explicit
     points = set(interaction_points)
     if points and points <= {"Checkout", "Ticket"}:
-        return list(_TV_DEVICES)
+        return _checkout_ticket_devices(brf_devices, ecosystem)
     if ecosystem == ECOSYSTEM_IPTV:
         return [target.label for target in iptv_matrix()]
     if ecosystem == ECOSYSTEM_OTT:
         ott = [label for label in brf_devices if label not in {"STB"}]
         return ott or list(QC_OTT_EXECUTION_MATRIX)
     return list(brf_devices)
+
+
+def _checkout_ticket_devices(brf_devices: list[str], ecosystem: str | None) -> list[str]:
+    """Checkout/Ticket is TV-only on a full OTT catalog, not when the BRF named ADR+ADT+STB."""
+    named = list(brf_devices)
+    if "STB" in named:
+        return named
+    if ecosystem is None:
+        return named or (list(QC_OTT_EXECUTION_MATRIX) + [target.label for target in iptv_matrix()])
+    if ecosystem == ECOSYSTEM_IPTV:
+        return [target.label for target in iptv_matrix()]
+    tv = [label for label in named if label in _TV_DEVICES]
+    return tv or list(_TV_DEVICES)
 
 
 def _explicit_hn_devices(hn: HistoriaNegocio) -> list[str]:

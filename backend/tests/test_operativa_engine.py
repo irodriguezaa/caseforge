@@ -112,7 +112,7 @@ def test_devices_come_from_brf_hn_content() -> None:
     available = [
         row for row in result.candidates if row.behavior and str(row.behavior).endswith("offer-available")
     ]
-    assert {row.device for row in available} == {"WEB", "Android", "iOS", "Roku", "Fire TV"}
+    assert {row.device for row in available} == {"WEB", "ADR", "iOS", "Roku", "Fire TV"}
     assert all(row.device_source for row in available)
 
 
@@ -132,7 +132,7 @@ def test_hn_devices_are_not_applied_to_other_hns() -> None:
     )
     alta = {row.device for row in result.candidates if row.behavior and str(row.behavior).endswith("channel-alta")}
     timeshift = {row.device for row in result.candidates if row.behavior and str(row.behavior).endswith("channel-ts")}
-    assert alta == {"WEB", "Android"}
+    assert alta == {"WEB", "ADR"}
     assert timeshift == {"STB"}
 
 
@@ -196,7 +196,7 @@ def test_one_tc_per_declared_device() -> None:
         jira_loader=lambda _key: "",
     )
     identity = [row for row in result.candidates if row.behavior and str(row.behavior).endswith("identity")]
-    assert {row.device for row in identity} == {"WEB", "Android", "iOS"}
+    assert {row.device for row in identity} == {"WEB", "ADR", "iOS"}
     assert len(identity) == 3
 
 
@@ -370,7 +370,7 @@ def test_behavior_recortes_matrix_when_hn_lists_devices() -> None:
             )
         ],
         jira_loader=lambda _key: (
-            "HN001 Alta. Dispositivos: WEB, AAF, Android, iOS, tvOS, Windows, Consolas, Roku, Fire TV, Android TV STV.\n"
+            "HN001 Alta. Dispositivos: WEB, AAF, Android, iOS, tvOS, Windows, Consolas, Roku, Fire TV, Android TV para STV.\n"
             "HN002 Contratación checkout. Dispositivos: WEB, Android, iOS, AAF."
         ),
     )
@@ -381,7 +381,7 @@ def test_behavior_recortes_matrix_when_hn_lists_devices() -> None:
         row for row in result.candidates if row.behavior and str(row.behavior).endswith("offer-acquire")
     ]
     assert len(available) == 10
-    assert {row.device for row in acquire} == {"WEB", "Android", "iOS", "AAF"}
+    assert {row.device for row in acquire} == {"WEB", "ADR", "iOS", "AAF"}
 
 
 def test_qc_selected_in_develop_is_not_dropped_by_status() -> None:
@@ -456,7 +456,7 @@ Número, nombre, logo, EPG Full, EPG Mini, Player Live, Panel de Opciones, Mosai
         jira_loader=lambda _key: blob,
     )
     alta = [row for row in result.candidates if row.behavior and str(row.behavior).endswith("channel-alta")]
-    assert {row.device for row in alta} == {"WEB", "Android"}
+    assert {row.device for row in alta} == {"WEB", "ADR"}
     assert len(alta) == 2
     expected = alta[0].steps[0].expected_result.lower()
     assert "canales" in expected

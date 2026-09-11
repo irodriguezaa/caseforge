@@ -44,7 +44,7 @@ def _epc(
         include_in_qc=True,
         alcance_funcional=None,
         dispositivos_aplicables=dispositivos
-        or ["WEB", "AAF", "Android", "iOS", "tvOS", "Windows/XBOX", "Consolas", "Roku", "Fire TV", "Android TV STV"],
+        or ["WEB", "AAF", "Android", "iOS", "tvOS", "Windows/XBOX", "Consolas", "Roku", "Fire TV", "Android TV para STV"],
     )
 
 
@@ -156,8 +156,8 @@ def test_coverage_matrix_checkout_ticket_tv_devices_only() -> None:
     )
     checkout = next(row for row in result.rows if "HN006" in row.hn_keys)
     ticket = next(row for row in result.rows if "HN007" in row.hn_keys)
-    assert set(checkout.applicable_devices) == {"tvOS", "Android TV STV", "Roku", "Fire TV"}
-    assert set(ticket.applicable_devices) == {"tvOS", "Android TV STV", "Roku", "Fire TV"}
+    assert set(checkout.applicable_devices) == {"tvOS", "ADT", "Roku", "Fire TV"}
+    assert set(ticket.applicable_devices) == {"tvOS", "ADT", "Roku", "Fire TV"}
     assert "WEB" not in checkout.applicable_devices
 
 

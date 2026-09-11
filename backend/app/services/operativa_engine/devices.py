@@ -11,27 +11,31 @@ PENDING_DEVICE = "PENDING"
 SOURCE_OTT_MATRIX = "matriz QC de ejecución OTT"
 SOURCE_IPTV_MATRIX = "matriz QC de ejecución IPTV"
 
-# Candidate execution universe when the BRF declares the ecosystem. Not a BRF-specific list.
+# Android in Operativas is three different things:
+#   Android            → ADR (OTT móvil)
+#   Android TV para STV → ADT (OTT smart TV con Android; no es STB)
+#   STB (Android TV)    → STB (IPTV por definición)
 QC_OTT_EXECUTION_MATRIX: tuple[str, ...] = (
     "WEB",
     "AAF",
-    "Android",
+    "ADR",
     "iOS",
     "tvOS",
     "Windows/XBOX",
     "Consolas",
     "Roku",
     "Fire TV",
-    "Android TV STV",
+    "ADT",
 )
 QC_IPTV_EXECUTION_MATRIX: tuple[str, ...] = ("STB",)
 
 DEVICE_ALIASES: dict[str, str] = {
     "web": "WEB",
     "desktop": "WEB",
-    "android": "Android",
-    "mobile android": "Android",
-    "adr": "Android",
+    "android": "ADR",
+    "android mobile": "ADR",
+    "mobile android": "ADR",
+    "adr": "ADR",
     "ios": "iOS",
     "iphone": "iOS",
     "ipad": "iOS",
@@ -45,8 +49,12 @@ DEVICE_ALIASES: dict[str, str] = {
     "stb iptv": "STB",
     "stb aosp": "STB",
     "stb (aosp, android tv)": "STB",
-    "android tv stv": "Android TV STV",
-    "android tv para stv": "Android TV STV",
+    "stb (android tv)": "STB",
+    "stb android tv": "STB",
+    "android tv stv": "ADT",
+    "android tv para stv": "ADT",
+    "android tv": "ADT",
+    "adt": "ADT",
     "consolas": "Consolas",
     "consola": "Consolas",
     "windows": "Windows/XBOX",
@@ -57,22 +65,22 @@ DEVICE_ALIASES: dict[str, str] = {
     "coship": "STB",
     "coship 9085": "STB",
     "coship9085": "STB",
-    "adt": "STB",
-    "android tv": "STB",
 }
 
 _MENTION_PATTERNS: list[tuple[re.Pattern[str], str]] = [
-    (re.compile(r"\bandroid\s*tv\s*(para\s*)?stv\b", re.I), "Android TV STV"),
+    (re.compile(r"\bandroid\s*tv\s*(para\s*)?stv\b", re.I), "ADT"),
+    (re.compile(r"\bstb\s*\(\s*android\s*tv\s*\)", re.I), "STB"),
     (re.compile(r"\bstb\s*\(?\s*aosp", re.I), "STB"),
     (re.compile(r"\bstb\s*iptv\b", re.I), "STB"),
     (re.compile(r"\bfire\s*tv\b", re.I), "Fire TV"),
     (re.compile(r"\baaf\s+evolutivo\b", re.I), "AAF"),
     (re.compile(r"\bwin\s*/\s*xbox\b", re.I), "Windows/XBOX"),
     (re.compile(r"\bwindows\s*/\s*xbox\b", re.I), "Windows/XBOX"),
-    (re.compile(r"\bmobile\s+android\b", re.I), "Android"),
+    (re.compile(r"\bmobile\s+android\b", re.I), "ADR"),
+    (re.compile(r"\bandroid\s+mobile\b", re.I), "ADR"),
     (re.compile(r"\bconsolas?\b", re.I), "Consolas"),
-    (re.compile(r"\bandroid\s*tv\b", re.I), "STB"),
-    (re.compile(r"\bandroid\b", re.I), "Android"),
+    (re.compile(r"\bandroid\s*tv\b", re.I), "ADT"),
+    (re.compile(r"\bandroid\b", re.I), "ADR"),
     (re.compile(r"\bwindows\b", re.I), "Windows/XBOX"),
     (re.compile(r"\bxbox\b", re.I), "Windows/XBOX"),
     (re.compile(r"\bkepler\b", re.I), "Kepler"),
@@ -82,7 +90,8 @@ _MENTION_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"\broku\b", re.I), "Roku"),
     (re.compile(r"\baaf\b", re.I), "AAF"),
     (re.compile(r"\bstb\b", re.I), "STB"),
-    (re.compile(r"\badr\b", re.I), "Android"),
+    (re.compile(r"\badr\b", re.I), "ADR"),
+    (re.compile(r"\badt\b", re.I), "ADT"),
     (re.compile(r"\bdesktop\b", re.I), "WEB"),
     (re.compile(r"\bweb\b", re.I), "WEB"),
 ]

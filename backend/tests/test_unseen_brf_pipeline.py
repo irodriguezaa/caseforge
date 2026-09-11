@@ -22,7 +22,7 @@ def _epc(brf_key: str, titulo: str, devices: list[str] | None = None) -> Epc:
         include_in_qc=True,
         alcance_funcional=None,
         dispositivos_aplicables=devices
-        or ["WEB", "AAF", "Android", "iOS", "tvOS", "Windows/XBOX", "Consolas", "Roku", "Fire TV", "Android TV STV"],
+        or ["WEB", "AAF", "Android", "iOS", "tvOS", "Windows/XBOX", "Consolas", "Roku", "Fire TV", "Android TV para STV"],
     )
 
 
