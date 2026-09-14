@@ -213,7 +213,7 @@ export default function ReleaseDetailPage(): React.ReactElement {
         test_case_name: form.test_case_name,
         priority: form.priority,
         test_type: form.test_type,
-        ...(release?.operativa_release_id
+        ...(release?.operativa_release_id || release?.be_release_id
           ? { device: form.device, device_source: "Alta manual QC" }
           : {}),
       });
@@ -607,7 +607,7 @@ export default function ReleaseDetailPage(): React.ReactElement {
 
       {testCases.length > 0 && (
         <>
-          {isOperativa && deviceOptions.length > 0 && (
+          {(isOperativa || isBe) && deviceOptions.length > 0 && (
             <div className="form-actions" style={{ marginBottom: "10px", alignItems: "center" }}>
               <label htmlFor="device-filter" className="muted" style={{ margin: 0 }}>
                 Dispositivo
@@ -698,7 +698,7 @@ export default function ReleaseDetailPage(): React.ReactElement {
                   onChange={(e) => setForm({ ...form, component: e.target.value })}
                 />
               </div>
-              {isOperativa ? (
+              {isOperativa || isBe ? (
                 <div className="form-field">
                   <label htmlFor="device">Dispositivo</label>
                   <select
