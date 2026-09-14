@@ -61,6 +61,9 @@ _TECHNICAL_ACTION = re.compile(
     r"lee el code|query param|feature flag|module_version)\b",
     re.IGNORECASE,
 )
+_FIELD_TOKEN = re.compile(
+    r"`[^`]+`|\b[a-z][a-zA-Z0-9]*[A-Z][A-Za-z0-9]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*"
+)
 _PAREN_VARIANTS = re.compile(r"\([^)]*\)")
 
 FUNCTIONAL_EXAMPLE_KEYS = re.compile(
@@ -234,7 +237,8 @@ _INTERNAL_SUBJECT = re.compile(
 _INTERNAL_VERB = re.compile(
     r"\b(consulta|consulto|invoca|ejecuta|obtiene|valida|dispara|env[ií]a|lee|relee|"
     r"registra|reintenta|mantiene el code|no (realiza )?la consulta|responde|"
-    r"notifica al backend|descarta|inicia el flujo|reserva)\b",
+    r"notifica al backend|descarta|inicia el flujo|reserva|"
+    r"construye|construir|intenta construir)\b",
     re.IGNORECASE,
 )
 _USER_SUBJECT = re.compile(r"^\s*(el )?usuario\b", re.IGNORECASE)
@@ -429,6 +433,14 @@ def rewrite_step_language(step: CandidateStep, name: str = "") -> CandidateStep:
     if expected_tech:
         extra_parts.append(expected_tech)
 
+    for blob in (action, expected):
+        for token in _FIELD_TOKEN.findall(blob or ""):
+            extra_parts.append(token)
+    action = _FIELD_TOKEN.sub(" ", action or "")
+    action = re.sub(r"\s+", " ", action).strip() or "El usuario recorre el flujo descrito en el escenario."
+    expected = _FIELD_TOKEN.sub(" ", expected or "")
+    expected = re.sub(r"\s+", " ", expected).strip()
+
     test_data = "; ".join(dict.fromkeys(part for part in extra_parts if part)) or None
     return CandidateStep(
         step_number=step.step_number,
@@ -498,10 +510,37 @@ def _ux_normalize(text: str) -> str:
         flags=re.IGNORECASE,
     )
     cleaned = normalize(cleaned)
+    cleaned = re.sub(
+        r"\b(se )?debe(n)? (mostrar(se)?|visualizar(se)?|presentar(se)?)\b",
+        "ve",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
     cleaned = re.sub(r"\bvisualiza\b", "ve", cleaned)
     cleaned = re.sub(r"\bpresenta\b", "ve", cleaned)
     cleaned = re.sub(r"\bno se muestra\b", "no ve", cleaned)
     cleaned = re.sub(r"\bno muestra\b", "no ve", cleaned)
+    cleaned = re.sub(r"\bse muestra\b", "ve", cleaned)
+    cleaned = re.sub(
+        r"\b(correctamente|de forma correcta|adecuadamente)\b",
+        " ",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+    cleaned = re.sub(
+        r"\btexto (informativo|din[aá]mico|correspondiente)( de)?\b",
+        "texto ",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+    cleaned = re.sub(r"\bcorrespondiente a\b", " ", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(
+        r"\b(del |de )?(m[eé]todo de pago|mdp)\b",
+        " ",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
     return cleaned
 
 

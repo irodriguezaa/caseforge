@@ -67,10 +67,45 @@ _USER_OR_UI = re.compile(
     re.IGNORECASE,
 )
 _OBSERVABLE_VERB = re.compile(
-    r"\b(muestra|oculta|presenta|abre|cierra|visualiza|redirige|reproduce|"
-    r"no (se )?muestra|no presenta|no abre|no visualiza|"
+    r"\b(muestra|mostrar|mostrarse|oculta|presenta|presentar|presentarse|"
+    r"abre|cierra|visualiza|visualizar|visualizarse|redirige|reproduce|"
+    r"no (se )?muestra|no (se )?mostrarse|no presenta|no presentar|"
+    r"no abre|no visualiza|no visualizarse|"
     r"ve |ven |retira|permanece|contin[uú]a|completa|ingresa|selecciona|"
     r"navega|disponible para el usuario|deja de (ver|visualizar)|ya no (ve|visualiza))\b",
+    re.IGNORECASE,
+)
+_SHOW_FAMILY = re.compile(
+    r"\b((se )?debe(n)? )?(mostrar|mostrarse|muestra|visualizar|visualizarse|"
+    r"visualiza|presentar|presentarse|presenta|aparece|aparecer)\b",
+    re.IGNORECASE,
+)
+_USER_VISIBLE_SURFACE = re.compile(
+    r"\b(usuario|user|pantalla|ticket|layout|leyenda|texto|mensaje|bot[oó]n|"
+    r"elementos visuales|error visible|visible para el usuario)\b",
+    re.IGNORECASE,
+)
+_NO_USER_ERROR = re.compile(
+    r"no (debe |se )?(mostrarse|mostrar|presentar|presenta|muestra|visualiza\w*)"
+    r".{0,80}error|"
+    r"(texto de )?error(es)? (de renderizado )?visible( para el usuario)?|"
+    r"sin (mostrar|presentar|mostrar un) error|"
+    r"no (se )?(presenta|muestra) (un )?error",
+    re.IGNORECASE,
+)
+_VISIBLE_EMPTINESS_OR_KEY = re.compile(
+    r"(quedar|queda|quede) vac[ií][oa]|"
+    r"(mostrar|mostrarse|muestra) la llave|"
+    r"espacio donde.{0,80}(llave|vac[ií]o|leyenda)",
+    re.IGNORECASE,
+)
+_VISIBLE_TRUNCATION = re.compile(
+    r"\"\.\.\.\"|\.{3}|puntos suspensivos|truncad",
+    re.IGNORECASE,
+)
+_LAYOUT_HOLDS = re.compile(
+    r"\b(layout|posici[oó]n de los elementos|tama[nñ]o de los elementos|"
+    r"estructura actual de la pantalla)\b",
     re.IGNORECASE,
 )
 _USER_SUBJECT = re.compile(r"^\s*(el )?usuario\b", re.IGNORECASE)
@@ -183,6 +218,38 @@ def split_gherkin_clauses(body: str) -> tuple[list[str], list[str], list[str]]:
     return given, when, then
 
 
+def _has_user_verifiable_then(text: str) -> bool:
+    """True when a Then (or title) states something a tester can see on screen.
+
+    Technical Given/When is ignored here: only the claimed user consequence matters.
+    """
+    if _NO_USER_ERROR.search(text) and (
+        _USER_OR_UI.search(text) or _USER_VISIBLE_SURFACE.search(text) or _USER_SUBJECT.search(text)
+    ):
+        return True
+    if _VISIBLE_TRUNCATION.search(text) and (
+        re.search(r"\b(texto|final|mostrar|mostrarse|visualiz|leyenda)\b", text, re.I)
+        or _USER_VISIBLE_SURFACE.search(text)
+    ):
+        return True
+    if _VISIBLE_EMPTINESS_OR_KEY.search(text):
+        return True
+    if _LAYOUT_HOLDS.search(text) and re.search(
+        r"\b(fija|fijo|aprobado|mantiene|mantenerse|consistente)\b", text, re.I
+    ):
+        return True
+    if _SHOW_FAMILY.search(text) and (
+        _USER_OR_UI.search(text)
+        or _USER_VISIBLE_SURFACE.search(text)
+        or _PRODUCT_UI.search(text)
+        or _USER_SUBJECT.search(text)
+    ):
+        if _IMPL_OPERATION.search(text) and not (_USER_SUBJECT.search(text) or _USER_OR_UI.search(text)):
+            return False
+        return True
+    return False
+
+
 def _has_observable_consequence(text: str) -> bool:
     if not text:
         return False
@@ -190,7 +257,7 @@ def _has_observable_consequence(text: str) -> bool:
         (_USER_SUBJECT.search(text) or _USER_OR_UI.search(text)) and _OBSERVABLE_VERB.search(text)
     ) or bool(_NO_BLOCK_UX.search(text))
     if _ASSET_SPEC.search(text) or _IMPL_OPERATION.search(text):
-        return mixed_ui
+        return mixed_ui or _has_user_verifiable_then(text)
     if mixed_ui:
         return True
     if re.search(
@@ -203,7 +270,7 @@ def _has_observable_consequence(text: str) -> bool:
         return True
     if _PRODUCT_UI.search(text) and _STATE_CHANGE.search(text) and not _ASSET_SPEC.search(text):
         return True
-    return False
+    return _has_user_verifiable_then(text)
 
 
 def _is_implementation_assertion(text: str) -> bool:
@@ -291,6 +358,11 @@ def classify_scenario(title: str, body: str) -> ScenarioClassification:
     cond_then = any(_is_condition_assertion(clause) for clause in then) or _is_condition_assertion(title)
     when_technical = any(_is_implementation_assertion(clause) or _IMPL_SUBJECT.search(clause) for clause in when)
     has_obs = bool(observable)
+    if not has_obs:
+        joined_then = " ".join(then)
+        if joined_then and _has_observable_consequence(joined_then):
+            observable = _observable_clauses(then) or [joined_then]
+            has_obs = True
     if not has_obs and vis_placeholder:
         has_obs = True
     if (

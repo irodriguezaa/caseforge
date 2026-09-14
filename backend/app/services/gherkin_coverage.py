@@ -48,23 +48,30 @@ _TECHNICAL = re.compile(
     r"https?://\S+|"
     r"/services/[^\s]+|"
     r"/[a-z]+/v\d+/[^\s]+|"
+    r"/[a-z][a-z0-9_\-/]{2,}|"
     r"\bstatus codes?\b|"
     r"\bHTTP\b|"
     r"\binvoca\b|"
     r"module_version|"
+    r"`[^`]+`|"
     r"""["'][A-Za-z_][A-Za-z0-9_]*["']""",
     re.IGNORECASE,
+)
+_CAMEL_FIELD = re.compile(
+    r"\b[a-z][a-zA-Z0-9]*[A-Z][A-Za-z0-9]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*"
 )
 
 
 def sanitize_user_text(text: str) -> str:
-    cleaned = _TECHNICAL.sub(" ", text)
+    cleaned = _TECHNICAL.sub(" ", text or "")
+    cleaned = _CAMEL_FIELD.sub(" ", cleaned)
     cleaned = re.sub(r"\s+", " ", cleaned).strip(" :;-")
     return cleaned
 
 
 def extract_technical(text: str) -> str:
-    found = [match.group(0) for match in _TECHNICAL.finditer(text)]
+    found = [match.group(0) for match in _TECHNICAL.finditer(text or "")]
+    found.extend(match.group(0) for match in _CAMEL_FIELD.finditer(text or ""))
     return ", ".join(dict.fromkeys(found))
 
 
@@ -243,16 +250,14 @@ def _candidate(
 ) -> GeneratedCaseCandidate | None:
     precondition, steps, technical = _steps_from_body(body)
     observable = list(classification.observable_then) if classification else []
-    if observable and (
-        not steps
-        or any(not (step.expected_result or "").strip() for step in steps)
-    ):
-        actions = [step.action for step in steps]
+    for clause in observable:
+        extra = extract_technical(clause)
+        if extra:
+            technical = "; ".join(part for part in (technical, extra) if part)
+    observable = [sanitize_user_text(clause) or clause for clause in observable]
+    if observable:
+        actions = [sanitize_user_text(step.action) or step.action for step in steps]
         steps = _steps_from_observable(actions, observable, technical)
-    elif observable and steps:
-        for index, result in enumerate(observable):
-            if index < len(steps):
-                steps[index].expected_result = result
     steps = [step for step in steps if (step.expected_result or "").strip()]
     if not steps:
         return None
