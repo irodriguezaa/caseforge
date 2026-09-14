@@ -273,6 +273,23 @@ def test_patch_updates_same_test_case_including_steps(client) -> None:
     assert listing[0]["id"] == created["id"]
 
 
+def test_create_test_case_sets_device_and_ecosystem(client) -> None:
+    release = _create_release(client)
+    response = client.post(
+        f"/api/v1/releases/{release['id']}/test-cases",
+        json={
+            "test_case_id": "QC-010",
+            "component": "BRF-17892",
+            "test_case_name": "Habilitar medios de pago",
+            "device": "STB",
+        },
+    )
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["device"] == "STB"
+    assert body["ecosystem"] == "IPTV"
+
+
 def test_patch_rejects_test_case_from_another_release(client) -> None:
     release_a = _create_release(client, name="Release A")
     release_b = _create_release(client, name="Release B")

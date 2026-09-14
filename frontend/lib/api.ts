@@ -133,6 +133,9 @@ export interface TestCaseInput {
   priority?: TestCase["priority"];
   test_type?: TestCase["test_type"];
   steps?: TestStepInput[];
+  device?: string | null;
+  device_source?: string | null;
+  ecosystem?: string | null;
 }
 
 export const api = {

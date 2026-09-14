@@ -15,6 +15,7 @@ from app.db import get_db
 from app.models.test_case import TestCase, TestCasePriority, TestCaseStatus
 from app.models.test_step import TestStep
 from app.routers.common import get_release_or_404, get_test_case_or_404
+from app.services.operativa_engine.devices import ecosystem_of
 from app.schemas.test_case import (
     BulkCreateError,
     TestCaseBulkCreate,
@@ -30,6 +31,8 @@ router = APIRouter(prefix="/api/v1", tags=["test-cases"])
 
 def _build_test_case(release_id: int, payload: TestCaseCreate) -> TestCase:
     data = payload.model_dump(exclude={"steps"})
+    if not data.get("ecosystem") and data.get("device"):
+        data["ecosystem"] = ecosystem_of(data["device"])
     test_case = TestCase(release_id=release_id, **data)
     test_case.steps = [TestStep(**step.model_dump()) for step in payload.steps]
     return test_case

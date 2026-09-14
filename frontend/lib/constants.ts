@@ -28,6 +28,20 @@ export const DEVICE_OPTIONS = [
   "STV Tata Samsung", "STV Tata Hisense", "STV Tata LG", "STV Tata ADT",
   "WIN/XBOX", "Coship9085", "iOS", "tvOS", "Kepler", "IPTV AOSP",
 ] as const;
+
+export const OPERATIVA_DEVICE_OPTIONS = [
+  "WEB",
+  "AAF",
+  "ADR",
+  "iOS",
+  "tvOS",
+  "Windows/XBOX",
+  "Consolas",
+  "Roku",
+  "Fire TV",
+  "ADT",
+  "STB",
+] as const;
 export const VALIDATION_TYPE_OPTIONS = ["Completo", "Smoke", "Regresivo", "Funcional", "Exploratorio", "NA"] as const;
 
 export const BE_SWF_OPTIONS = ["BE Hitss", "BE Nubiral", "BE Neoris"] as const;

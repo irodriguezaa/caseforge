@@ -13,7 +13,8 @@ import { ReleaseAnalysisCard } from "@/app/components/ReleaseAnalysisCard";
 import { StatusBadge } from "@/app/components/StatusBadge";
 import { api, ApiRequestError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { BE_REGRESIVO_SCOPE_LABEL, SHOW_QCO_ZEPHYR_PUBLISH } from "@/lib/constants";
+import { BE_REGRESIVO_SCOPE_LABEL, OPERATIVA_DEVICE_OPTIONS, SHOW_QCO_ZEPHYR_PUBLISH } from "@/lib/constants";
+import { nextTestCaseId } from "@/lib/testCaseId";
 import { QC_ESTIMATION_TOOLTIP, QC_OPERATIVA_ESTIMATION_TOOLTIP, estimateOperativaEffort, estimateReleaseEffort, stripDeviceFromCaseName } from "@/lib/qcEffort";
 import type { CoverageMatrixResponse, EpcRead, GenerateCasesResponse, PublishCasesResponse, Release, ReleaseAnalysis, ReleaseStatus, TestCase } from "@/lib/types";
 import { formatRnSourceType } from "@/lib/types";
@@ -22,6 +23,7 @@ const emptyForm = {
   test_case_id: "",
   component: "",
   test_case_name: "",
+  device: "",
   priority: "CRITICAL" as TestCase["priority"],
   test_type: "FUNCTIONAL" as TestCase["test_type"],
 };
@@ -205,7 +207,16 @@ export default function ReleaseDetailPage(): React.ReactElement {
     setSubmitting(true);
     setActionError(null);
     try {
-      await api.createTestCase(releaseId, form);
+      await api.createTestCase(releaseId, {
+        test_case_id: form.test_case_id,
+        component: form.component,
+        test_case_name: form.test_case_name,
+        priority: form.priority,
+        test_type: form.test_type,
+        ...(release?.operativa_release_id
+          ? { device: form.device, device_source: "Alta manual QC" }
+          : {}),
+      });
       setForm(emptyForm);
       setShowManualForm(false);
       load();
@@ -574,7 +585,19 @@ export default function ReleaseDetailPage(): React.ReactElement {
           </button>
           )}
           {canLoadRn && (
-          <button type="button" className="secondary" onClick={() => { setShowManualForm((v) => !v); setShowImport(false); }}>
+          <button type="button" className="secondary" onClick={() => {
+            setShowImport(false);
+            setShowManualForm((open) => {
+              const next = !open;
+              if (next) {
+                setForm({
+                  ...emptyForm,
+                  test_case_id: nextTestCaseId(testCases.map((row) => row.test_case_id)),
+                });
+              }
+              return next;
+            });
+          }}>
             <Plus size={14} aria-hidden="true" style={{ verticalAlign: "-2px", marginRight: "6px" }} />
             Nuevo Test Case
           </button>
@@ -675,6 +698,26 @@ export default function ReleaseDetailPage(): React.ReactElement {
                   onChange={(e) => setForm({ ...form, component: e.target.value })}
                 />
               </div>
+              {isOperativa ? (
+                <div className="form-field">
+                  <label htmlFor="device">Dispositivo</label>
+                  <select
+                    id="device"
+                    required
+                    value={form.device}
+                    onChange={(e) => setForm({ ...form, device: e.target.value })}
+                  >
+                    <option value="">Seleccionar…</option>
+                    {Array.from(
+                      new Set([...deviceOptions, ...OPERATIVA_DEVICE_OPTIONS]),
+                    ).map((device) => (
+                      <option key={device} value={device}>
+                        {device}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : null}
               <div className="form-field full">
                 <label htmlFor="test_case_name">Nombre</label>
                 <input
