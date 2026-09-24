@@ -169,9 +169,13 @@ covers es obligatorio: ids de coverage_inventory cubiertos por ese caso.
 Agrupa en covers solo unidades con el mismo comportamiento observable.
 No colapses unidades independientes en un solo caso porque compartan Funcionalidad.
 No inventes un resultado observable genérico.
+related_functionality y related_jira DEBEN ser keys de Jira (ej. PROJ-123),
+nunca el summary del Epic/Story.
 """
 
 _METRICS_RE = re.compile(r"\bm[eé]tric|\banalytics\b|\bga4\b|\bfirebase\b|\bmdp\b", re.IGNORECASE)
+_ISSUE_KEY = re.compile(r"\b([A-Z][A-Z0-9]+-\d+)\b")
+_ISSUE_KEY_ONLY = re.compile(r"^[A-Z][A-Z0-9]+-\d+$")
 
 
 def _tickets_by_section(pdf_bytes: bytes) -> dict[str, list[tuple[str, str]]]:
@@ -360,30 +364,240 @@ def _jira_artifacts_for_llm(artifacts: list[dict[str, Any]]) -> list[dict[str, A
 def _llm_functionality_keys(
     tickets: dict[str, list[tuple[str, str]]],
     inventory: list[CoverageUnit],
+    artifacts: list[dict[str, Any]] | None = None,
 ) -> set[str]:
     keys = {tid.strip().upper() for tid, _text in tickets.get("functionality", []) if tid}
     for unit in inventory:
         for raw in (unit.jira_key, unit.rn_key):
             if raw:
                 keys.add(raw.strip().upper())
+    for art in artifacts or []:
+        if art.get("key"):
+            keys.add(str(art["key"]).strip().upper())
+        for child in art.get("children") or []:
+            if isinstance(child, dict) and child.get("key"):
+                keys.add(str(child["key"]).strip().upper())
     return keys
+
+
+def _label_key(text: str) -> str:
+    return re.sub(r"\s+", " ", (text or "").strip().lower())
+
+
+def _remember_summary(index: dict[str, set[str]], summary: str, key: str) -> None:
+    label = _label_key(summary)
+    token = (key or "").strip().upper()
+    if not label or not token:
+        return
+    index.setdefault(label, set()).add(token)
+
+
+def _summary_index(
+    tickets: dict[str, list[tuple[str, str]]],
+    artifacts: list[dict[str, Any]],
+    inventory: list[CoverageUnit],
+) -> dict[str, set[str]]:
+    index: dict[str, set[str]] = {}
+    for tid, text in tickets.get("functionality", []):
+        _remember_summary(index, text, tid)
+        _remember_summary(index, tid, tid)
+    for art in artifacts:
+        if not isinstance(art, dict):
+            continue
+        _remember_summary(index, str(art.get("summary") or ""), str(art.get("key") or ""))
+        _remember_summary(index, str(art.get("key") or ""), str(art.get("key") or ""))
+        for child in art.get("children") or []:
+            if not isinstance(child, dict):
+                continue
+            _remember_summary(index, str(child.get("summary") or ""), str(child.get("key") or ""))
+            _remember_summary(index, str(child.get("key") or ""), str(child.get("key") or ""))
+    for unit in inventory:
+        _remember_summary(index, unit.behavior, unit.rn_key or unit.jira_key or "")
+        _remember_summary(index, unit.scenario, unit.jira_key or unit.rn_key or "")
+        _remember_summary(index, unit.traceability, unit.rn_key or unit.jira_key or "")
+    return index
+
+
+def _unique_allowed(keys: set[str], allowed: set[str]) -> str | None:
+    hits = [key for key in keys if key in allowed]
+    if len(hits) == 1:
+        return hits[0]
+    return None
+
+
+def _resolve_issue_ref(
+    raw: str | None,
+    allowed_keys: set[str],
+    summaries: dict[str, set[str]],
+) -> tuple[str | None, str]:
+    text = (raw or "").strip()
+    if not text:
+        return None, "empty"
+    upper = text.upper()
+    if _ISSUE_KEY_ONLY.match(upper):
+        if upper in allowed_keys:
+            return upper, "key"
+        return None, "unknown-key"
+    embedded = [token for token in _ISSUE_KEY.findall(upper) if token in allowed_keys]
+    unique_embedded = list(dict.fromkeys(embedded))
+    if len(unique_embedded) == 1:
+        return unique_embedded[0], "embedded-key"
+    if len(unique_embedded) > 1:
+        return None, "ambiguous-key"
+    label = _label_key(text)
+    exact = _unique_allowed(summaries.get(label) or set(), allowed_keys)
+    if exact:
+        return exact, "summary"
+    if len(label) < 24:
+        return None, "unresolved"
+    contains: list[str] = []
+    for summary, keys in summaries.items():
+        if label in summary or summary in label:
+            contains.extend(key for key in keys if key in allowed_keys)
+    unique = list(dict.fromkeys(contains))
+    if len(unique) == 1:
+        return unique[0], "summary-contains"
+    if len(unique) > 1:
+        return None, "ambiguous-summary"
+    return None, "unresolved"
+
+
+def _infer_keys_from_covers(
+    covers: list[str],
+    inventory: list[CoverageUnit],
+) -> tuple[str | None, str | None]:
+    by_id = {unit.coverage_id: unit for unit in inventory}
+    rn_keys: list[str] = []
+    jira_keys: list[str] = []
+    for cid in covers:
+        unit = by_id.get(cid)
+        if unit is None:
+            continue
+        if unit.rn_key:
+            rn_keys.append(unit.rn_key.strip().upper())
+        if unit.jira_key:
+            jira_keys.append(unit.jira_key.strip().upper())
+    rn = list(dict.fromkeys(rn_keys))
+    jira = list(dict.fromkeys(jira_keys))
+    return (rn[0] if len(rn) == 1 else None, jira[0] if len(jira) == 1 else None)
 
 
 def _keep_llm_functionality_candidates(
     candidates: list[GeneratedCaseCandidate],
     allowed_keys: set[str],
     allowed_covers: set[str],
+    inventory: list[CoverageUnit] | None = None,
+    artifacts: list[dict[str, Any]] | None = None,
+    tickets: dict[str, list[tuple[str, str]]] | None = None,
 ) -> list[GeneratedCaseCandidate]:
+    inventory = inventory or []
+    artifacts = artifacts or []
+    tickets = tickets or {}
+    summaries = _summary_index(tickets, artifacts, inventory)
     kept: list[GeneratedCaseCandidate] = []
+    received = len(candidates)
+    rejected = 0
     for candidate in candidates:
-        jira = (candidate.related_jira or "").strip().upper()
-        func = (candidate.related_functionality or "").strip().upper()
-        if jira and jira not in allowed_keys:
+        original_func = candidate.related_functionality
+        original_jira = candidate.related_jira
+        valid_covers = [cid for cid in (candidate.covers or []) if cid in allowed_covers]
+        unknown_covers = [cid for cid in (candidate.covers or []) if cid not in allowed_covers]
+        if not valid_covers:
+            rejected += 1
+            logger.info(
+                "LLM candidate rejected: name=%s reason=%s covers=%s",
+                candidate.name[:120],
+                "missing-or-unknown-coverage-id" if unknown_covers or not candidate.covers else "no-coverage-id",
+                candidate.covers,
+            )
             continue
-        if func and func not in allowed_keys:
+        func_key, func_how = _resolve_issue_ref(original_func, allowed_keys, summaries)
+        jira_key, jira_how = _resolve_issue_ref(original_jira, allowed_keys, summaries)
+        inferred_rn, inferred_jira = _infer_keys_from_covers(valid_covers, inventory)
+        if original_func and func_how == "unknown-key":
+            rejected += 1
+            logger.info(
+                "LLM candidate rejected: name=%s reason=unknown-functionality-key value=%s",
+                candidate.name[:120],
+                original_func[:80],
+            )
             continue
-        candidate.covers = [cid for cid in candidate.covers if cid in allowed_covers]
+        if original_jira and jira_how == "unknown-key":
+            rejected += 1
+            logger.info(
+                "LLM candidate rejected: name=%s reason=unknown-jira-key value=%s",
+                candidate.name[:120],
+                original_jira[:80],
+            )
+            continue
+        if original_func and func_key is None and inferred_rn is None and inferred_jira is None:
+            rejected += 1
+            logger.info(
+                "LLM candidate rejected: name=%s reason=unresolved-functionality value=%s",
+                candidate.name[:120],
+                (original_func or "")[:80],
+            )
+            continue
+        if original_jira and jira_key is None and inferred_jira is None and inferred_rn is None:
+            rejected += 1
+            logger.info(
+                "LLM candidate rejected: name=%s reason=unresolved-jira value=%s",
+                candidate.name[:120],
+                (original_jira or "")[:80],
+            )
+            continue
+        resolved_func = func_key or inferred_rn or inferred_jira
+        resolved_jira = jira_key or inferred_jira or inferred_rn
+        if resolved_func is None and resolved_jira is None:
+            rejected += 1
+            logger.info("LLM candidate rejected: name=%s reason=no-traceable-key", candidate.name[:120])
+            continue
+        if resolved_func and resolved_func not in allowed_keys:
+            rejected += 1
+            logger.info(
+                "LLM candidate rejected: name=%s reason=functionality-not-in-release key=%s",
+                candidate.name[:120],
+                resolved_func,
+            )
+            continue
+        if resolved_jira and resolved_jira not in allowed_keys:
+            rejected += 1
+            logger.info(
+                "LLM candidate rejected: name=%s reason=jira-not-in-release key=%s",
+                candidate.name[:120],
+                resolved_jira,
+            )
+            continue
+        notes: list[str] = []
+        if original_func and func_key and original_func.strip().upper() != func_key:
+            notes.append(f"LLM related_functionality original: {original_func}")
+        if original_jira and jira_key and original_jira.strip().upper() != jira_key:
+            notes.append(f"LLM related_jira original: {original_jira}")
+        candidate.covers = valid_covers
+        candidate.related_functionality = resolved_func or candidate.related_functionality
+        candidate.related_jira = resolved_jira or candidate.related_jira
+        candidate.generation_origin = candidate.generation_origin or "llm"
+        if notes:
+            extra = " | ".join(notes)
+            candidate.evidence = f"{candidate.evidence}\n{extra}".strip() if candidate.evidence else extra
+            candidate.applied_rules = list(dict.fromkeys([*(candidate.applied_rules or []), "llm-ref-resolved"]))
+        logger.info(
+            "LLM candidate accepted: name=%s covers=%s functionality=%s jira=%s func_how=%s jira_how=%s",
+            candidate.name[:120],
+            candidate.covers,
+            candidate.related_functionality,
+            candidate.related_jira,
+            func_how,
+            jira_how,
+        )
         kept.append(candidate)
+    logger.info(
+        "LLM keep: received=%s accepted=%s rejected=%s covers=%s",
+        received,
+        len(kept),
+        rejected,
+        sorted(_covered_ids(kept)),
+    )
     return kept
 
 
@@ -396,7 +610,7 @@ def _from_llm(
 ) -> list[GeneratedCaseCandidate]:
     logger.info("LLM attempt: using model %s", settings.openai_model)
     allowed_ids = {unit.coverage_id for unit in inventory}
-    allowed_keys = _llm_functionality_keys(tickets, inventory)
+    allowed_keys = _llm_functionality_keys(tickets, inventory, jira_artifacts)
     user_payload = {
         "release": context,
         "existing_cases_reference": existing,
@@ -414,6 +628,8 @@ def _from_llm(
             "Cada candidato debe incluir covers con coverage_id. "
             "Agrupa unidades solo si el usuario observa el mismo resultado y la misma validación. "
             "No resumas una Funcionalidad en un solo caso si hay varias unidades independientes. "
+            "related_functionality y related_jira deben ser keys Jira del inventory/tickets, "
+            "no el summary. "
             "Las únicas fuentes permitidas para generar casos mediante LLM son "
             "coverage_inventory y la evidencia/tickets de FUNCIONALIDAD. "
             "Ignora NCO, TRI, QA Bugs y QC Bugs. "
@@ -448,15 +664,22 @@ def _from_llm(
         raise RuntimeError(f"LLM HTTP {response.status_code}: {response.text[:400]}")
     content = response.json()["choices"][0]["message"]["content"]
     parsed = json.loads(content)
+    parsed_candidates = _parse_llm_candidates(parsed, existing)
     candidates = _keep_llm_functionality_candidates(
-        _parse_llm_candidates(parsed, existing),
+        parsed_candidates,
         allowed_keys,
         allowed_ids,
+        inventory=inventory,
+        artifacts=jira_artifacts,
+        tickets=tickets,
     )
     logger.info(
-        "LLM responded correctly: candidates=%s model=%s",
+        "LLM responded correctly: received=%s accepted=%s rejected=%s model=%s covers=%s",
+        len(parsed_candidates),
         len(candidates),
+        len(parsed_candidates) - len(candidates),
         settings.openai_model,
+        sorted(_covered_ids(candidates)),
     )
     return candidates
 
@@ -563,10 +786,21 @@ def generate_release_app_candidates(
                 jira_artifacts,
                 inventory,
             )
+            for row in candidates:
+                row.generation_origin = row.generation_origin or "llm"
             engine = "llm"
-            missing = [unit for unit in inventory if unit.coverage_id not in _covered_ids(candidates)]
+            llm_covers = _covered_ids(candidates)
+            analysis_details.append(
+                f"LLM: candidatos aceptados={len(candidates)} "
+                f"CoverageUnits cubiertas={len(llm_covers)} ({', '.join(sorted(llm_covers)) or 'ninguna'})."
+            )
+            missing = [unit for unit in inventory if unit.coverage_id not in llm_covers]
             if missing:
-                logger.info("LLM coverage check: missing=%s", len(missing))
+                logger.info(
+                    "LLM coverage check: missing=%s ids=%s",
+                    len(missing),
+                    [unit.coverage_id for unit in missing],
+                )
                 second = _from_llm(
                     release_context,
                     existing_cases,
@@ -574,19 +808,28 @@ def generate_release_app_candidates(
                     jira_artifacts,
                     missing,
                 )
+                for row in second:
+                    row.generation_origin = row.generation_origin or "llm"
                 candidates = _dedupe_candidates(candidates + second)
             still_missing = [unit for unit in inventory if unit.coverage_id not in _covered_ids(candidates)]
             if still_missing:
+                logger.info(
+                    "Coverage fill: missing=%s ids=%s",
+                    len(still_missing),
+                    [unit.coverage_id for unit in still_missing],
+                )
                 filled = materialize_coverage_units(
                     still_missing, existing_cases, _duplicate_of, stats=stats
                 )
                 for row in filled:
                     row.review_required = True
-                    row.generation_origin = row.generation_origin or "coverage-fill"
+                    row.generation_origin = "coverage-fill"
                 candidates = _dedupe_candidates(candidates + filled)
                 engine = "llm+coverage-fill"
                 analysis_details.append(
-                    f"Coverage check: {len(still_missing)} unidad(es) materializadas de forma determinista."
+                    "Coverage Fill: "
+                    f"{len(still_missing)} unidad(es) materializadas de forma determinista "
+                    f"({', '.join(unit.coverage_id for unit in still_missing)})."
                 )
             if not candidates:
                 candidates = jira_candidates or _from_evidence(

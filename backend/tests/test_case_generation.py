@@ -383,7 +383,7 @@ def test_llm_logs_attempt_and_success_without_leaking_api_key(
     messages = [record.getMessage() for record in caplog.records]
     blob = "\n".join(messages)
     assert any("LLM attempt" in msg and "gpt-4o-mini" in msg for msg in messages)
-    assert any("LLM responded correctly" in msg and "candidates=1" in msg for msg in messages)
+    assert any("LLM responded correctly" in msg and "accepted=1" in msg for msg in messages)
     assert secret not in blob
     assert "Bearer sk-" not in blob
 
