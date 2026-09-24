@@ -36,6 +36,7 @@ TVOS = "DAMCO-RN_CV_TVOS_10_1_7b2-290826-175847.pdf"
 ADR_5 = "DAMCO-RN_CV_ADR_65_1_5-290826-175810.pdf"
 ADR_9 = "DAMCO-RN_CV_ADR_65_1_9-290826-175325.pdf"
 COSHIP = "DAMCO-RN_Coship_9085_50_0_0-290826-175741.pdf"
+COSHIP_51 = "DAMCO-RN_Coship_9085_51_0_0-240926-184023.pdf"
 ROKU = "DAMCO-RN-_CV_-_Roku_-_V6_0_0-290826-175741.pdf"
 ADT_HF = "DAMCO-RN_-_HF_-_CV_Android_TV_9_9_8-290826-175326.pdf"
 ADT_PLAIN = "DAMCO-RN_CV_Android_TV_9_9_1-290826-175317.pdf"
@@ -195,6 +196,32 @@ def test_counts_web_1690_empty_qa_qc_table_is_zero_not_alcance() -> None:
     assert r.qa_qc_issues_count == 0
     assert r.nco_issues_count == 0
     assert r.tri_issues_count == 0
+
+
+def test_coship_51_header_only_artefacto_does_not_drop_functionality_on_next_page() -> None:
+    """Coship 51.0.0 (24-sep) prints the Funcionalidad column banner (ARTEFACTO...) as its own
+    table on page 1, with the five C9085PR rows on pages 2-3. Clearing sticky 1.1 Release on
+    that header-only row would count 0 funcionalidades."""
+    from app.services.release_note_analyzer import iter_rn_ticket_rows
+
+    filename = COSHIP_51
+    r = _analyze(filename)
+    assert r.detected_name == "RN Coship 9085 51.0.0"
+    assert r.detected_version == "51.0.0"
+    assert r.detected_platform == "Coship9085"
+    assert r.features_count == 5
+    keys = [
+        ticket_id
+        for ticket_id, _text, bucket in iter_rn_ticket_rows((FIXTURES / filename).read_bytes())
+        if bucket == "functionality"
+    ]
+    assert keys == [
+        "C9085PR-555",
+        "C9085PR-551",
+        "C9085PR-586",
+        "C9085PR-37",
+        "C9085PR-624",
+    ]
 
 
 def test_counts_xbox_exact_including_a_page_break_continuation() -> None:

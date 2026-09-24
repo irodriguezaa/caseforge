@@ -262,6 +262,8 @@ def _table_header_override(header_cell: str) -> str | None:
     were explicitly tried and rejected as Functionality/QA-QC headers -- they label "Alcance
     no entregado" (and similar out-of-scope) tables. Those must not inherit the previous
     section's sticky bucket; they return _UNTRACKED_TABLE so their tickets are not counted.
+    A header-only Artefacto row (no ticket cells) is left sticky: Coship prints that banner
+    on page 1 and the C9085PR rows on the next page.
     """
     normalized = header_cell.strip().upper().replace("ʼ", "'").replace("’", "'")
     if normalized == "TRI":
@@ -382,9 +384,6 @@ def iter_rn_ticket_rows(pdf_bytes: bytes) -> list[tuple[str, str, str]]:
                         continue
                     header_cell = (rows[0][0] or "").strip()
                     override = _table_header_override(header_cell)
-                    if override == _UNTRACKED_TABLE:
-                        current_section = None
-                        continue
 
                     found: list[tuple[str, str, bool]] = []
                     seen_in_table: set[str] = set()
@@ -402,6 +401,14 @@ def iter_rn_ticket_rows(pdf_bytes: bytes) -> list[tuple[str, str, str]]:
                                     )
                                     seen_in_table.add(ticket_id)
                                 break
+                    if override == _UNTRACKED_TABLE:
+                        # Alcance no entregado (Artefacto + tickets) must not inherit
+                        # Funcionalidad/QA. A header-only Artefacto row is the Coship
+                        # functionality column banner: tickets continue on the next page
+                        # and need the sticky 1.1 Release section.
+                        if found:
+                            current_section = None
+                        continue
                     if not found:
                         continue
 
