@@ -10,7 +10,7 @@ export async function POST(
   const response = await proxyToBackend(
     `/api/v1/releases/${id}/generate-cases${search}`,
     { method: "POST" },
-    { timeoutMs: 180_000 },
+    { timeoutMs: 600_000 },
   );
   const body = await response.json();
   return NextResponse.json(body, { status: response.status });

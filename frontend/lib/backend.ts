@@ -11,6 +11,21 @@ import { NextResponse } from "next/server";
 const backendUrl = process.env.BACKEND_URL ?? "http://backend:8000";
 const defaultTimeoutMs = 12_000;
 
+export function backendUnavailableResponse(err: unknown): Response {
+  const timedOut =
+    (err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError")) ||
+    (typeof DOMException !== "undefined" && err instanceof DOMException && err.name === "TimeoutError");
+  return new Response(
+    JSON.stringify({
+      status: "error",
+      message: timedOut
+        ? "El análisis o la generación tardó demasiado. El Release Note es grande; reintenta."
+        : "Backend no disponible",
+    }),
+    { status: 503, headers: { "Content-Type": "application/json" } },
+  );
+}
+
 /** Next 16 hangs if you await params before consuming a PATCH/POST body. */
 export async function drainBody(request: Request): Promise<void> {
   await request.arrayBuffer();
@@ -84,11 +99,8 @@ export async function proxyToBackend(
       headers.set("Content-Type", "application/json");
     }
     return await fetchBackend(path, { ...init, headers }, options);
-  } catch {
-    return new Response(
-      JSON.stringify({ status: "error", message: "Backend unavailable" }),
-      { status: 503, headers: { "Content-Type": "application/json" } },
-    );
+  } catch (err) {
+    return backendUnavailableResponse(err);
   }
 }
 

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { fetchBackend } from "@/lib/backend";
+import { backendUnavailableResponse, fetchBackend } from "@/lib/backend";
 
-const requestTimeoutMs = 30_000;
+const requestTimeoutMs = 180_000;
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
@@ -13,7 +13,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
     const body = await response.json();
     return NextResponse.json(body, { status: response.status });
-  } catch {
-    return NextResponse.json({ status: "error", message: "Backend unavailable" }, { status: 503 });
+  } catch (err) {
+    const fallback = backendUnavailableResponse(err);
+    return new NextResponse(fallback.body, {
+      status: fallback.status,
+      headers: fallback.headers,
+    });
   }
 }
