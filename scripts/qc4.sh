@@ -66,14 +66,11 @@ fix_nginx() {
       '/location \^~ \/qcpulse\/ {/a\        client_max_body_size 25m;' \
       "$NGINX_CONF"
   fi
-  if ! docker exec "$PROXY" grep -q 'proxy_read_timeout 600s' "$NGINX_CONF"; then
-    docker exec "$PROXY" sed -i \
-      '/location = \/qcpulse {/a\        proxy_read_timeout 600s;\n        proxy_send_timeout 600s;' \
-      "$NGINX_CONF"
-    docker exec "$PROXY" sed -i \
-      '/location \^~ \/qcpulse\/ {/a\        proxy_read_timeout 600s;\n        proxy_send_timeout 600s;' \
-      "$NGINX_CONF"
-  fi
+  # A previous revision inserted proxy_read_timeout 600s into locations that already
+  # had the directive (nginx: duplicate). Strip those inserted lines only.
+  docker exec "$PROXY" sed -i \
+    '/^[[:space:]]*proxy_read_timeout 600s;$/d;/^[[:space:]]*proxy_send_timeout 600s;$/d' \
+    "$NGINX_CONF"
   docker exec "$PROXY" nginx -t
   docker exec "$PROXY" nginx -s reload
   echo "nginx: /qcpulse/ → $FRONTEND, Connection \$connection_upgrade, reload OK. Django no se recreó."
