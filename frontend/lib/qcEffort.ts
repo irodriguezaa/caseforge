@@ -19,7 +19,7 @@ export const QC_RELEASE_EFFORT_FACTOR_LEGACY = 3.0;
 export const QC_OPERATIVA_CASES_PER_DAY = 6;
 
 export const QC_ESTIMATION_TOOLTIP =
-  "Esfuerzo QC = minutos base por prioridad (BLOCKER 25 / CRITICAL 15) × factor de complejidad (BAJA 1.5 / MEDIA 1.7 / ALTA 2.0). Días-persona = horas / 6. Duración = días-persona / recursos. La ventana de ejecución es calendario (startDate → endDate) y no entra en esta fórmula.";
+  "Esfuerzo QC = minutos base por prioridad (BLOCKER 25 / CRITICAL 15) × factor de complejidad (BAJA 1.5 / MEDIA 1.7 / ALTA 2.0). La complejidad sale de pasos/condición/confianza, no de la prioridad. Días-persona = horas / 6. Duración = días-persona / recursos. La ventana de ejecución es calendario y no entra en esta fórmula.";
 
 export const QC_OPERATIVA_ESTIMATION_TOOLTIP =
   "Operativa: 1 tester por dispositivo. Horas = N × (6 h/día ÷ 6 TC/día) = N × 1 h. Días QC = max(casos del dispositivo más cargado) ÷ 6 TC/día (trabajo en paralelo). Filtra un dispositivo para ver tu slice.";

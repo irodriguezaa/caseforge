@@ -1046,6 +1046,38 @@ def test_qc_effort_uses_priority_times_complexity() -> None:
     assert legacy_d == 3.0
 
 
+def test_classify_complexity_ignores_priority() -> None:
+    from app.schemas.case_generation import CandidateStep, GeneratedCaseCandidate
+    from app.services.qc_effort import classify_complexity, estimate_case_minutes
+
+    step = CandidateStep(step_number=1, action="Ingresa", expected_result="Ve el resultado")
+
+    def candidate(**kwargs: object) -> GeneratedCaseCandidate:
+        payload = {
+            "name": "Caso",
+            "description": "desc",
+            "steps": [step],
+            "evidence": "ev",
+            "justification": "just",
+            "confidence": "high",
+            "priority": "BLOCKER",
+            "basic_validation": False,
+            "requires_condition": False,
+        }
+        payload.update(kwargs)
+        return GeneratedCaseCandidate(**payload)
+
+    blocker_simple = candidate()
+    assert classify_complexity(blocker_simple) == "BAJA"
+    assert estimate_case_minutes(blocker_simple.priority, "BAJA") == 37.5
+
+    assert classify_complexity(candidate(priority="CRITICAL", confidence="low")) == "ALTA"
+    four = [CandidateStep(step_number=i, action="A", expected_result="B") for i in range(1, 5)]
+    assert classify_complexity(candidate(priority="CRITICAL", confidence="high", steps=four)) == "ALTA"
+    two = [CandidateStep(step_number=i, action="A", expected_result="B") for i in range(1, 3)]
+    assert classify_complexity(candidate(priority="BLOCKER", confidence="high", steps=two)) == "MEDIA"
+
+
 def test_export_excel_has_qc_and_zephyr_sheets(client, monkeypatch, tmp_path) -> None:
     import io
 

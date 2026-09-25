@@ -1,7 +1,9 @@
 """QC effort from persisted Test Cases: priority minutes × complexity factor.
 
-Not a calendar commitment. Does not use LLM hours. Combination is multiply-only
-(there was no prior priority×complexity hours rule; count/46×3 is retired).
+minutes = base(BLOCKER 25 / CRITICAL 15) × factor(BAJA 1.5 / MEDIA 1.7 / ALTA 2.0)
+
+Complexity is classified from steps, condition and confidence only.
+Priority does not force ALTA.
 """
 
 from __future__ import annotations
@@ -35,15 +37,17 @@ def hours_per_day() -> float:
 
 
 def classify_complexity(candidate: GeneratedCaseCandidate) -> Complexity:
-    """Complejidad del caso. Drives the effort factor (BAJA 1.5 / MEDIA 1.7 / ALTA 2.0)."""
+    """Complejidad por forma del caso, no por prioridad.
+
+    BAJA: validación básica de 1 paso, o 1 paso con confianza alta.
+    MEDIA: condición especial, 2–3 pasos, o confianza media.
+    ALTA: 4+ pasos o confianza baja.
+    BLOCKER/CRITICAL no entran aquí; solo fijan la base de minutos (25 vs 15).
+    """
     steps = len(candidate.steps)
     if candidate.basic_validation and steps <= 1 and not candidate.requires_condition:
         return "BAJA"
-    if (
-        candidate.priority == "BLOCKER"
-        or steps >= 4
-        or candidate.confidence == "low"
-    ):
+    if steps >= 4 or candidate.confidence == "low":
         return "ALTA"
     if candidate.requires_condition or steps >= 2 or candidate.confidence == "medium":
         return "MEDIA"
