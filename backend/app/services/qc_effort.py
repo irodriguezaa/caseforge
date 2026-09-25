@@ -1,9 +1,9 @@
 """QC effort from persisted Test Cases: priority minutes × complexity factor.
 
-minutes = base(BLOCKER 25 / CRITICAL 15) × factor(BAJA 1.5 / MEDIA 1.7 / ALTA 2.0)
+minutes = base(BLOCKER 20 / CRITICAL 12) × factor(BAJA 1.0 / MEDIA 1.3 / ALTA 1.6)
 
+Calibrated to Coship 52: QC executed in ~2–2.5 days vs 4.7 with the previous 25×1.5 floor.
 Complexity is classified from steps, condition and confidence only.
-Priority does not force ALTA.
 """
 
 from __future__ import annotations
@@ -16,15 +16,15 @@ from app.schemas.case_generation import GeneratedCaseCandidate
 Complexity = Literal["BAJA", "MEDIA", "ALTA"]
 
 QC_HOURS_PER_DAY = 6.0
-BLOCKER_MINUTES = 25
-CRITICAL_MINUTES = 15
+BLOCKER_MINUTES = 20
+CRITICAL_MINUTES = 12
 COMPLEXITY_FACTOR = {
-    "BAJA": 1.5,
-    "LOW": 1.5,
-    "MEDIA": 1.7,
-    "MEDIUM": 1.7,
-    "ALTA": 2.0,
-    "HIGH": 2.0,
+    "BAJA": 1.0,
+    "LOW": 1.0,
+    "MEDIA": 1.3,
+    "MEDIUM": 1.3,
+    "ALTA": 1.6,
+    "HIGH": 1.6,
 }
 
 # Retired count formula, kept only so reports can compare old vs new.
@@ -42,7 +42,7 @@ def classify_complexity(candidate: GeneratedCaseCandidate) -> Complexity:
     BAJA: validación básica de 1 paso, o 1 paso con confianza alta.
     MEDIA: condición especial, 2–3 pasos, o confianza media.
     ALTA: 4+ pasos o confianza baja.
-    BLOCKER/CRITICAL no entran aquí; solo fijan la base de minutos (25 vs 15).
+    BLOCKER/CRITICAL no entran aquí; solo fijan la base de minutos (20 vs 12).
     """
     steps = len(candidate.steps)
     if candidate.basic_validation and steps <= 1 and not candidate.requires_condition:
@@ -70,7 +70,7 @@ def complexity_factor(complexity: str | None) -> float:
 
 
 def estimate_case_minutes(priority: Any, complexity: str | None) -> float:
-    return priority_base_minutes(priority) * complexity_factor(complexity)
+    return round(priority_base_minutes(priority) * complexity_factor(complexity), 1)
 
 
 def estimate_case_hours(priority: Any, complexity: str | None) -> float:

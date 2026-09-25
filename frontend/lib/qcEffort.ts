@@ -1,15 +1,15 @@
 /** QC effort from real Test Cases. Keep in sync with backend `qc_effort`. */
 
 export const QC_HOURS_PER_DAY = 6;
-export const BLOCKER_MINUTES = 25;
-export const CRITICAL_MINUTES = 15;
+export const BLOCKER_MINUTES = 20;
+export const CRITICAL_MINUTES = 12;
 export const COMPLEXITY_FACTOR: Record<string, number> = {
-  BAJA: 1.5,
-  LOW: 1.5,
-  MEDIA: 1.7,
-  MEDIUM: 1.7,
-  ALTA: 2.0,
-  HIGH: 2.0,
+  BAJA: 1.0,
+  LOW: 1.0,
+  MEDIA: 1.3,
+  MEDIUM: 1.3,
+  ALTA: 1.6,
+  HIGH: 1.6,
 };
 
 /** Retired count formula, comparison only: (TC / 46) × 3 days. */
@@ -19,7 +19,7 @@ export const QC_RELEASE_EFFORT_FACTOR_LEGACY = 3.0;
 export const QC_OPERATIVA_CASES_PER_DAY = 6;
 
 export const QC_ESTIMATION_TOOLTIP =
-  "Esfuerzo QC = minutos base por prioridad (BLOCKER 25 / CRITICAL 15) × factor de complejidad (BAJA 1.5 / MEDIA 1.7 / ALTA 2.0). La complejidad sale de pasos/condición/confianza, no de la prioridad. Días-persona = horas / 6. Duración = días-persona / recursos. La ventana de ejecución es calendario y no entra en esta fórmula.";
+  "Esfuerzo QC = minutos base (BLOCKER 20 / CRITICAL 12) × factor (BAJA 1.0 / MEDIA 1.3 / ALTA 1.6). La complejidad sale de pasos/condición/confianza, no de la prioridad. Días-persona = horas / 6. Duración = días-persona / recursos. La ventana de ejecución es calendario y no entra en esta fórmula.";
 
 export const QC_OPERATIVA_ESTIMATION_TOOLTIP =
   "Operativa: 1 tester por dispositivo. Horas = N × (6 h/día ÷ 6 TC/día) = N × 1 h. Días QC = max(casos del dispositivo más cargado) ÷ 6 TC/día (trabajo en paralelo). Filtra un dispositivo para ver tu slice.";
@@ -34,7 +34,7 @@ export function complexityFactor(complexity?: string | null): number {
 }
 
 export function estimateCaseMinutes(priority?: string | null, complexity?: string | null): number {
-  return priorityBaseMinutes(priority) * complexityFactor(complexity);
+  return Math.round(priorityBaseMinutes(priority) * complexityFactor(complexity) * 10) / 10;
 }
 
 export function estimateReleaseEffortFromCases(

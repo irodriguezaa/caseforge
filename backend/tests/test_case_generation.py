@@ -1024,22 +1024,22 @@ def test_qc_effort_uses_priority_times_complexity() -> None:
         estimate_release_legacy_count,
     )
 
-    assert estimate_case_minutes("BLOCKER", "BAJA") == 37.5
-    assert estimate_case_minutes("BLOCKER", "MEDIA") == 42.5
-    assert estimate_case_minutes("BLOCKER", "ALTA") == 50.0
-    assert estimate_case_minutes("CRITICAL", "BAJA") == 22.5
-    assert estimate_case_minutes("CRITICAL", "MEDIA") == 25.5
-    assert estimate_case_minutes("CRITICAL", "ALTA") == 30.0
+    assert estimate_case_minutes("BLOCKER", "BAJA") == 20.0
+    assert estimate_case_minutes("BLOCKER", "MEDIA") == 26.0
+    assert estimate_case_minutes("BLOCKER", "ALTA") == 32.0
+    assert estimate_case_minutes("CRITICAL", "BAJA") == 12.0
+    assert estimate_case_minutes("CRITICAL", "MEDIA") == 15.6
+    assert estimate_case_minutes("CRITICAL", "ALTA") == 19.2
 
     hours, days = estimate_release_from_cases(
         [
             {"priority": "CRITICAL", "complexity": "BAJA"},
-            {"priority": "BLOCKER", "complexity": "ALTA"},
+            {"priority": "BLOCKER", "complexity": "BAJA"},
         ]
     )
-    assert hours == 1.2
-    assert days == 0.2
-    assert duration_days(days, 2) == 0.1
+    assert hours == 0.5
+    assert days == 0.1
+    assert duration_days(2.4, 2) == 1.2
     assert estimate_release_from_cases([]) == (0.0, 0.0)
     legacy_h, legacy_d = estimate_release_legacy_count(46)
     assert legacy_h == 18.0
@@ -1069,7 +1069,7 @@ def test_classify_complexity_ignores_priority() -> None:
 
     blocker_simple = candidate()
     assert classify_complexity(blocker_simple) == "BAJA"
-    assert estimate_case_minutes(blocker_simple.priority, "BAJA") == 37.5
+    assert estimate_case_minutes(blocker_simple.priority, "BAJA") == 20.0
 
     assert classify_complexity(candidate(priority="CRITICAL", confidence="low")) == "ALTA"
     four = [CandidateStep(step_number=i, action="A", expected_result="B") for i in range(1, 5)]
