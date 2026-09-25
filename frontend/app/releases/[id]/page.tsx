@@ -15,7 +15,7 @@ import { api, ApiRequestError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { BE_REGRESIVO_SCOPE_LABEL, OPERATIVA_DEVICE_OPTIONS, SHOW_QCO_ZEPHYR_PUBLISH } from "@/lib/constants";
 import { nextTestCaseId } from "@/lib/testCaseId";
-import { QC_ESTIMATION_TOOLTIP, QC_OPERATIVA_ESTIMATION_TOOLTIP, estimateOperativaEffort, estimateReleaseEffort, stripDeviceFromCaseName } from "@/lib/qcEffort";
+import { QC_ESTIMATION_TOOLTIP, QC_OPERATIVA_ESTIMATION_TOOLTIP, durationDays, estimateOperativaEffort, estimateReleaseEffortFromCases, estimateReleaseEffortLegacyCount, stripDeviceFromCaseName } from "@/lib/qcEffort";
 import type { CoverageMatrixResponse, EpcRead, GenerateCasesResponse, PublishCasesResponse, Release, ReleaseAnalysis, ReleaseStatus, TestCase } from "@/lib/types";
 import { formatRnSourceType } from "@/lib/types";
 
@@ -302,7 +302,11 @@ export default function ReleaseDetailPage(): React.ReactElement {
   const hasEngineCases = testCases.some((row) => row.generated_by_engine);
   const { hours: estimationHours, days: estimationDays } = isOperativa
     ? estimateOperativaEffort(visibleCases)
-    : estimateReleaseEffort(visibleCases.length);
+    : isApp
+      ? estimateReleaseEffortFromCases(visibleCases)
+      : estimateReleaseEffortLegacyCount(visibleCases.length);
+  const qcResources = release.qc_resources ?? 1;
+  const estimatedDurationDays = isApp ? durationDays(estimationDays, qcResources) : estimationDays;
   const statusCounts = visibleCases.reduce<Record<string, number>>((counts, row) => {
     counts[row.status] = (counts[row.status] || 0) + 1;
     return counts;
@@ -400,7 +404,7 @@ export default function ReleaseDetailPage(): React.ReactElement {
                 </span>
               </div>
               <div>
-                <span className="muted" style={{ display: "block", fontSize: "11px", textTransform: "uppercase" }}>Días de ejecución</span>
+                <span className="muted" style={{ display: "block", fontSize: "11px", textTransform: "uppercase" }}>Ventana de ejecución</span>
                 <span style={{ fontWeight: 600, color: "var(--accent)" }}>
                   {release.execution_days ? `${release.execution_days} días hábiles` : "—"}
                 </span>
@@ -456,6 +460,9 @@ export default function ReleaseDetailPage(): React.ReactElement {
               analysis={analysis}
               qcResources={release.qc_resources}
               executionDays={release.execution_days}
+              effortHours={isApp ? estimationHours : null}
+              personDays={isApp ? estimationDays : null}
+              durationDays={isApp ? estimatedDurationDays : null}
             />
           </div>
         )
@@ -637,8 +644,22 @@ export default function ReleaseDetailPage(): React.ReactElement {
         >
           {[
             { label: "Test Cases", value: String(visibleCases.length) },
-            { label: "Estimación IA", value: `${estimationHours.toFixed(1)} h`, tip: isOperativa ? QC_OPERATIVA_ESTIMATION_TOOLTIP : QC_ESTIMATION_TOOLTIP },
-            { label: "≈ Días QC", value: estimationDays.toFixed(1) },
+            ...(isOperativa
+              ? [
+                  { label: "Esfuerzo estimado QC", value: `${estimationHours.toFixed(1)} h`, tip: QC_OPERATIVA_ESTIMATION_TOOLTIP },
+                  { label: "Duración estimada", value: `${estimationDays.toFixed(1)} días` },
+                ]
+              : isApp
+                ? [
+                    { label: "Esfuerzo estimado QC", value: `${estimationHours.toFixed(1)} h`, tip: QC_ESTIMATION_TOOLTIP },
+                    { label: "Días-persona", value: estimationDays.toFixed(1) },
+                    { label: "Duración estimada", value: `${estimatedDurationDays.toFixed(1)} días` },
+                    { label: "Recursos QC", value: String(qcResources) },
+                  ]
+                : [
+                    { label: "Esfuerzo estimado QC", value: `${estimationHours.toFixed(1)} h`, tip: QC_ESTIMATION_TOOLTIP },
+                    { label: "≈ Días QC", value: estimationDays.toFixed(1) },
+                  ]),
             { label: "UNEXECUTED", value: String(statusCounts.UNEXECUTED || 0) },
             { label: "PASS", value: String(statusCounts.PASS || 0) },
             { label: "FAIL", value: String(statusCounts.FAIL || 0) },

@@ -186,9 +186,9 @@ def test_generate_from_web_rn_proposes_functionality_candidates_without_persisti
     assert all(row["source_type"] == "functionality" for row in after)
     assert all(row["source_type"] == "functionality" for row in body["candidates"])
     assert body["test_case_count"] == 5
-    from app.services.qc_effort import estimate_release
+    from app.services.qc_effort import estimate_release_from_cases
 
-    hours, days = estimate_release(5)
+    hours, days = estimate_release_from_cases(after)
     assert body["estimation_hours"] == hours
     assert body["estimation_days"] == days
 
@@ -1016,28 +1016,34 @@ Scenario: Obtención de configuración por región
     assert len(candidates) >= 2
 
 
-def test_qc_effort_uses_homologated_release_formula() -> None:
-    from app.services.qc_effort import estimate_release, estimate_release_raw
+def test_qc_effort_uses_priority_times_complexity() -> None:
+    from app.services.qc_effort import (
+        duration_days,
+        estimate_case_minutes,
+        estimate_release_from_cases,
+        estimate_release_legacy_count,
+    )
 
-    expected = {
-        10: (0.65, 3.9),
-        12: (0.78, 4.7),
-        50: (3.26, 19.6),
-        61: (3.98, 23.9),
-        100: (6.52, 39.1),
-    }
-    for count, (days_2dp, hours_1dp) in expected.items():
-        raw_hours, raw_days = estimate_release_raw(count)
-        assert round(raw_days, 2) == days_2dp
-        assert round(raw_hours, 1) == hours_1dp
-        hours, days = estimate_release(count)
-        assert hours == hours_1dp
-        assert days == round(raw_days, 1)
+    assert estimate_case_minutes("BLOCKER", "BAJA") == 37.5
+    assert estimate_case_minutes("BLOCKER", "MEDIA") == 42.5
+    assert estimate_case_minutes("BLOCKER", "ALTA") == 50.0
+    assert estimate_case_minutes("CRITICAL", "BAJA") == 22.5
+    assert estimate_case_minutes("CRITICAL", "MEDIA") == 25.5
+    assert estimate_case_minutes("CRITICAL", "ALTA") == 30.0
 
-    hours_61, days_61 = estimate_release(61)
-    assert hours_61 == 23.9
-    assert days_61 == 4.0
-    assert estimate_release(0) == (0.0, 0.0)
+    hours, days = estimate_release_from_cases(
+        [
+            {"priority": "CRITICAL", "complexity": "BAJA"},
+            {"priority": "BLOCKER", "complexity": "ALTA"},
+        ]
+    )
+    assert hours == 1.2
+    assert days == 0.2
+    assert duration_days(days, 2) == 0.1
+    assert estimate_release_from_cases([]) == (0.0, 0.0)
+    legacy_h, legacy_d = estimate_release_legacy_count(46)
+    assert legacy_h == 18.0
+    assert legacy_d == 3.0
 
 
 def test_export_excel_has_qc_and_zephyr_sheets(client, monkeypatch, tmp_path) -> None:

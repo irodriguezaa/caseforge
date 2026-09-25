@@ -45,8 +45,8 @@ QC_HEADERS = [
     "Technical Story",
     "Scenario / origen",
     "Confianza IA",
-    "Complejidad IA",
-    "Estimación IA (h)",
+    "Complejidad",
+    "Esfuerzo QC (h)",
 ]
 
 # Matches the FLAT Zephyr layout that CaseForge already imports (see services/imports.py).

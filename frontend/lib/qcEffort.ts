@@ -1,28 +1,69 @@
-/** Homologated QC effort indicator. Keep defaults in sync with backend `qc_effort` / Settings. */
-export const QC_CASES_PER_DAY = 46;
-export const QC_RELEASE_EFFORT_FACTOR = 3.0;
-export const QC_HOURS_PER_DAY = 6;
+/** QC effort from real Test Cases. Keep in sync with backend `qc_effort`. */
 
-/**
- * Operativa throughput per tester (one tester = one device).
- * 6 TC/día con jornada de 6 h ⇒ ~1 h por caso.
- * Ajusta este número para cambiar días: días = max(casos por dispositivo) / QC_OPERATIVA_CASES_PER_DAY.
- * Ejemplo 180 TC / 10 dispositivos (18 c/u): horas = 180 × 1 h = 180 h, días = 18 / 6 = 3.0.
- */
+export const QC_HOURS_PER_DAY = 6;
+export const BLOCKER_MINUTES = 25;
+export const CRITICAL_MINUTES = 15;
+export const COMPLEXITY_FACTOR: Record<string, number> = {
+  BAJA: 1.5,
+  LOW: 1.5,
+  MEDIA: 1.7,
+  MEDIUM: 1.7,
+  ALTA: 2.0,
+  HIGH: 2.0,
+};
+
+/** Retired count formula, comparison only: (TC / 46) × 3 days. */
+export const QC_CASES_PER_DAY_LEGACY = 46;
+export const QC_RELEASE_EFFORT_FACTOR_LEGACY = 3.0;
+
 export const QC_OPERATIVA_CASES_PER_DAY = 6;
 
 export const QC_ESTIMATION_TOOLTIP =
-  "Estimación basada en capacidad estándar de 46 TC/día, factor de esfuerzo integral de Release (3x) y jornada QC de 6 h/día.";
+  "Esfuerzo QC = minutos base por prioridad (BLOCKER 25 / CRITICAL 15) × factor de complejidad (BAJA 1.5 / MEDIA 1.7 / ALTA 2.0). Días-persona = horas / 6. Duración = días-persona / recursos. La ventana de ejecución es calendario (startDate → endDate) y no entra en esta fórmula.";
 
 export const QC_OPERATIVA_ESTIMATION_TOOLTIP =
   "Operativa: 1 tester por dispositivo. Horas = N × (6 h/día ÷ 6 TC/día) = N × 1 h. Días QC = max(casos del dispositivo más cargado) ÷ 6 TC/día (trabajo en paralelo). Filtra un dispositivo para ver tu slice.";
 
-export function estimateReleaseEffort(testCaseCount: number): { hours: number; days: number } {
+export function priorityBaseMinutes(priority?: string | null): number {
+  return String(priority || "").toUpperCase() === "BLOCKER" ? BLOCKER_MINUTES : CRITICAL_MINUTES;
+}
+
+export function complexityFactor(complexity?: string | null): number {
+  const key = String(complexity || "MEDIA").trim().toUpperCase();
+  return COMPLEXITY_FACTOR[key] ?? COMPLEXITY_FACTOR.MEDIA;
+}
+
+export function estimateCaseMinutes(priority?: string | null, complexity?: string | null): number {
+  return priorityBaseMinutes(priority) * complexityFactor(complexity);
+}
+
+export function estimateReleaseEffortFromCases(
+  cases: Array<{ priority?: string | null; complexity?: string | null }>,
+): { hours: number; days: number; minutes: number } {
+  if (!cases.length) {
+    return { hours: 0, days: 0, minutes: 0 };
+  }
+  const minutes = cases.reduce((sum, row) => sum + estimateCaseMinutes(row.priority, row.complexity), 0);
+  const realHours = minutes / 60;
+  const days = realHours / QC_HOURS_PER_DAY;
+  return {
+    minutes,
+    hours: Math.round(realHours * 10) / 10,
+    days: Math.round(days * 10) / 10,
+  };
+}
+
+export function durationDays(personDays: number, resources: number): number {
+  const testers = Math.max(1, Math.floor(resources) || 1);
+  return Math.round((personDays / testers) * 10) / 10;
+}
+
+export function estimateReleaseEffortLegacyCount(testCaseCount: number): { hours: number; days: number } {
   const count = Math.max(0, Math.floor(testCaseCount));
   if (count === 0) {
     return { hours: 0, days: 0 };
   }
-  const days = (count / QC_CASES_PER_DAY) * QC_RELEASE_EFFORT_FACTOR;
+  const days = (count / QC_CASES_PER_DAY_LEGACY) * QC_RELEASE_EFFORT_FACTOR_LEGACY;
   const hours = days * QC_HOURS_PER_DAY;
   return {
     hours: Math.round(hours * 10) / 10,

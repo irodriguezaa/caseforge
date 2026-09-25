@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.models.test_case import TestCase, TestCasePriority, TestCaseStatus, TestCaseType
 from app.models.test_step import TestStep
 from app.schemas.case_generation import GeneratedCaseCandidate
-from app.services.qc_effort import classify_complexity, estimate_release
+from app.services.qc_effort import classify_complexity, estimate_case_hours, estimate_release_from_cases
 
 _ID_NUMBER = re.compile(r"^(?:QC|TC)-(\d+)$", re.IGNORECASE)
 
@@ -87,7 +87,7 @@ def delete_engine_cases(db: Session, release_id: int) -> int:
 
 
 def summarize_cases(cases: list[TestCase]) -> dict[str, Any]:
-    hours, days = estimate_release(len(cases))
+    hours, days = estimate_release_from_cases(cases)
     by_status: dict[str, int] = {}
     by_priority: dict[str, int] = {}
     by_complexity: dict[str, int] = {}
@@ -150,6 +150,7 @@ def persist_candidates(
             related_rn=_clip(candidate.related_rn, 250),
             confidence=_clip(candidate.confidence, 16),
             complexity=_clip(complexity, 16),
+            estimation_hours=estimate_case_hours(priority, complexity),
             generated_by_engine=True,
             ecosystem=_clip(candidate.ecosystem, 16),
             device=_clip(candidate.device, 80),

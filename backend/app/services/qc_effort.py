@@ -1,36 +1,33 @@
-"""Homologated QC effort estimate for a Release.
+"""QC effort from persisted Test Cases: priority minutes × complexity factor.
 
-The estimate is an indicator of integral QC effort, not a calendar commitment.
-It is computed from persisted functional Test Cases only (count), never from
-discarded Scenarios, Jira Stories, or LLM-invented hours.
-
-Capacity mix (LOW 22 + MEDIUM 16 + HIGH 8) = 46 TC / QC day / tester.
-That figure is execution capacity, not full Release effort; QC_RELEASE_EFFORT_FACTOR
-covers prep, scope, conditions, evidence, incidents, revalidation, and coordination.
-
-Calibrate later via Settings / env; do not scatter these numbers in call sites.
+Not a calendar commitment. Does not use LLM hours. Combination is multiply-only
+(there was no prior priority×complexity hours rule; count/46×3 is retired).
 """
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from app.config import settings
 from app.schemas.case_generation import GeneratedCaseCandidate
 
 Complexity = Literal["BAJA", "MEDIA", "ALTA"]
 
-QC_CASES_PER_DAY = 46.0
-QC_RELEASE_EFFORT_FACTOR = 3.0
 QC_HOURS_PER_DAY = 6.0
+BLOCKER_MINUTES = 25
+CRITICAL_MINUTES = 15
+COMPLEXITY_FACTOR = {
+    "BAJA": 1.5,
+    "LOW": 1.5,
+    "MEDIA": 1.7,
+    "MEDIUM": 1.7,
+    "ALTA": 2.0,
+    "HIGH": 2.0,
+}
 
-
-def cases_per_day() -> float:
-    return float(settings.qc_cases_per_day)
-
-
-def release_effort_factor() -> float:
-    return float(settings.qc_release_effort_factor)
+# Retired count formula, kept only so reports can compare old vs new.
+QC_CASES_PER_DAY_LEGACY = 46.0
+QC_RELEASE_EFFORT_FACTOR_LEGACY = 3.0
 
 
 def hours_per_day() -> float:
@@ -38,7 +35,7 @@ def hours_per_day() -> float:
 
 
 def classify_complexity(candidate: GeneratedCaseCandidate) -> Complexity:
-    """Informational bucket for Complejidad IA. Does not drive Release hours."""
+    """Complejidad del caso. Drives the effort factor (BAJA 1.5 / MEDIA 1.7 / ALTA 2.0)."""
     steps = len(candidate.steps)
     if candidate.basic_validation and steps <= 1 and not candidate.requires_condition:
         return "BAJA"
@@ -53,25 +50,57 @@ def classify_complexity(candidate: GeneratedCaseCandidate) -> Complexity:
     return "BAJA"
 
 
-def estimate_release(test_case_count: int) -> tuple[float, float]:
-    """Return (hours, days) rounded for display.
+def _priority_value(priority: Any) -> str:
+    if priority is None:
+        return "CRITICAL"
+    return str(priority.value if hasattr(priority, "value") else priority).upper()
 
-    ESTIMACION_QC_DIAS = (TOTAL_TEST_CASES / 46) × 3.0
-    ESTIMACION_QC_HORAS = ESTIMACION_QC_DIAS × 6
-    """
-    count = max(int(test_case_count), 0)
-    if count == 0:
+
+def priority_base_minutes(priority: Any) -> int:
+    return BLOCKER_MINUTES if _priority_value(priority) == "BLOCKER" else CRITICAL_MINUTES
+
+
+def complexity_factor(complexity: str | None) -> float:
+    key = (complexity or "MEDIA").strip().upper()
+    return COMPLEXITY_FACTOR.get(key, COMPLEXITY_FACTOR["MEDIA"])
+
+
+def estimate_case_minutes(priority: Any, complexity: str | None) -> float:
+    return priority_base_minutes(priority) * complexity_factor(complexity)
+
+
+def estimate_case_hours(priority: Any, complexity: str | None) -> float:
+    return round(estimate_case_minutes(priority, complexity) / 60.0, 2)
+
+
+def estimate_release_from_cases(cases: list[Any]) -> tuple[float, float]:
+    """Return (hours, person-days) from real TCs. days = hours / 6."""
+    if not cases:
         return 0.0, 0.0
-    days = (count / cases_per_day()) * release_effort_factor()
-    hours = days * hours_per_day()
+    minutes = 0.0
+    for row in cases:
+        priority = getattr(row, "priority", None)
+        if isinstance(row, dict):
+            priority = row.get("priority")
+            complexity = row.get("complexity")
+        else:
+            complexity = getattr(row, "complexity", None)
+        minutes += estimate_case_minutes(priority, complexity)
+    hours = minutes / 60.0
+    days = hours / hours_per_day()
     return round(hours, 1), round(days, 1)
 
 
-def estimate_release_raw(test_case_count: int) -> tuple[float, float]:
-    """Unrounded days and hours for formula checks."""
+def duration_days(person_days: float, resources: int) -> float:
+    testers = max(int(resources), 1)
+    return round(person_days / testers, 1)
+
+
+def estimate_release_legacy_count(test_case_count: int) -> tuple[float, float]:
+    """Retired: (TC / 46) × 3 days; hours = days × 6. Comparison only."""
     count = max(int(test_case_count), 0)
     if count == 0:
         return 0.0, 0.0
-    days = (count / cases_per_day()) * release_effort_factor()
-    hours = days * hours_per_day()
-    return hours, days
+    days = (count / QC_CASES_PER_DAY_LEGACY) * QC_RELEASE_EFFORT_FACTOR_LEGACY
+    hours = days * QC_HOURS_PER_DAY
+    return round(hours, 1), round(days, 1)

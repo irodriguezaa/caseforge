@@ -873,7 +873,8 @@ def generate_cases_from_rn(
     else:
         proposal.message = (
             f"Se persistieron {summary['test_case_count']} Test Case(s) en la Release. "
-            f"Estimación IA: {summary['estimation_hours']} h (≈ {summary['estimation_days']} días QC)."
+            f"Esfuerzo estimado QC: {summary['estimation_hours']} h "
+            f"(≈ {summary['estimation_days']} días-persona a 6 h/día)."
         )
         proposal.persisted = True
     proposal.already_generated = False
