@@ -19,6 +19,13 @@ from app.services.qc_effort import classify_complexity, estimate_release
 _ID_NUMBER = re.compile(r"^(?:QC|TC)-(\d+)$", re.IGNORECASE)
 
 
+def _clip(value: str | None, limit: int) -> str | None:
+    text = (value or "").strip()
+    if not text:
+        return None
+    return text[:limit]
+
+
 def next_test_case_id(existing_ids: list[str]) -> str:
     highest = 0
     for label in existing_ids:
@@ -128,7 +135,7 @@ def persist_candidates(
             component=(candidate.component or candidate.related_functionality or platform or "General")[:150],
             test_case_name=candidate.name[:250],
             description=(candidate.description or "")[:8000] or None,
-            user_type=(candidate.user_type or None),
+            user_type=_clip(candidate.user_type, 100),
             priority=priority,
             test_type=TestCaseType.FUNCTIONAL,
             status=TestCaseStatus.UNEXECUTED,
@@ -136,21 +143,21 @@ def persist_candidates(
             requires_condition=bool(candidate.requires_condition),
             evidence=(candidate.evidence or "")[:16000] or None,
             justification=_audit_justification(candidate)[:4000] or None,
-            technical_epic=(candidate.related_functionality or None),
-            technical_story=(candidate.related_jira or None),
+            technical_epic=_clip(candidate.related_functionality, 250),
+            technical_story=_clip(candidate.related_jira, 500),
             scenario_origin=_scenario_origin(candidate),
-            source_type=(candidate.source_type or None),
-            related_rn=(candidate.related_rn or None),
-            confidence=candidate.confidence,
-            complexity=complexity,
+            source_type=_clip(candidate.source_type, 32),
+            related_rn=_clip(candidate.related_rn, 250),
+            confidence=_clip(candidate.confidence, 16),
+            complexity=_clip(complexity, 16),
             generated_by_engine=True,
-            ecosystem=(candidate.ecosystem or None),
-            device=(candidate.device or None),
-            device_source=(candidate.device_source or None),
+            ecosystem=_clip(candidate.ecosystem, 16),
+            device=_clip(candidate.device, 80),
+            device_source=_clip(candidate.device_source, 250),
             applicability_reason=(candidate.applicability_reason or None),
-            duplicate_status=(candidate.duplicate_status or None),
-            group_id=(candidate.group_id or None),
-            hn_source=(candidate.hn_source or None),
+            duplicate_status=_clip(candidate.duplicate_status, 32),
+            group_id=_clip(candidate.group_id, 80),
+            hn_source=_clip(candidate.hn_source, 32),
         )
         steps = candidate.steps or []
         if not steps:
