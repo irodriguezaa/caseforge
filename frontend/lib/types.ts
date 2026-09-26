@@ -409,6 +409,7 @@ export interface ActivityItem {
   defects_blocker_count: number;
   percent_avance: number;
   percent_cobertura: number;
+  brecha: number;
   risk_level: RiskLevel;
   risk_reasons: string[];
   deliverable_name: string | null;

@@ -266,6 +266,7 @@ export default function DashboardPage(): React.ReactElement {
                     <th>Dispositivo</th>
                     <th>% Avance</th>
                     <th>% Cobertura</th>
+                    <th>Brecha</th>
                     <th>Estado</th>
                       <th title="Issues Jira Blocker/Impedimento del filtro de la Release, excluye Done, Roll Out y Cancelado">Blocker</th>
                     <th>Nivel de riesgo</th>
@@ -290,6 +291,7 @@ export default function DashboardPage(): React.ReactElement {
                       <td className="muted">{deviceLabel(item)}</td>
                       <td>{item.percent_avance.toFixed(0)}%</td>
                       <td>{item.percent_cobertura.toFixed(0)}%</td>
+                      <td>{`${item.brecha > 0 ? "+" : ""}${item.brecha.toFixed(0)} pp`}</td>
                       <td><StatusBadge status={item.status} /></td>
                       <td className={item.defects_blocker_count > 0 ? "danger-text" : "muted"}>{item.defects_blocker_count}</td>
                       <td><RiskBadge level={item.risk_level} /></td>
@@ -297,7 +299,7 @@ export default function DashboardPage(): React.ReactElement {
                   ))}
                   {statusFilteredItems.length === 0 && (
                     <tr>
-                      <td colSpan={10} className="muted">
+                      <td colSpan={11} className="muted">
                         {execStatus
                           ? `No hay actividades en ${execStatus.replace("_", " ")} para este filtro.`
                           : "No hay actividades de QC para este filtro."}
@@ -335,7 +337,7 @@ export default function DashboardPage(): React.ReactElement {
                           </span>
                         )}
                       </span>
-                      <span className="exec-release-pct">{item.percent_avance.toFixed(0)}% ejecutado</span>
+                      <span className="exec-release-pct">{item.percent_cobertura.toFixed(0)}% ejecutado</span>
                     </div>
                     <div className="exec-numbers">
                       <div className="exec-item"><div className="exec-label">Planned</div><div className="exec-value">{item.planned}</div></div>

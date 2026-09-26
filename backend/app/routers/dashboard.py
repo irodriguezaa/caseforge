@@ -8,7 +8,7 @@ GET /qc-summary   -- redesigned QC Dashboard backing endpoint: "what is QC doing
 
 from calendar import monthrange
 from collections import Counter
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
@@ -43,6 +43,29 @@ _RISK_FAIL_RATIO_THRESHOLD = 0.10
 _RISK_FAIL_RATIO_HIGH = 0.20
 _RISK_JIRA_BLOCKER_MEDIUM = 6
 _RISK_JIRA_BLOCKER_HIGH = 10
+
+
+def _temporal_avance_percent(
+    start: date | None,
+    end: date | None,
+    *,
+    now: datetime | None = None,
+) -> float:
+    """Elapsed share of a calendar date window: start 00:00:00 through end 23:59:59, clamped 0–100."""
+    if start is None or end is None or start > end:
+        return 0.0
+    current = now if now is not None else datetime.now()
+    window_start = datetime.combine(start, time.min)
+    window_end = datetime.combine(end, time(23, 59, 59))
+    if current < window_start:
+        return 0.0
+    if current >= window_end:
+        return 100.0
+    total_seconds = (window_end - window_start).total_seconds()
+    if total_seconds <= 0:
+        return 100.0
+    elapsed_seconds = (current - window_start).total_seconds()
+    return round(min(100.0, max(0.0, (elapsed_seconds / total_seconds) * 100.0)), 1)
 
 
 @router.get("/summary", response_model=DashboardSummary)
@@ -125,9 +148,9 @@ def get_qc_summary(
     planned = len(test_cases)
     executed = sum(1 for tc in test_cases if tc.status != TestCaseStatus.UNEXECUTED)
     status_counts = Counter(tc.status.value for tc in test_cases)
-    # percent_avance and percent_cobertura share a formula today -- see QcDashboardSummary docstring.
-    percent_avance = round((executed / planned) * 100, 1) if planned else 0.0
-    percent_cobertura = percent_avance
+    # Global summary fields keep executed/planned. ActivityItem splits cobertura vs temporal avance.
+    percent_cobertura = round((executed / planned) * 100, 1) if planned else 0.0
+    percent_avance = percent_cobertura
 
     test_case_ids = [tc.id for tc in test_cases]
     defects_found = 0
@@ -200,7 +223,7 @@ def get_qc_summary(
         reasons: list[str] = []
         if w_planned and executed_ratio + _RISK_SCHEDULE_TOLERANCE < elapsed_ratio:
             reasons.append(
-                f"Avance ({executed_ratio * 100:.0f}%) por debajo de lo esperado por tiempo "
+                f"Cobertura ({executed_ratio * 100:.0f}%) por debajo de lo esperado por tiempo "
                 f"transcurrido ({elapsed_ratio * 100:.0f}%)."
             )
         if w_blocked > 0:
@@ -312,7 +335,7 @@ def get_qc_summary(
         rel_blocked = sum(1 for tc in rel_test_cases if tc.status == TestCaseStatus.BLOCKED)
         rel_fail = sum(1 for tc in rel_test_cases if tc.status == TestCaseStatus.FAIL)
         rel_unexecuted = rel_planned - rel_executed
-        rel_avance = round((rel_executed / rel_planned) * 100, 1) if rel_planned else 0.0
+        rel_cobertura = round((rel_executed / rel_planned) * 100, 1) if rel_planned else 0.0
 
         filter_id = parse_jira_filter_id(getattr(rel, "jira_issue_filter", None))
         rel_defects_blocker = jira_blocker_by_filter.get(filter_id, 0) if filter_id else 0
@@ -323,6 +346,15 @@ def get_qc_summary(
             .order_by(ReleaseWindow.start_date.desc())
         ).scalars().first()
 
+        avance_start = rel.start_date
+        avance_end = rel.end_date
+        if avance_start is None or avance_end is None:
+            if active_window is not None:
+                avance_start = active_window.start_date
+                avance_end = active_window.end_date
+        rel_avance = _temporal_avance_percent(avance_start, avance_end)
+        rel_brecha = round(rel_cobertura - rel_avance, 1)
+
         reasons: list[str] = []
         fail_ratio = (rel_fail / rel_executed) if rel_executed else 0.0
         if active_window is not None:
@@ -332,7 +364,7 @@ def get_qc_summary(
             executed_ratio = (rel_executed / rel_planned) if rel_planned else 0.0
             if rel_planned and executed_ratio + _RISK_SCHEDULE_TOLERANCE < elapsed_ratio:
                 reasons.append(
-                    f"Avance ({executed_ratio * 100:.0f}%) por debajo de lo esperado por tiempo "
+                    f"Cobertura ({executed_ratio * 100:.0f}%) por debajo de lo esperado por tiempo "
                     f"transcurrido ({elapsed_ratio * 100:.0f}%)."
                 )
         if rel_blocked > 0:
@@ -377,7 +409,8 @@ def get_qc_summary(
                 unexecuted_count=rel_unexecuted,
                 defects_blocker_count=rel_defects_blocker,
                 percent_avance=rel_avance,
-                percent_cobertura=rel_avance,
+                percent_cobertura=rel_cobertura,
+                brecha=rel_brecha,
                 risk_level=risk_level,
                 risk_reasons=reasons,
                 deliverable_name=deliverable_names.get(rel.deliverable_id) if rel.deliverable_id else None,
