@@ -127,6 +127,53 @@ def test_non_draft_release_must_be_cancelled_instead(client) -> None:
     assert response.json()["status"] == "CANCELLED"
 
 
+def test_in_progress_apps_can_edit_planning_fields_and_recalculates_window(client) -> None:
+    release_id = _create_release(
+        client,
+        start_date="2026-09-21",
+        end_date="2026-09-22",
+        qc_resources=1,
+        validation_type="Smoke",
+        description="old",
+    ).json()["id"]
+    client.patch(f"/api/v1/releases/{release_id}", json={"status": "IN_PROGRESS"})
+
+    response = client.patch(
+        f"/api/v1/releases/{release_id}",
+        json={
+            "start_date": "2026-09-21",
+            "end_date": "2026-09-25",
+            "qc_resources": 2,
+            "validation_type": "Completo",
+            "jira_issue_filter": "https://dlatvarg.atlassian.net/issues/?filter=1",
+            "description": "nueva descripción",
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["execution_days"] == 5
+    assert body["qc_resources"] == 2
+    assert body["validation_type"] == "Completo"
+    assert body["description"] == "nueva descripción"
+    assert "filter=1" in body["jira_issue_filter"]
+
+
+def test_draft_apps_cannot_edit_planning_fields(client) -> None:
+    release_id = _create_release(client).json()["id"]
+    response = client.patch(f"/api/v1/releases/{release_id}", json={"qc_resources": 3})
+    assert response.status_code == 409
+
+
+def test_tester_cannot_edit_apps_planning_fields(client) -> None:
+    from tests.conftest import login_as
+
+    release_id = _create_release(client).json()["id"]
+    client.patch(f"/api/v1/releases/{release_id}", json={"status": "IN_PROGRESS"})
+    login_as(client, "tester@test.com", "tester-pass")
+    response = client.patch(f"/api/v1/releases/{release_id}", json={"qc_resources": 3})
+    assert response.status_code == 403
+
+
 def test_deleting_draft_release_cascades_to_test_cases_and_steps(client) -> None:
     release_id = _create_release(client).json()["id"]
     test_case = client.post(

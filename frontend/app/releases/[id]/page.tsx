@@ -13,7 +13,8 @@ import { ReleaseAnalysisCard } from "@/app/components/ReleaseAnalysisCard";
 import { StatusBadge } from "@/app/components/StatusBadge";
 import { api, ApiRequestError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { BE_REGRESIVO_SCOPE_LABEL, OPERATIVA_DEVICE_OPTIONS, SHOW_QCO_ZEPHYR_PUBLISH } from "@/lib/constants";
+import { BE_REGRESIVO_SCOPE_LABEL, OPERATIVA_DEVICE_OPTIONS, SHOW_QCO_ZEPHYR_PUBLISH, VALIDATION_TYPE_OPTIONS } from "@/lib/constants";
+import { calculateBusinessDays } from "@/lib/dateUtils";
 import { nextTestCaseId } from "@/lib/testCaseId";
 import { QC_ESTIMATION_TOOLTIP, QC_OPERATIVA_ESTIMATION_TOOLTIP, durationDays, estimateOperativaEffort, estimateReleaseEffortFromCases, estimateReleaseEffortLegacyCount, stripDeviceFromCaseName } from "@/lib/qcEffort";
 import type { CoverageMatrixResponse, EpcRead, GenerateCasesResponse, PublishCasesResponse, Release, ReleaseAnalysis, ReleaseStatus, TestCase } from "@/lib/types";
@@ -66,6 +67,16 @@ export default function ReleaseDetailPage(): React.ReactElement {
   const [exporting, setExporting] = useState(false);
   const [editingCase, setEditingCase] = useState<TestCase | null>(null);
   const [statusBusy, setStatusBusy] = useState(false);
+  const [editingPlanning, setEditingPlanning] = useState(false);
+  const [planningBusy, setPlanningBusy] = useState(false);
+  const [planningForm, setPlanningForm] = useState({
+    startDate: "",
+    endDate: "",
+    qcResources: 1,
+    validationType: "Smoke",
+    jiraIssueFilter: "",
+    description: "",
+  });
 
   const load = (): void => {
     setLoadError(null);
@@ -107,6 +118,45 @@ export default function ReleaseDetailPage(): React.ReactElement {
       setActionError(err instanceof ApiRequestError ? err.message : "No se pudo actualizar el estado.");
     } finally {
       setStatusBusy(false);
+    }
+  };
+
+  const beginEditPlanning = (): void => {
+    if (!release) return;
+    setPlanningForm({
+      startDate: release.start_date ?? "",
+      endDate: release.end_date ?? "",
+      qcResources: release.qc_resources ?? 1,
+      validationType: release.validation_type ?? "Smoke",
+      jiraIssueFilter: release.jira_issue_filter ?? "",
+      description: release.description ?? "",
+    });
+    setEditingPlanning(true);
+    setActionError(null);
+  };
+
+  const savePlanning = async (): Promise<void> => {
+    if (planningForm.startDate && planningForm.endDate && planningForm.startDate > planningForm.endDate) {
+      setActionError("La fecha de fin debe ser posterior o igual a la de inicio.");
+      return;
+    }
+    setPlanningBusy(true);
+    setActionError(null);
+    try {
+      const updated = await api.updateRelease(releaseId, {
+        start_date: planningForm.startDate || null,
+        end_date: planningForm.endDate || null,
+        qc_resources: Math.max(1, Number(planningForm.qcResources) || 1),
+        validation_type: planningForm.validationType,
+        jira_issue_filter: planningForm.jiraIssueFilter.trim() || null,
+        description: planningForm.description.trim() || null,
+      });
+      setRelease(updated);
+      setEditingPlanning(false);
+    } catch (err) {
+      setActionError(err instanceof ApiRequestError ? err.message : "No se pudo guardar la planificación.");
+    } finally {
+      setPlanningBusy(false);
     }
   };
 
@@ -300,12 +350,18 @@ export default function ReleaseDetailPage(): React.ReactElement {
       ? "← Volver a Operativas"
       : "← Volver a Releases";
   const hasEngineCases = testCases.some((row) => row.generated_by_engine);
+  const canEditAppsPlanning = isApp && release.status === "IN_PROGRESS" && canChangeReleaseStatus;
   const { hours: estimationHours, days: estimationDays } = isOperativa
     ? estimateOperativaEffort(visibleCases)
     : isApp
       ? estimateReleaseEffortFromCases(visibleCases)
       : estimateReleaseEffortLegacyCount(visibleCases.length);
-  const qcResources = release.qc_resources ?? 1;
+  const qcResources =
+    isApp && editingPlanning ? Math.max(1, Number(planningForm.qcResources) || 1) : (release.qc_resources ?? 1);
+  const liveExecutionDays =
+    isApp && editingPlanning
+      ? calculateBusinessDays(planningForm.startDate, planningForm.endDate)
+      : release.execution_days;
   const estimatedDurationDays = isApp ? durationDays(estimationDays, qcResources) : estimationDays;
   const statusCounts = visibleCases.reduce<Record<string, number>>((counts, row) => {
     counts[row.status] = (counts[row.status] || 0) + 1;
@@ -339,6 +395,32 @@ export default function ReleaseDetailPage(): React.ReactElement {
       </p>
 
       <div className="card" style={{ marginTop: "1rem" }}>
+        {canEditAppsPlanning && (
+          <div className="form-actions" style={{ justifyContent: "flex-end", marginBottom: "10px" }}>
+            {!editingPlanning ? (
+              <button type="button" className="secondary" onClick={beginEditPlanning}>
+                Editar planificación
+              </button>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={planningBusy}
+                  onClick={() => {
+                    setEditingPlanning(false);
+                    setActionError(null);
+                  }}
+                >
+                  Cancelar
+                </button>
+                <button type="button" disabled={planningBusy} onClick={() => void savePlanning()}>
+                  {planningBusy ? "Guardando…" : "Guardar"}
+                </button>
+              </>
+            )}
+          </div>
+        )}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "12px", fontSize: "12.5px" }}>
           {isBe ? (
             <>
@@ -399,14 +481,30 @@ export default function ReleaseDetailPage(): React.ReactElement {
               )}
               <div>
                 <span className="muted" style={{ display: "block", fontSize: "11px", textTransform: "uppercase" }}>Ventana de revisión</span>
-                <span style={{ fontWeight: 600 }}>
-                  {formatDate(release.start_date)} — {formatDate(release.end_date)}
-                </span>
+                {editingPlanning && canEditAppsPlanning ? (
+                  <div style={{ display: "flex", gap: "6px", alignItems: "center", marginTop: "4px" }}>
+                    <input
+                      type="date"
+                      value={planningForm.startDate}
+                      onChange={(e) => setPlanningForm({ ...planningForm, startDate: e.target.value })}
+                    />
+                    <span className="muted">—</span>
+                    <input
+                      type="date"
+                      value={planningForm.endDate}
+                      onChange={(e) => setPlanningForm({ ...planningForm, endDate: e.target.value })}
+                    />
+                  </div>
+                ) : (
+                  <span style={{ fontWeight: 600 }}>
+                    {formatDate(release.start_date)} — {formatDate(release.end_date)}
+                  </span>
+                )}
               </div>
               <div>
                 <span className="muted" style={{ display: "block", fontSize: "11px", textTransform: "uppercase" }}>Ventana de ejecución</span>
                 <span style={{ fontWeight: 600, color: "var(--accent)" }}>
-                  {release.execution_days ? `${release.execution_days} días hábiles` : "—"}
+                  {liveExecutionDays ? `${liveExecutionDays} días hábiles` : "—"}
                 </span>
               </div>
               {isOperativa ? (
@@ -418,29 +516,79 @@ export default function ReleaseDetailPage(): React.ReactElement {
                 <>
                   <div>
                     <span className="muted" style={{ display: "block", fontSize: "11px", textTransform: "uppercase" }}>Recursos QC</span>
-                    <span style={{ fontWeight: 600 }}>{release.qc_resources ?? 1} recurso(s)</span>
+                    {editingPlanning && canEditAppsPlanning ? (
+                      <input
+                        type="number"
+                        min={1}
+                        max={50}
+                        value={planningForm.qcResources}
+                        onChange={(e) => setPlanningForm({ ...planningForm, qcResources: Number(e.target.value) || 1 })}
+                        style={{ marginTop: "4px", width: "80px" }}
+                      />
+                    ) : (
+                      <span style={{ fontWeight: 600 }}>{release.qc_resources ?? 1} recurso(s)</span>
+                    )}
                   </div>
                   <div>
                     <span className="muted" style={{ display: "block", fontSize: "11px", textTransform: "uppercase" }}>Tipo de validación</span>
-                    <span style={{ fontWeight: 600 }}>{release.validation_type ?? "Smoke"}</span>
+                    {editingPlanning && canEditAppsPlanning ? (
+                      <select
+                        value={planningForm.validationType}
+                        onChange={(e) => setPlanningForm({ ...planningForm, validationType: e.target.value })}
+                        style={{ marginTop: "4px" }}
+                      >
+                        {([planningForm.validationType, ...VALIDATION_TYPE_OPTIONS].filter(
+                          (value, index, all) => value && all.indexOf(value) === index,
+                        )).map((vt) => (
+                          <option key={vt} value={vt}>
+                            {vt}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <span style={{ fontWeight: 600 }}>{release.validation_type ?? "Smoke"}</span>
+                    )}
                   </div>
                 </>
               )}
             </>
           )}
-          {release.jira_issue_filter && !isBe && (
+          {(release.jira_issue_filter || canEditAppsPlanning) && !isBe && (
             <div style={{ gridColumn: "1 / -1" }}>
               <span className="muted" style={{ display: "block", fontSize: "11px", textTransform: "uppercase" }}>Filtro de issues (Jira)</span>
-              <code style={{ fontSize: "12px", background: "var(--surface-2)", padding: "3px 8px", borderRadius: "4px" }}>
-                {release.jira_issue_filter}
-              </code>
+              {editingPlanning && canEditAppsPlanning ? (
+                <input
+                  value={planningForm.jiraIssueFilter}
+                  onChange={(e) => setPlanningForm({ ...planningForm, jiraIssueFilter: e.target.value })}
+                  placeholder="https://dlatvarg.atlassian.net/issues/?filter=123456"
+                  style={{ marginTop: "4px", width: "100%" }}
+                />
+              ) : (
+                <code style={{ fontSize: "12px", background: "var(--surface-2)", padding: "3px 8px", borderRadius: "4px" }}>
+                  {release.jira_issue_filter || "—"}
+                </code>
+              )}
             </div>
           )}
-          {release.description && (
+          {(release.description || canEditAppsPlanning) && (
             <div style={{ gridColumn: "1 / -1", marginTop: "4px" }}>
               <span className="muted" style={{ display: "block", fontSize: "11px", textTransform: "uppercase" }}>Descripción</span>
-              <p style={{ margin: "2px 0 0" }}>{release.description}</p>
+              {editingPlanning && canEditAppsPlanning ? (
+                <textarea
+                  value={planningForm.description}
+                  onChange={(e) => setPlanningForm({ ...planningForm, description: e.target.value })}
+                  rows={3}
+                  style={{ marginTop: "4px", width: "100%" }}
+                />
+              ) : (
+                <p style={{ margin: "2px 0 0" }}>{release.description || "—"}</p>
+              )}
             </div>
+          )}
+          {editingPlanning && canEditAppsPlanning && hasEngineCases && (
+            <p className="muted" style={{ gridColumn: "1 / -1", margin: "4px 0 0", fontSize: "12px" }}>
+              Cambiar el tipo de validación o el filtro no regenera los Test Cases. La duración de abajo sí se actualiza con los recursos.
+            </p>
           )}
         </div>
       </div>
@@ -458,8 +606,8 @@ export default function ReleaseDetailPage(): React.ReactElement {
           <div style={{ marginTop: "1rem" }}>
             <ReleaseAnalysisCard
               analysis={analysis}
-              qcResources={release.qc_resources}
-              executionDays={release.execution_days}
+              qcResources={qcResources}
+              executionDays={liveExecutionDays}
               effortHours={isApp ? estimationHours : null}
               personDays={isApp ? estimationDays : null}
               durationDays={isApp ? estimatedDurationDays : null}

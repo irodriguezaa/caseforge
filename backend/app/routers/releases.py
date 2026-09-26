@@ -344,6 +344,29 @@ def update_release(
                 ),
             )
 
+    apps_planning_fields = {
+        "start_date",
+        "end_date",
+        "qc_resources",
+        "validation_type",
+        "jira_issue_filter",
+        "description",
+    }
+    is_apps = release.be_release_id is None and release.operativa_release_id is None
+    if is_apps and apps_planning_fields & updates.keys():
+        if user.role not in {Role.JEFE, Role.LIDER}:
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                detail="No tienes permiso para editar la planificación de esta Release.",
+            )
+        if release.status != ReleaseStatus.IN_PROGRESS:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                detail="Ventana, recursos, tipo de validación, filtro y descripción solo se editan en IN_PROGRESS.",
+            )
+        if "qc_resources" in updates and updates["qc_resources"] is not None and int(updates["qc_resources"]) < 1:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Recursos QC debe ser al menos 1.")
+
     original_keys = set(updates.keys())
     if "deliverable_name" in updates:
         deliverable = _resolve_deliverable(updates.pop("deliverable_name"), db)
@@ -355,8 +378,12 @@ def update_release(
         effective_deliverable_id = updates.get("deliverable_id", release.deliverable_id)
         _validate_lineage(effective_type, effective_parent, effective_deliverable_id, db, self_release_id=release_id)
 
+    dates_touched = "start_date" in updates or "end_date" in updates
+    updates.pop("execution_days", None)
     for field, value in updates.items():
         setattr(release, field, value)
+    if dates_touched:
+        release.execution_days = calculate_business_days(release.start_date, release.end_date) or None
 
     try:
         db.commit()
