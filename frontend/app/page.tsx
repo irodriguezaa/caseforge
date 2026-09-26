@@ -267,7 +267,7 @@ export default function DashboardPage(): React.ReactElement {
                     <th>% Avance</th>
                     <th>% Cobertura</th>
                     <th>Estado</th>
-                    <th>Blocker</th>
+                      <th title="Issues Jira Blocker/Impedimento del filtro de la Release, excluye Done, Roll Out y Cancelado">Blocker</th>
                     <th>Nivel de riesgo</th>
                   </tr>
                 </thead>

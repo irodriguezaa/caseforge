@@ -39,7 +39,7 @@ class ActivityItem(BaseModel):
     fail_count: int = 0
     blocked_count: int = 0
     unexecuted_count: int = 0
-    defects_blocker_count: int = 0
+    defects_blocker_count: int = 0  # open Jira Blocker issues from the Release filter
     percent_avance: float
     percent_cobertura: float
     risk_level: str  # "LOW" | "MEDIUM" | "HIGH"

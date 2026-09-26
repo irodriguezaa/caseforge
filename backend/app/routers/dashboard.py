@@ -22,7 +22,12 @@ from app.models.deliverable import Deliverable
 from app.models.release import Release, ReleaseStatus, ReleaseType
 from app.models.test_case import TestCase, TestCasePriority, TestCaseStatus
 from app.models.window import OperationalWindow, ReleaseWindow, WindowStatus
-from app.schemas.dashboard import ActivityItem, AtRiskItem, DashboardSummary, QcDashboardSummary
+from app.services.jira_client import (
+    JiraApiError,
+    JiraNotConfiguredError,
+    count_open_blocker_issues,
+    parse_jira_filter_id,
+)
 
 router = APIRouter(
     prefix="/api/v1/dashboard",
@@ -267,6 +272,23 @@ def get_qc_summary(
             release_ordinal[release_id] = per_deliverable_counters[deliverable_id]
 
     execution_items: list[ActivityItem] = []
+    jira_blocker_by_filter: dict[str, int] = {}
+    jira_available = True
+    for rel in tracked_releases:
+        filter_id = parse_jira_filter_id(getattr(rel, "jira_issue_filter", None))
+        if not filter_id or filter_id in jira_blocker_by_filter:
+            continue
+        if not jira_available:
+            jira_blocker_by_filter[filter_id] = 0
+            continue
+        try:
+            jira_blocker_by_filter[filter_id] = count_open_blocker_issues(filter_id)
+        except JiraNotConfiguredError:
+            jira_available = False
+            jira_blocker_by_filter[filter_id] = 0
+        except (JiraApiError, TypeError, ValueError):
+            jira_blocker_by_filter[filter_id] = 0
+
     for rel in tracked_releases:
         rel_tc_stmt = select(TestCase).where(TestCase.release_id == rel.id)
         if operational_window_id is not None:
@@ -288,15 +310,8 @@ def get_qc_summary(
         rel_unexecuted = rel_planned - rel_executed
         rel_avance = round((rel_executed / rel_planned) * 100, 1) if rel_planned else 0.0
 
-        rel_test_case_ids = [tc.id for tc in rel_test_cases]
-        rel_defects_blocker = 0
-        if rel_test_case_ids:
-            rel_defects_blocker = db.execute(
-                select(func.count(Defect.id)).where(
-                    Defect.test_case_id.in_(rel_test_case_ids),
-                    Defect.severity == TestCasePriority.BLOCKER,
-                )
-            ).scalar_one()
+        filter_id = parse_jira_filter_id(getattr(rel, "jira_issue_filter", None))
+        rel_defects_blocker = jira_blocker_by_filter.get(filter_id, 0) if filter_id else 0
 
         active_window = db.execute(
             select(ReleaseWindow)

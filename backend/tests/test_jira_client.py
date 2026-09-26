@@ -63,6 +63,56 @@ def test_fetch_tickets_posts_enhanced_search_jql(monkeypatch) -> None:
     assert "nextPageToken" not in captured["json"]
 
 
+def test_parse_jira_filter_id_from_url_or_digits() -> None:
+    from app.services.jira_client import parse_jira_filter_id
+
+    assert parse_jira_filter_id("117430") == "117430"
+    assert parse_jira_filter_id("https://dlatvarg.atlassian.net/issues/?filter=117430") == "117430"
+    assert parse_jira_filter_id("https://dlatvarg.atlassian.net/issues/?jql=x&filter=99") == "99"
+    assert parse_jira_filter_id("") is None
+    assert parse_jira_filter_id("https://dlatvarg.atlassian.net/issues/?jql=project=WEB") is None
+
+
+def test_count_open_blocker_issues_narrows_saved_filter_jql(monkeypatch) -> None:
+    from app.services import jira_client
+
+    captured: dict[str, object] = {}
+
+    class _FakeResponse:
+        status_code = 200
+
+        def json(self) -> dict:
+            if captured.get("path") == "/rest/api/3/search/approximate-count":
+                return {"count": 3}
+            return {"jql": "project = WEBCL"}
+
+    class _FakeClient:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def get(self, path: str) -> _FakeResponse:
+            captured["get_path"] = path
+            return _FakeResponse()
+
+        def post(self, path: str, json: dict) -> _FakeResponse:
+            captured["path"] = path
+            captured["json"] = json
+            return _FakeResponse()
+
+    monkeypatch.setattr(jira_client, "_client", lambda timeout=None: _FakeClient())
+    assert jira_client.count_open_blocker_issues("117430") == 3
+    assert captured["get_path"] == "/rest/api/3/filter/117430"
+    assert captured["path"] == "/rest/api/3/search/approximate-count"
+    jql = captured["json"]["jql"]
+    assert jql.startswith("(project = WEBCL)")
+    assert "Blocker" in jql
+    assert "Roll Out" in jql
+    assert "Done" in jql
+
+
 def test_map_issue_uses_csv_closed_status_and_keeps_cancelled_closed() -> None:
     from app.models.qc_ticket import QcTicketSource, QcTicketView
     from app.services.jira_client import _map_issue

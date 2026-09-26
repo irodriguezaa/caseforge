@@ -34,6 +34,12 @@ from app.services.qc_ticket_imports import (
 _REQUEST_TIMEOUT_SECONDS = 120.0
 _SEARCH_PAGE_SIZE = 100
 _JIRA_OFFSET_RE = re.compile(r"([+-])(\d{2})(\d{2})$")
+_FILTER_ID_RE = re.compile(r"(?:[?&]filter=|/filters/)(\d+)", re.IGNORECASE)
+_DASHBOARD_COUNT_TIMEOUT = 20.0
+_OPEN_BLOCKER_JQL = (
+    ' AND priority in (Blocker, Impedimento)'
+    ' AND status not in (Done, "Roll Out", Cancelled, Cancelado, Cancelada)'
+)
 
 # The four saved Jira filters behind KPIs Defectos Operativa / Defectos Release.
 RADAR_FILTERS: dict[QcTicketView, tuple[tuple[QcTicketSource, str], ...]] = {
@@ -305,3 +311,39 @@ def fetch_tickets_by_filter(
                 break
 
     return result
+
+
+def parse_jira_filter_id(raw: str | None) -> str | None:
+    """Accepts a saved-filter URL, `filter=123`, or a bare numeric id."""
+    if not raw or not str(raw).strip():
+        return None
+    text = str(raw).strip()
+    if text.isdigit():
+        return text
+    match = _FILTER_ID_RE.search(text)
+    return match.group(1) if match else None
+
+
+def count_open_blocker_issues(filter_id: str) -> int:
+    """Blocker/Impedimento issues in a saved filter that are not Done, Roll Out or Cancelled."""
+    with _client(timeout=_DASHBOARD_COUNT_TIMEOUT) as client:
+        jql = f"({_jql_for_saved_filter(client, filter_id)}){_OPEN_BLOCKER_JQL}"
+        approx = client.post("/rest/api/3/search/approximate-count", json={"jql": jql})
+        if approx.status_code == 200:
+            return int((approx.json() or {}).get("count") or 0)
+        total = 0
+        next_page_token: str | None = None
+        while True:
+            body: dict[str, Any] = {"jql": jql, "maxResults": _SEARCH_PAGE_SIZE, "fields": ["status"]}
+            if next_page_token:
+                body["nextPageToken"] = next_page_token
+            response = client.post("/rest/api/3/search/jql", json=body)
+            if response.status_code != 200:
+                raise JiraApiError(response.status_code, response.text[:500])
+            payload = response.json()
+            issues = payload.get("issues") or []
+            total += len(issues)
+            next_page_token = payload.get("nextPageToken") or None
+            if not next_page_token or not issues:
+                break
+        return total

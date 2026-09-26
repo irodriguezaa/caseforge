@@ -225,7 +225,20 @@ def test_qc_summary_active_items_exposes_window_dates_and_blocker_defects(client
 
     assert item["window_start_date"] == "2026-08-25"
     assert item["window_end_date"] == "2026-08-28"
-    assert item["defects_blocker_count"] == 1  # only the BLOCKER-severity one counts
+    assert item["defects_blocker_count"] == 0
+
+
+def test_qc_summary_blocker_count_reads_jira_filter(client, monkeypatch) -> None:
+    monkeypatch.setattr("app.routers.dashboard.count_open_blocker_issues", lambda _fid: 4)
+    release = _create_release(
+        client,
+        jira_issue_filter="https://dlatvarg.atlassian.net/issues/?filter=117430",
+    )
+    client.patch(f"/api/v1/releases/{release['id']}", json={"status": "IN_PROGRESS"})
+
+    body = client.get("/api/v1/dashboard/qc-summary").json()
+    item = next(i for i in body["active_items"] if i["release_id"] == release["id"])
+    assert item["defects_blocker_count"] == 4
 
 
 def test_qc_summary_active_items_exposes_deliverable_context(client) -> None:
