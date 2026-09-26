@@ -41,6 +41,8 @@ router = APIRouter(
 _RISK_SCHEDULE_TOLERANCE = 0.15
 _RISK_FAIL_RATIO_THRESHOLD = 0.10
 _RISK_FAIL_RATIO_HIGH = 0.20
+_RISK_JIRA_BLOCKER_MEDIUM = 6
+_RISK_JIRA_BLOCKER_HIGH = 10
 
 
 @router.get("/summary", response_model=DashboardSummary)
@@ -340,8 +342,16 @@ def get_qc_summary(
                 f"% FAIL sobre ejecutados supera el {_RISK_FAIL_RATIO_THRESHOLD * 100:.0f}% "
                 f"({fail_ratio * 100:.0f}%)."
             )
+        if rel_defects_blocker >= _RISK_JIRA_BLOCKER_MEDIUM:
+            reasons.append(
+                f"{rel_defects_blocker} issue(s) Blocker abiertos en el filtro Jira."
+            )
 
-        if rel_blocked > 0 or fail_ratio > _RISK_FAIL_RATIO_HIGH:
+        if (
+            rel_blocked > 0
+            or fail_ratio > _RISK_FAIL_RATIO_HIGH
+            or rel_defects_blocker >= _RISK_JIRA_BLOCKER_HIGH
+        ):
             risk_level = "HIGH"
         elif reasons:
             risk_level = "MEDIUM"
