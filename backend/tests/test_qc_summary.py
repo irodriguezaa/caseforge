@@ -161,6 +161,40 @@ def test_qc_summary_active_items_high_risk_when_blocked(client) -> None:
     assert any("BLOCKED" in r for r in item["risk_reasons"])
 
 
+def test_qc_summary_active_items_medium_risk_when_fail_over_10_percent(client) -> None:
+    release = _create_release(client)
+    client.patch(f"/api/v1/releases/{release['id']}", json={"status": "IN_PROGRESS"})
+    client.post(
+        f"/api/v1/releases/{release['id']}/test-cases",
+        json={"test_case_id": "QC-001", "component": "X", "test_case_name": "A", "status": "FAIL"},
+    )
+    for i in range(2, 7):
+        client.post(
+            f"/api/v1/releases/{release['id']}/test-cases",
+            json={"test_case_id": f"QC-00{i}", "component": "X", "test_case_name": f"P{i}", "status": "PASS"},
+        )
+
+    item = client.get("/api/v1/dashboard/qc-summary").json()["active_items"][0]
+    assert item["risk_level"] == "MEDIUM"
+
+
+def test_qc_summary_active_items_high_risk_when_fail_over_20_percent(client) -> None:
+    release = _create_release(client)
+    client.patch(f"/api/v1/releases/{release['id']}", json={"status": "IN_PROGRESS"})
+    client.post(
+        f"/api/v1/releases/{release['id']}/test-cases",
+        json={"test_case_id": "QC-001", "component": "X", "test_case_name": "A", "status": "FAIL"},
+    )
+    for i in range(2, 5):
+        client.post(
+            f"/api/v1/releases/{release['id']}/test-cases",
+            json={"test_case_id": f"QC-00{i}", "component": "X", "test_case_name": f"P{i}", "status": "PASS"},
+        )
+
+    item = client.get("/api/v1/dashboard/qc-summary").json()["active_items"][0]
+    assert item["risk_level"] == "HIGH"
+
+
 def test_qc_summary_active_items_excludes_completed_and_cancelled_releases(client) -> None:
     completed = _create_release(client, name="Completed Release")
     client.patch(f"/api/v1/releases/{completed['id']}", json={"status": "IN_PROGRESS"})

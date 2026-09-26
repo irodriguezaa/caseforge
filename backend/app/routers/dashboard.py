@@ -35,10 +35,11 @@ router = APIRouter(
     dependencies=[Depends(require_dashboard)],
 )
 
-# A window is flagged at risk if its executed ratio trails its elapsed-time ratio by more than
-# this margin, or if it has any BLOCKED test case, or if FAIL exceeds this share of executed.
+# A window/release is flagged at risk if executed ratio trails elapsed-time by more than
+# this margin, if it has any BLOCKED test case, or if FAIL exceeds the medium/high shares.
 _RISK_SCHEDULE_TOLERANCE = 0.15
-_RISK_FAIL_RATIO_THRESHOLD = 0.15
+_RISK_FAIL_RATIO_THRESHOLD = 0.10
+_RISK_FAIL_RATIO_HIGH = 0.20
 
 
 @router.get("/summary", response_model=DashboardSummary)
@@ -339,7 +340,7 @@ def get_qc_summary(
                 f"({fail_ratio * 100:.0f}%)."
             )
 
-        if rel_blocked > 0 or fail_ratio > 0.25:
+        if rel_blocked > 0 or fail_ratio > _RISK_FAIL_RATIO_HIGH:
             risk_level = "HIGH"
         elif reasons:
             risk_level = "MEDIUM"
