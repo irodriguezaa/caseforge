@@ -46,25 +46,9 @@ _RISK_JIRA_BLOCKER_MEDIUM = 6
 _RISK_JIRA_BLOCKER_HIGH = 10
 
 
-def _release_avance_percent(
-    start: date | None,
-    end: date | None,
-    *,
-    today: date | None = None,
-) -> float:
-    """% Avance from calendar dates only: Release.start_date / end_date vs today's date. No hours."""
-    if start is None or end is None or start > end:
-        return 0.0
-    current = today if today is not None else date.today()
-    if current < start:
-        return 0.0
-    if current >= end:
-        return 100.0
-    span_days = (end - start).days
-    if span_days <= 0:
-        return 100.0
-    elapsed_days = (current - start).days
-    return round(max(0.0, min(100.0, (elapsed_days / span_days) * 100.0)), 1)
+_AVANCE_STATUSES = frozenset(
+    {TestCaseStatus.PASS, TestCaseStatus.FAIL, TestCaseStatus.N_A}
+)
 
 
 def _count_jira_blockers(filter_ids: list[str]) -> dict[str, int]:
@@ -359,7 +343,8 @@ def get_qc_summary(
         rel_fail = sum(1 for tc in rel_test_cases if tc.status == TestCaseStatus.FAIL)
         rel_unexecuted = rel_planned - rel_executed
         rel_cobertura = round((rel_executed / rel_planned) * 100, 1) if rel_planned else 0.0
-        rel_avance = _release_avance_percent(rel.start_date, rel.end_date, today=today)
+        rel_concluded = sum(1 for tc in rel_test_cases if tc.status in _AVANCE_STATUSES)
+        rel_avance = round((rel_concluded / rel_planned) * 100, 1) if rel_planned else 0.0
         rel_brecha = round(rel_cobertura - rel_avance, 1)
 
         filter_id = parse_jira_filter_id(getattr(rel, "jira_issue_filter", None))

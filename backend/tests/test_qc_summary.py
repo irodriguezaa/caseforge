@@ -1,8 +1,3 @@
-from datetime import date
-
-from app.routers.dashboard import _release_avance_percent
-
-
 def _create_release(client, **overrides):
     payload = {"name": "Claro Video", "version": "8.15", "platform": "tvOS", "cluster": "LATAM"}
     payload.update(overrides)
@@ -36,8 +31,8 @@ def test_qc_summary_computes_avance_and_status_breakdown(client) -> None:
     assert body["percent_cobertura"] == 66.7
     item = next(row for row in body["execution_items"] if row["release_id"] == release["id"])
     assert item["percent_cobertura"] == 66.7
-    assert item["percent_avance"] == 0.0
-    assert item["brecha"] == 66.7
+    assert item["percent_avance"] == 66.7
+    assert item["brecha"] == 0.0
 
 
 def test_qc_summary_filters_by_cluster(client) -> None:
@@ -149,8 +144,8 @@ def test_qc_summary_active_items_reflects_open_releases(client) -> None:
     assert item["planned"] == 2
     assert item["executed"] == 1
     assert item["percent_cobertura"] == 50.0
-    assert item["percent_avance"] == 0.0
-    assert item["brecha"] == 50.0
+    assert item["percent_avance"] == 50.0
+    assert item["brecha"] == 0.0
     assert item["risk_level"] == "LOW"
 
 
@@ -394,113 +389,79 @@ def test_qc_summary_origin_kinds_and_in_progress_counts(client, db_session) -> N
     assert by_id[ope.id]["origin_kind"] == "OPERATIVA"
 
 
-def test_release_avance_is_date_only() -> None:
-    start = date(2026, 9, 25)
-    end = date(2026, 9, 28)
-    assert _release_avance_percent(start, end, today=date(2026, 9, 24)) == 0.0
-    assert _release_avance_percent(start, end, today=date(2026, 9, 25)) == 0.0
-    assert _release_avance_percent(start, end, today=date(2026, 9, 26)) == 33.3
-    assert _release_avance_percent(start, end, today=date(2026, 9, 27)) == 66.7
-    assert _release_avance_percent(start, end, today=date(2026, 9, 28)) == 100.0
-    assert _release_avance_percent(start, end, today=date(2026, 9, 29)) == 100.0
-    assert _release_avance_percent(date(2026, 9, 14), date(2026, 9, 15), today=date(2026, 9, 25)) == 100.0
-    assert _release_avance_percent(None, None, today=date(2026, 9, 25)) == 0.0
-    assert _release_avance_percent(date(2030, 6, 1), date(2030, 6, 30), today=date(2020, 1, 1)) == 0.0
-
-
-def test_qc_summary_cobertura_and_brecha_before_release_window(client) -> None:
-    release = _create_release(
-        client,
-        version="cov-before",
-        start_date="2099-01-01",
-        end_date="2099-01-31",
+def _add_tc(client, release_id: int, case_id: str, status: str) -> None:
+    response = client.post(
+        f"/api/v1/releases/{release_id}/test-cases",
+        json={"test_case_id": case_id, "component": "X", "test_case_name": case_id, "status": status},
     )
+    assert response.status_code == 201, response.text
+
+
+def test_qc_summary_cobertura_avance_brecha_from_tc_statuses(client) -> None:
+    release = _create_release(client, version="metrics-mix")
     client.patch(f"/api/v1/releases/{release['id']}", json={"status": "IN_PROGRESS"})
-    client.post(
-        f"/api/v1/releases/{release['id']}/test-cases",
-        json={"test_case_id": "QC-001", "component": "X", "test_case_name": "A", "status": "PASS"},
-    )
-    client.post(
-        f"/api/v1/releases/{release['id']}/test-cases",
-        json={"test_case_id": "QC-002", "component": "X", "test_case_name": "B", "status": "FAIL"},
-    )
-    client.post(
-        f"/api/v1/releases/{release['id']}/test-cases",
-        json={"test_case_id": "QC-003", "component": "X", "test_case_name": "C"},
-    )
+    _add_tc(client, release["id"], "QC-001", "PASS")
+    _add_tc(client, release["id"], "QC-002", "PASS")
+    _add_tc(client, release["id"], "QC-003", "FAIL")
+    _add_tc(client, release["id"], "QC-004", "BLOCKED")
+    _add_tc(client, release["id"], "QC-005", "UNEXECUTED")
 
     item = client.get("/api/v1/dashboard/qc-summary").json()["active_items"][0]
-    assert item["percent_cobertura"] == 66.7
-    assert item["percent_avance"] == 0.0
-    assert item["brecha"] == 66.7
+    assert item["planned"] == 5
+    assert item["percent_cobertura"] == 80.0
+    assert item["percent_avance"] == 60.0
+    assert item["brecha"] == 20.0
 
 
-def test_qc_summary_negative_brecha_when_window_already_ended(client) -> None:
-    release = _create_release(
-        client,
-        version="cov-after",
-        start_date="2020-01-01",
-        end_date="2020-01-10",
-    )
+def test_qc_summary_na_counts_in_avance_blocked_does_not(client) -> None:
+    release = _create_release(client, version="metrics-na")
     client.patch(f"/api/v1/releases/{release['id']}", json={"status": "IN_PROGRESS"})
-    client.post(
-        f"/api/v1/releases/{release['id']}/test-cases",
-        json={"test_case_id": "QC-001", "component": "X", "test_case_name": "A", "status": "PASS"},
-    )
-    client.post(
-        f"/api/v1/releases/{release['id']}/test-cases",
-        json={"test_case_id": "QC-002", "component": "X", "test_case_name": "B"},
-    )
+    _add_tc(client, release["id"], "QC-001", "PASS")
+    _add_tc(client, release["id"], "QC-002", "FAIL")
+    _add_tc(client, release["id"], "QC-003", "N_A")
+    _add_tc(client, release["id"], "QC-004", "BLOCKED")
+    _add_tc(client, release["id"], "QC-005", "UNEXECUTED")
 
     item = client.get("/api/v1/dashboard/qc-summary").json()["active_items"][0]
-    assert item["percent_cobertura"] == 50.0
-    assert item["percent_avance"] == 100.0
-    assert item["brecha"] == -50.0
-    assert item["percent_avance"] != item["percent_cobertura"]
+    assert item["percent_cobertura"] == 80.0
+    assert item["percent_avance"] == 60.0
+    assert item["brecha"] == 20.0
 
 
-def test_qc_summary_avance_zero_without_release_dates(client) -> None:
-    release = _create_release(client, version="fallback-win")
+def test_qc_summary_all_unexecuted_is_zero_cobertura_and_avance(client) -> None:
+    release = _create_release(client, version="all-unexec")
     client.patch(f"/api/v1/releases/{release['id']}", json={"status": "IN_PROGRESS"})
-    window = client.post(
-        f"/api/v1/releases/{release['id']}/windows",
-        json={"name": "Regresión", "start_date": "2020-01-01", "end_date": "2020-01-10"},
-    ).json()
-    client.patch(f"/api/v1/release-windows/{window['id']}", json={"status": "ACTIVE"})
-    client.post(
-        f"/api/v1/releases/{release['id']}/test-cases",
-        json={"test_case_id": "QC-001", "component": "X", "test_case_name": "A", "status": "PASS"},
-    )
-    client.post(
-        f"/api/v1/releases/{release['id']}/test-cases",
-        json={"test_case_id": "QC-002", "component": "X", "test_case_name": "B"},
-    )
+    _add_tc(client, release["id"], "QC-001", "UNEXECUTED")
+    _add_tc(client, release["id"], "QC-002", "UNEXECUTED")
 
     item = client.get("/api/v1/dashboard/qc-summary").json()["active_items"][0]
-    assert item["percent_cobertura"] == 50.0
-    assert item["percent_avance"] == 0.0
-    assert item["brecha"] == 50.0
-
-
-def test_qc_summary_release_dates_take_precedence_over_active_window(client) -> None:
-    release = _create_release(
-        client,
-        version="dates-win",
-        start_date="2099-06-01",
-        end_date="2099-06-30",
-    )
-    client.patch(f"/api/v1/releases/{release['id']}", json={"status": "IN_PROGRESS"})
-    window = client.post(
-        f"/api/v1/releases/{release['id']}/windows",
-        json={"name": "Regresión", "start_date": "2020-01-01", "end_date": "2020-01-10"},
-    ).json()
-    client.patch(f"/api/v1/release-windows/{window['id']}", json={"status": "ACTIVE"})
-
-    item = client.get("/api/v1/dashboard/qc-summary").json()["active_items"][0]
-    assert item["percent_avance"] == 0.0
     assert item["percent_cobertura"] == 0.0
+    assert item["percent_avance"] == 0.0
     assert item["brecha"] == 0.0
-    assert item["window_start_date"] == "2099-06-01"
+
+
+def test_qc_summary_all_blocked_is_full_cobertura_zero_avance(client) -> None:
+    release = _create_release(client, version="all-blocked")
+    client.patch(f"/api/v1/releases/{release['id']}", json={"status": "IN_PROGRESS"})
+    _add_tc(client, release["id"], "QC-001", "BLOCKED")
+    _add_tc(client, release["id"], "QC-002", "BLOCKED")
+
+    item = client.get("/api/v1/dashboard/qc-summary").json()["active_items"][0]
+    assert item["percent_cobertura"] == 100.0
+    assert item["percent_avance"] == 0.0
+    assert item["brecha"] == 100.0
+
+
+def test_qc_summary_all_pass_is_full_cobertura_and_avance(client) -> None:
+    release = _create_release(client, version="all-pass")
+    client.patch(f"/api/v1/releases/{release['id']}", json={"status": "IN_PROGRESS"})
+    _add_tc(client, release["id"], "QC-001", "PASS")
+    _add_tc(client, release["id"], "QC-002", "PASS")
+
+    item = client.get("/api/v1/dashboard/qc-summary").json()["active_items"][0]
+    assert item["percent_cobertura"] == 100.0
+    assert item["percent_avance"] == 100.0
+    assert item["brecha"] == 0.0
 
 
 def test_qc_summary_schedule_risk_reason_says_cobertura_not_avance(client) -> None:
