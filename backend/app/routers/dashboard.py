@@ -22,6 +22,7 @@ from app.models.deliverable import Deliverable
 from app.models.release import Release, ReleaseStatus, ReleaseType
 from app.models.test_case import TestCase, TestCasePriority, TestCaseStatus
 from app.models.window import OperationalWindow, ReleaseWindow, WindowStatus
+from app.schemas.dashboard import ActivityItem, AtRiskItem, DashboardSummary, QcDashboardSummary
 from app.services.jira_client import (
     JiraApiError,
     JiraNotConfiguredError,
