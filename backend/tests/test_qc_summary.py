@@ -195,6 +195,30 @@ def test_qc_summary_active_items_high_risk_when_fail_over_20_percent(client) -> 
     assert item["risk_level"] == "HIGH"
 
 
+def test_qc_summary_medium_risk_when_jira_blockers_are_6_to_9(client, monkeypatch) -> None:
+    monkeypatch.setattr("app.routers.dashboard.count_open_blocker_issues", lambda _fid: 7)
+    release = _create_release(
+        client,
+        jira_issue_filter="https://dlatvarg.atlassian.net/issues/?filter=117301",
+    )
+    client.patch(f"/api/v1/releases/{release['id']}", json={"status": "IN_PROGRESS"})
+    item = client.get("/api/v1/dashboard/qc-summary").json()["active_items"][0]
+    assert item["defects_blocker_count"] == 7
+    assert item["risk_level"] == "MEDIUM"
+
+
+def test_qc_summary_high_risk_when_jira_blockers_are_10_or_more(client, monkeypatch) -> None:
+    monkeypatch.setattr("app.routers.dashboard.count_open_blocker_issues", lambda _fid: 10)
+    release = _create_release(
+        client,
+        jira_issue_filter="https://dlatvarg.atlassian.net/issues/?filter=117301",
+    )
+    client.patch(f"/api/v1/releases/{release['id']}", json={"status": "IN_PROGRESS"})
+    item = client.get("/api/v1/dashboard/qc-summary").json()["active_items"][0]
+    assert item["defects_blocker_count"] == 10
+    assert item["risk_level"] == "HIGH"
+
+
 def test_qc_summary_active_items_excludes_completed_and_cancelled_releases(client) -> None:
     completed = _create_release(client, name="Completed Release")
     client.patch(f"/api/v1/releases/{completed['id']}", json={"status": "IN_PROGRESS"})
