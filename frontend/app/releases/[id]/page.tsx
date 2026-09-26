@@ -36,8 +36,15 @@ const NEXT_STATUS: Partial<Record<ReleaseStatus, ReleaseStatus[]>> = {
 
 function formatDate(isoDate?: string | null): string {
   if (!isoDate) return "—";
-  const [y, m, d] = isoDate.split("-");
+  const [y, m, d] = isoDate.slice(0, 10).split("-");
+  if (!y || !m || !d) return "—";
   return `${d}/${m}/${y}`;
+}
+
+function toDateInputValue(isoDate?: string | null): string {
+  if (!isoDate) return "";
+  const day = isoDate.slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : "";
 }
 
 export default function ReleaseDetailPage(): React.ReactElement {
@@ -124,8 +131,8 @@ export default function ReleaseDetailPage(): React.ReactElement {
   const beginEditPlanning = (): void => {
     if (!release) return;
     setPlanningForm({
-      startDate: release.start_date ?? "",
-      endDate: release.end_date ?? "",
+      startDate: toDateInputValue(release.start_date),
+      endDate: toDateInputValue(release.end_date),
       qcResources: release.qc_resources ?? 1,
       validationType: release.validation_type ?? "Smoke",
       jiraIssueFilter: release.jira_issue_filter ?? "",
@@ -479,28 +486,36 @@ export default function ReleaseDetailPage(): React.ReactElement {
                   </div>
                 </>
               )}
-              <div>
-                <span className="muted" style={{ display: "block", fontSize: "11px", textTransform: "uppercase" }}>Ventana de revisión</span>
-                {editingPlanning && canEditAppsPlanning ? (
-                  <div style={{ display: "flex", gap: "6px", alignItems: "center", marginTop: "4px" }}>
+              {editingPlanning && canEditAppsPlanning ? (
+                <>
+                  <div>
+                    <span className="muted" style={{ display: "block", fontSize: "11px", textTransform: "uppercase" }}>Inicio</span>
                     <input
                       type="date"
                       value={planningForm.startDate}
                       onChange={(e) => setPlanningForm({ ...planningForm, startDate: e.target.value })}
-                    />
-                    <span className="muted">—</span>
-                    <input
-                      type="date"
-                      value={planningForm.endDate}
-                      onChange={(e) => setPlanningForm({ ...planningForm, endDate: e.target.value })}
+                      style={{ marginTop: "4px", width: "100%", minWidth: "11rem", position: "relative", zIndex: 2 }}
                     />
                   </div>
-                ) : (
+                  <div>
+                    <span className="muted" style={{ display: "block", fontSize: "11px", textTransform: "uppercase" }}>Fin</span>
+                    <input
+                      type="date"
+                      min={planningForm.startDate || undefined}
+                      value={planningForm.endDate}
+                      onChange={(e) => setPlanningForm({ ...planningForm, endDate: e.target.value })}
+                      style={{ marginTop: "4px", width: "100%", minWidth: "11rem", position: "relative", zIndex: 2 }}
+                    />
+                  </div>
+                </>
+              ) : (
+              <div>
+                <span className="muted" style={{ display: "block", fontSize: "11px", textTransform: "uppercase" }}>Ventana de revisión</span>
                   <span style={{ fontWeight: 600 }}>
                     {formatDate(release.start_date)} — {formatDate(release.end_date)}
                   </span>
-                )}
               </div>
+              )}
               <div>
                 <span className="muted" style={{ display: "block", fontSize: "11px", textTransform: "uppercase" }}>Ventana de ejecución</span>
                 <span style={{ fontWeight: 600, color: "var(--accent)" }}>

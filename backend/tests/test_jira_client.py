@@ -84,7 +84,7 @@ def test_count_open_blocker_issues_narrows_saved_filter_jql(monkeypatch) -> None
         def json(self) -> dict:
             if captured.get("path") == "/rest/api/3/search/approximate-count":
                 return {"count": 3}
-            return {"jql": "project = WEBCL"}
+            return {"jql": "project = WEBCL ORDER BY created DESC"}
 
     class _FakeClient:
         def __enter__(self):
@@ -108,8 +108,11 @@ def test_count_open_blocker_issues_narrows_saved_filter_jql(monkeypatch) -> None
     assert captured["path"] == "/rest/api/3/search/approximate-count"
     jql = captured["json"]["jql"]
     assert jql.startswith("(project = WEBCL)")
+    assert "ORDER BY" not in jql.upper()
+    assert "Supone un impedimento" in jql
     assert "Blocker" in jql
     assert "Roll Out" in jql
+    assert "Canceled" in jql
     assert "Done" in jql
 
 

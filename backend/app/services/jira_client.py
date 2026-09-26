@@ -37,9 +37,10 @@ _JIRA_OFFSET_RE = re.compile(r"([+-])(\d{2})(\d{2})$")
 _FILTER_ID_RE = re.compile(r"(?:[?&]filter=|/filters/)(\d+)", re.IGNORECASE)
 _DASHBOARD_COUNT_TIMEOUT = 20.0
 _OPEN_BLOCKER_JQL = (
-    ' AND priority in (Blocker, Impedimento)'
-    ' AND status not in (Done, "Roll Out", Cancelled, Cancelado, Cancelada)'
+    ' AND priority in ("Supone un impedimento", Blocker, Impedimento, Bloqueador)'
+    ' AND status not in (Done, "Roll Out", Cancelled, Canceled, Cancelado, Cancelada)'
 )
+_ORDER_BY_RE = re.compile(r"\s+ORDER\s+BY\s+.+$", re.IGNORECASE | re.DOTALL)
 
 # The four saved Jira filters behind KPIs Defectos Operativa / Defectos Release.
 RADAR_FILTERS: dict[QcTicketView, tuple[tuple[QcTicketSource, str], ...]] = {
@@ -324,10 +325,15 @@ def parse_jira_filter_id(raw: str | None) -> str | None:
     return match.group(1) if match else None
 
 
+def _jql_without_order(jql: str) -> str:
+    return _ORDER_BY_RE.sub("", (jql or "").strip()).strip()
+
+
 def count_open_blocker_issues(filter_id: str) -> int:
     """Blocker/Impedimento issues in a saved filter that are not Done, Roll Out or Cancelled."""
     with _client(timeout=_DASHBOARD_COUNT_TIMEOUT) as client:
-        jql = f"({_jql_for_saved_filter(client, filter_id)}){_OPEN_BLOCKER_JQL}"
+        base_jql = _jql_without_order(_jql_for_saved_filter(client, filter_id))
+        jql = f"({base_jql}){_OPEN_BLOCKER_JQL}"
         approx = client.post("/rest/api/3/search/approximate-count", json={"jql": jql})
         if approx.status_code == 200:
             return int((approx.json() or {}).get("count") or 0)
