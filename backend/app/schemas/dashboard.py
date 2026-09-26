@@ -40,9 +40,9 @@ class ActivityItem(BaseModel):
     blocked_count: int = 0
     unexecuted_count: int = 0
     defects_blocker_count: int = 0  # open Jira Blocker issues from the Release filter
-    percent_avance: float  # executed (non-UNEXECUTED) / planned TCs
-    percent_cobertura: float  # same execution ratio as percent_avance (planned scope = QC TCs)
-    brecha: float = 0.0  # execution % minus elapsed window time, in percentage points
+    percent_avance: float  # calendar-date share of Release.start_date/end_date
+    percent_cobertura: float  # executed (non-UNEXECUTED) / planned TCs
+    brecha: float = 0.0  # percent_cobertura - percent_avance, in percentage points
     risk_level: str  # "LOW" | "MEDIUM" | "HIGH"
     risk_reasons: list[str] = Field(default_factory=list)
     # Deliverable context (Entregable/Versiones/Revalidaciones) -- None when this Release has no
@@ -57,9 +57,9 @@ class ActivityItem(BaseModel):
 class QcDashboardSummary(BaseModel):
     """Backs the redesigned QC Dashboard: 'what is QC doing now, how far along, what's at risk'.
 
-    Global and per-Release percent_avance / percent_cobertura are executed (non-UNEXECUTED) /
-    planned TCs. ActivityItem.brecha compares that execution ratio against elapsed calendar
-    window time (Release.start_date/end_date, else ACTIVE ReleaseWindow).
+    ActivityItem.percent_cobertura is executed (non-UNEXECUTED) / planned TCs.
+    ActivityItem.percent_avance is calendar-date progress of Release.start_date/end_date
+    (no hours). brecha = cobertura - avance.
     """
 
     windows_total: int = 0

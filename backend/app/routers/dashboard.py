@@ -9,7 +9,7 @@ GET /qc-summary   -- redesigned QC Dashboard backing endpoint: "what is QC doing
 from calendar import monthrange
 from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import date, datetime, time, timedelta
+from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
@@ -46,30 +46,25 @@ _RISK_JIRA_BLOCKER_MEDIUM = 6
 _RISK_JIRA_BLOCKER_HIGH = 10
 
 
-def _window_elapsed_percent(
+def _release_avance_percent(
     start: date | None,
     end: date | None,
     *,
-    now: datetime | None = None,
+    today: date | None = None,
 ) -> float:
-    """Elapsed share of a calendar date window: start 00:00:00 through end 23:59:59, clamped 0–100.
-
-    Used only for Brecha (execution vs time). % Avance is TC execution, not this value.
-    """
+    """% Avance from calendar dates only: Release.start_date / end_date vs today's date. No hours."""
     if start is None or end is None or start > end:
         return 0.0
-    current = now if now is not None else datetime.now()
-    window_start = datetime.combine(start, time.min)
-    window_end = datetime.combine(end, time(23, 59, 59))
-    if current < window_start:
+    current = today if today is not None else date.today()
+    if current < start:
         return 0.0
-    if current >= window_end:
+    if current >= end:
         return 100.0
-    total_seconds = (window_end - window_start).total_seconds()
-    if total_seconds <= 0:
+    span_days = (end - start).days
+    if span_days <= 0:
         return 100.0
-    elapsed_seconds = (current - window_start).total_seconds()
-    return round(min(100.0, max(0.0, (elapsed_seconds / total_seconds) * 100.0)), 1)
+    elapsed_days = (current - start).days
+    return round(max(0.0, min(100.0, (elapsed_days / span_days) * 100.0)), 1)
 
 
 def _count_jira_blockers(filter_ids: list[str]) -> dict[str, int]:
@@ -364,21 +359,13 @@ def get_qc_summary(
         rel_fail = sum(1 for tc in rel_test_cases if tc.status == TestCaseStatus.FAIL)
         rel_unexecuted = rel_planned - rel_executed
         rel_cobertura = round((rel_executed / rel_planned) * 100, 1) if rel_planned else 0.0
-        rel_avance = rel_cobertura
+        rel_avance = _release_avance_percent(rel.start_date, rel.end_date, today=today)
+        rel_brecha = round(rel_cobertura - rel_avance, 1)
 
         filter_id = parse_jira_filter_id(getattr(rel, "jira_issue_filter", None))
         rel_defects_blocker = jira_blocker_by_filter.get(filter_id, 0) if filter_id else 0
 
         active_window = active_window_by_release.get(rel.id)
-
-        window_start = rel.start_date
-        window_end = rel.end_date
-        if window_start is None or window_end is None:
-            if active_window is not None:
-                window_start = active_window.start_date
-                window_end = active_window.end_date
-        elapsed_window = _window_elapsed_percent(window_start, window_end)
-        rel_brecha = round(rel_avance - elapsed_window, 1)
 
         reasons: list[str] = []
         fail_ratio = (rel_fail / rel_executed) if rel_executed else 0.0
@@ -423,8 +410,8 @@ def get_qc_summary(
                 platform=rel.platform,
                 cluster=rel.cluster,
                 window_name=active_window.name if active_window else None,
-                window_start_date=active_window.start_date if active_window else None,
-                window_end_date=active_window.end_date if active_window else None,
+                window_start_date=rel.start_date or (active_window.start_date if active_window else None),
+                window_end_date=rel.end_date or (active_window.end_date if active_window else None),
                 status=rel.status.value,
                 planned=rel_planned,
                 executed=rel_executed,
