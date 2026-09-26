@@ -7,7 +7,8 @@ GET /qc-summary   -- redesigned QC Dashboard backing endpoint: "what is QC doing
 """
 
 from calendar import monthrange
-from collections import Counter
+from collections import Counter, defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, time, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -45,13 +46,16 @@ _RISK_JIRA_BLOCKER_MEDIUM = 6
 _RISK_JIRA_BLOCKER_HIGH = 10
 
 
-def _temporal_avance_percent(
+def _window_elapsed_percent(
     start: date | None,
     end: date | None,
     *,
     now: datetime | None = None,
 ) -> float:
-    """Elapsed share of a calendar date window: start 00:00:00 through end 23:59:59, clamped 0–100."""
+    """Elapsed share of a calendar date window: start 00:00:00 through end 23:59:59, clamped 0–100.
+
+    Used only for Brecha (execution vs time). % Avance is TC execution, not this value.
+    """
     if start is None or end is None or start > end:
         return 0.0
     current = now if now is not None else datetime.now()
@@ -66,6 +70,31 @@ def _temporal_avance_percent(
         return 100.0
     elapsed_seconds = (current - window_start).total_seconds()
     return round(min(100.0, max(0.0, (elapsed_seconds / total_seconds) * 100.0)), 1)
+
+
+def _count_jira_blockers(filter_ids: list[str]) -> dict[str, int]:
+    """Resolve unique saved-filter Blocker counts in parallel so the dashboard is not N× Jira latency."""
+    counts = {fid: 0 for fid in filter_ids}
+    if not filter_ids:
+        return counts
+
+    def _one(fid: str) -> tuple[str, int]:
+        return fid, count_open_blocker_issues(fid)
+
+    try:
+        with ThreadPoolExecutor(max_workers=min(8, len(filter_ids))) as pool:
+            futures = [pool.submit(_one, fid) for fid in filter_ids]
+            for fut in as_completed(futures):
+                try:
+                    fid, value = fut.result()
+                    counts[fid] = value
+                except JiraNotConfiguredError:
+                    return {fid: 0 for fid in filter_ids}
+                except (JiraApiError, TypeError, ValueError):
+                    continue
+    except JiraNotConfiguredError:
+        return {fid: 0 for fid in filter_ids}
+    return counts
 
 
 @router.get("/summary", response_model=DashboardSummary)
@@ -148,7 +177,6 @@ def get_qc_summary(
     planned = len(test_cases)
     executed = sum(1 for tc in test_cases if tc.status != TestCaseStatus.UNEXECUTED)
     status_counts = Counter(tc.status.value for tc in test_cases)
-    # Global summary fields keep executed/planned. ActivityItem splits cobertura vs temporal avance.
     percent_cobertura = round((executed / planned) * 100, 1) if planned else 0.0
     percent_avance = percent_cobertura
 
@@ -298,36 +326,36 @@ def get_qc_summary(
             per_deliverable_counters[deliverable_id] = per_deliverable_counters.get(deliverable_id, 0) + 1
             release_ordinal[release_id] = per_deliverable_counters[deliverable_id]
 
-    execution_items: list[ActivityItem] = []
-    jira_blocker_by_filter: dict[str, int] = {}
-    jira_available = True
+    tcs_by_release: dict[int, list[TestCase]] = defaultdict(list)
+    for tc in test_cases:
+        tcs_by_release[tc.release_id].append(tc)
+
+    active_window_by_release: dict[int, ReleaseWindow] = {}
+    if tracked_releases:
+        window_rows = db.execute(
+            select(ReleaseWindow)
+            .where(
+                ReleaseWindow.release_id.in_([rel.id for rel in tracked_releases]),
+                ReleaseWindow.status == WindowStatus.ACTIVE,
+            )
+            .order_by(ReleaseWindow.start_date.desc())
+        ).scalars().all()
+        for window in window_rows:
+            if window.release_id not in active_window_by_release:
+                active_window_by_release[window.release_id] = window
+
+    filter_ids = []
+    seen_filters: set[str] = set()
     for rel in tracked_releases:
         filter_id = parse_jira_filter_id(getattr(rel, "jira_issue_filter", None))
-        if not filter_id or filter_id in jira_blocker_by_filter:
-            continue
-        if not jira_available:
-            jira_blocker_by_filter[filter_id] = 0
-            continue
-        try:
-            jira_blocker_by_filter[filter_id] = count_open_blocker_issues(filter_id)
-        except JiraNotConfiguredError:
-            jira_available = False
-            jira_blocker_by_filter[filter_id] = 0
-        except (JiraApiError, TypeError, ValueError):
-            jira_blocker_by_filter[filter_id] = 0
+        if filter_id and filter_id not in seen_filters:
+            seen_filters.add(filter_id)
+            filter_ids.append(filter_id)
+    jira_blocker_by_filter = _count_jira_blockers(filter_ids)
 
+    execution_items: list[ActivityItem] = []
     for rel in tracked_releases:
-        rel_tc_stmt = select(TestCase).where(TestCase.release_id == rel.id)
-        if operational_window_id is not None:
-            rel_tc_stmt = rel_tc_stmt.where(TestCase.operational_window_id == operational_window_id)
-        if release_window_id is not None:
-            rel_tc_stmt = rel_tc_stmt.where(TestCase.release_window_id == release_window_id)
-        if month_start is not None:
-            rel_tc_stmt = rel_tc_stmt.where(
-                TestCase.created_at >= month_start,
-                TestCase.created_at < month_end + timedelta(days=1),
-            )
-        rel_test_cases = list(db.execute(rel_tc_stmt).scalars().all())
+        rel_test_cases = tcs_by_release.get(rel.id, [])
 
         rel_planned = len(rel_test_cases)
         rel_executed = sum(1 for tc in rel_test_cases if tc.status != TestCaseStatus.UNEXECUTED)
@@ -336,24 +364,21 @@ def get_qc_summary(
         rel_fail = sum(1 for tc in rel_test_cases if tc.status == TestCaseStatus.FAIL)
         rel_unexecuted = rel_planned - rel_executed
         rel_cobertura = round((rel_executed / rel_planned) * 100, 1) if rel_planned else 0.0
+        rel_avance = rel_cobertura
 
         filter_id = parse_jira_filter_id(getattr(rel, "jira_issue_filter", None))
         rel_defects_blocker = jira_blocker_by_filter.get(filter_id, 0) if filter_id else 0
 
-        active_window = db.execute(
-            select(ReleaseWindow)
-            .where(ReleaseWindow.release_id == rel.id, ReleaseWindow.status == WindowStatus.ACTIVE)
-            .order_by(ReleaseWindow.start_date.desc())
-        ).scalars().first()
+        active_window = active_window_by_release.get(rel.id)
 
-        avance_start = rel.start_date
-        avance_end = rel.end_date
-        if avance_start is None or avance_end is None:
+        window_start = rel.start_date
+        window_end = rel.end_date
+        if window_start is None or window_end is None:
             if active_window is not None:
-                avance_start = active_window.start_date
-                avance_end = active_window.end_date
-        rel_avance = _temporal_avance_percent(avance_start, avance_end)
-        rel_brecha = round(rel_cobertura - rel_avance, 1)
+                window_start = active_window.start_date
+                window_end = active_window.end_date
+        elapsed_window = _window_elapsed_percent(window_start, window_end)
+        rel_brecha = round(rel_avance - elapsed_window, 1)
 
         reasons: list[str] = []
         fail_ratio = (rel_fail / rel_executed) if rel_executed else 0.0

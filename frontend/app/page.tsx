@@ -8,7 +8,7 @@ import { StatusBadge } from "@/app/components/StatusBadge";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { CLUSTERS, MONTHS } from "@/lib/constants";
-import type { QcDashboardSummary, QcSummaryFilters, Release } from "@/lib/types";
+import type { QcDashboardSummary, QcSummaryFilters } from "@/lib/types";
 import { useRouter } from "next/navigation";
 
 type CheckStatus = "idle" | "loading" | "ok" | "error";
@@ -43,12 +43,6 @@ function clusterLabel(item: { origin_kind: "APP" | "BE" | "OPERATIVA"; cluster: 
   return item.cluster ?? "—";
 }
 
-function releaseFilterLabel(r: Release): string {
-  if (r.be_release_id) return `${r.name} (BE)`;
-  if (r.operativa_release_id) return `${r.name} (Operativa)`;
-  return `${r.name} v${r.version}`;
-}
-
 function activityReleaseLabel(item: {
   origin_kind: "APP" | "BE" | "OPERATIVA";
   release_name: string;
@@ -75,7 +69,7 @@ export default function DashboardPage(): React.ReactElement {
 
   const [summary, setSummary] = useState<QcDashboardSummary | null>(null);
   const [summaryError, setSummaryError] = useState<string | null>(null);
-  const [releases, setReleases] = useState<Release[]>([]);
+  const [showCalendar, setShowCalendar] = useState(false);
 
   // "" means "Todos" (no filter applied) for all three -- this is the default on load, so the
   // Dashboard shows the global view immediately instead of an arbitrarily narrow slice.
@@ -90,14 +84,6 @@ export default function DashboardPage(): React.ReactElement {
   });
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
-  useEffect(() => {
-    if (!canSeeReleases) {
-      setReleases([]);
-      return;
-    }
-    api.listReleases({ include_be: true, include_operativa: true }).then(setReleases).catch(() => setReleases([]));
-  }, [canSeeReleases]);
-
   const loadSummary = useCallback((): void => {
     const filters: QcSummaryFilters = {};
     if (month) filters.month = `${CURRENT_YEAR}-${month}`;
@@ -108,6 +94,7 @@ export default function DashboardPage(): React.ReactElement {
       .then((data) => {
         setSummary(data);
         setLastUpdated(new Date());
+        setShowCalendar(true);
       })
       .catch((err: unknown) => setSummaryError(err instanceof Error ? err.message : "Error"));
   }, [month, cluster, releaseId]);
@@ -147,9 +134,6 @@ export default function DashboardPage(): React.ReactElement {
   );
 
   const releaseOptions = useMemo(() => {
-    if (releases.length > 0) {
-      return releases.map((row) => ({ id: row.id, label: releaseFilterLabel(row) }));
-    }
     const labels = new Map<number, string>();
     for (const item of summary?.execution_items ?? []) {
       if (!labels.has(item.release_id)) {
@@ -157,7 +141,7 @@ export default function DashboardPage(): React.ReactElement {
       }
     }
     return [...labels.entries()].map(([id, label]) => ({ id, label }));
-  }, [releases, summary]);
+  }, [summary]);
 
   // "Agosto 2026" when a month is picked; "Todos los periodos" when the filter is "Todos" --
   // purely descriptive, does not change test_cases_planned's formula at all.
@@ -264,9 +248,9 @@ export default function DashboardPage(): React.ReactElement {
                     <th>Fecha</th>
                     <th>Cluster</th>
                     <th>Dispositivo</th>
-                    <th>% Avance</th>
-                    <th>% Cobertura</th>
-                    <th>Brecha</th>
+                    <th title="TCs ejecutados / TCs planificados">% Avance</th>
+                    <th title="TCs ejecutados / TCs planificados">% Cobertura</th>
+                    <th title="Ejecución de TCs menos tiempo transcurrido de la ventana">Brecha</th>
                     <th>Estado</th>
                       <th title="Issues Jira Blocker/Impedimento del filtro de la Release, excluye Done, Roll Out y Cancelado">Blocker</th>
                     <th>Nivel de riesgo</th>
@@ -369,7 +353,7 @@ export default function DashboardPage(): React.ReactElement {
 
       )}
 
-      <QcCalendarView />
+      {showCalendar ? <QcCalendarView /> : null}
 
       <div className="system-health-line">
         <span>System health</span>

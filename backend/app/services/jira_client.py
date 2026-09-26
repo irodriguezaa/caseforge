@@ -35,7 +35,7 @@ _REQUEST_TIMEOUT_SECONDS = 120.0
 _SEARCH_PAGE_SIZE = 100
 _JIRA_OFFSET_RE = re.compile(r"([+-])(\d{2})(\d{2})$")
 _FILTER_ID_RE = re.compile(r"(?:[?&]filter=|/filters/)(\d+)", re.IGNORECASE)
-_DASHBOARD_COUNT_TIMEOUT = 20.0
+_DASHBOARD_COUNT_TIMEOUT = 8.0
 _OPEN_BLOCKER_JQL = (
     ' AND priority in ("Supone un impedimento", Blocker, Impedimento, Bloqueador)'
     ' AND status not in (Done, "Roll Out", Cancelled, Canceled, Cancelado, Cancelada)'
