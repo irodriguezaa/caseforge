@@ -77,6 +77,7 @@ export default function DashboardPage(): React.ReactElement {
   const [cluster, setCluster] = useState<string>("");
   const [releaseId, setReleaseId] = useState<string>("");
   const [execStatus, setExecStatus] = useState<string>("IN_PROGRESS");
+  const [execDevice, setExecDevice] = useState<string>("");
 
   const [system, setSystem] = useState<{ backend: CheckStatus; database: CheckStatus }>({
     backend: "idle",
@@ -129,9 +130,20 @@ export default function DashboardPage(): React.ReactElement {
     void checkConnection();
   }, [checkConnection]);
 
-  const statusFilteredItems = (summary?.execution_items ?? summary?.active_items ?? []).filter((item) =>
-    execStatus ? item.status === execStatus : true
-  );
+  const listItems = summary?.execution_items ?? summary?.active_items ?? [];
+  const statusFilteredItems = listItems.filter((item) => {
+    if (execStatus && item.status !== execStatus) return false;
+    if (execDevice && deviceLabel(item) !== execDevice) return false;
+    return true;
+  });
+
+  const deviceOptions = useMemo(() => {
+    const labels = new Set<string>();
+    for (const item of listItems) {
+      labels.add(deviceLabel(item));
+    }
+    return [...labels].sort((a, b) => a.localeCompare(b, "es"));
+  }, [listItems]);
 
   const releaseOptions = useMemo(() => {
     const labels = new Map<number, string>();
@@ -237,6 +249,17 @@ export default function DashboardPage(): React.ReactElement {
                   <option value="CANCELLED">CANCELLED</option>
                   <option value="">Todos</option>
                 </select>
+                <select
+                  aria-label="Filtrar por dispositivo"
+                  title="Dispositivo"
+                  value={execDevice}
+                  onChange={(e) => setExecDevice(e.target.value)}
+                >
+                  <option value="">Dispositivo: Todos</option>
+                  {deviceOptions.map((device) => (
+                    <option key={device} value={device}>{device}</option>
+                  ))}
+                </select>
               </div>
             </div>
             <div className="panel-body no-pad">
@@ -273,9 +296,9 @@ export default function DashboardPage(): React.ReactElement {
                       </td>
                       <td className="muted">{clusterLabel(item)}</td>
                       <td className="muted">{deviceLabel(item)}</td>
-                      <td>{item.percent_avance.toFixed(0)}%</td>
-                      <td>{item.percent_cobertura.toFixed(0)}%</td>
-                      <td>{`${item.brecha > 0 ? "+" : ""}${item.brecha.toFixed(0)} pp`}</td>
+                      <td>{item.percent_avance.toFixed(1)}%</td>
+                      <td>{item.percent_cobertura.toFixed(1)}%</td>
+                      <td>{`${item.brecha > 0 ? "+" : ""}${item.brecha.toFixed(1)} pp`}</td>
                       <td><StatusBadge status={item.status} /></td>
                       <td className={item.defects_blocker_count > 0 ? "danger-text" : "muted"}>{item.defects_blocker_count}</td>
                       <td><RiskBadge level={item.risk_level} /></td>
@@ -284,8 +307,8 @@ export default function DashboardPage(): React.ReactElement {
                   {statusFilteredItems.length === 0 && (
                     <tr>
                       <td colSpan={11} className="muted">
-                        {execStatus
-                          ? `No hay actividades en ${execStatus.replace("_", " ")} para este filtro.`
+                        {execStatus || execDevice
+                          ? `No hay actividades${execStatus ? ` en ${execStatus.replace("_", " ")}` : ""}${execDevice ? ` para ${execDevice}` : ""} para este filtro.`
                           : "No hay actividades de QC para este filtro."}
                       </td>
                     </tr>
@@ -342,8 +365,8 @@ export default function DashboardPage(): React.ReactElement {
               })}
               {statusFilteredItems.length === 0 && (
                 <p className="muted">
-                  {execStatus
-                    ? `No hay releases en ${execStatus.replace("_", " ")} para este filtro.`
+                  {execStatus || execDevice
+                    ? `No hay releases${execStatus ? ` en ${execStatus.replace("_", " ")}` : ""}${execDevice ? ` para ${execDevice}` : ""} para este filtro.`
                     : "No hay actividad para este filtro."}
                 </p>
               )}
