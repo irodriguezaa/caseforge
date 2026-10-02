@@ -13,6 +13,10 @@ SOURCE_TRI = "tri"
 SOURCE_QA_BUG = "qa_bug"
 SOURCE_QC_BUG = "qc_bug"
 SOURCE_QA_QC = "qa_qc"
+SOURCE_QCO = "qco"
+SOURCE_INCIDENT = "incidents"
+SOURCE_KNOWN_ISSUE = "known_issues"
+SOURCE_QA_EVIDENCE = "qa_evidence"
 
 _VALID = {
     SOURCE_FUNCTIONALITY,
@@ -21,6 +25,10 @@ _VALID = {
     SOURCE_QA_BUG,
     SOURCE_QC_BUG,
     SOURCE_QA_QC,
+    SOURCE_QCO,
+    SOURCE_INCIDENT,
+    SOURCE_KNOWN_ISSUE,
+    SOURCE_QA_EVIDENCE,
 }
 
 
@@ -40,6 +48,20 @@ def source_type_for_rn_bucket(bucket: str, issuetype: str | None = None) -> str:
         return SOURCE_TRI
     if bucket == "qa_qc":
         return source_type_from_issuetype(issuetype) or SOURCE_QA_QC
+    if bucket == "qco":
+        return SOURCE_QCO
+    if bucket == "qa_bugs":
+        return SOURCE_QA_BUG
+    if bucket == "qc_bugs":
+        return SOURCE_QC_BUG
+    if bucket == "incidents":
+        return SOURCE_INCIDENT
+    if bucket == "known_issues":
+        return SOURCE_KNOWN_ISSUE
+    if bucket == "qa_evidence":
+        return SOURCE_QA_EVIDENCE
+    if bucket in ("functionality", "technical_epics"):
+        return SOURCE_FUNCTIONALITY
     return SOURCE_FUNCTIONALITY
 
 

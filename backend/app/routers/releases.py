@@ -240,7 +240,7 @@ def _xlsx_attachment(payload: bytes, raw_name: str, ascii_name: str) -> Response
 
 def _rn_scope_xlsx(pdf_bytes: bytes, raw_name: str) -> Response:
     try:
-        payload = build_rn_scope_workbook(pdf_bytes)
+        payload = build_rn_scope_workbook(pdf_bytes, filename=raw_name)
     except Exception as exc:
         raise HTTPException(
             status.HTTP_500_INTERNAL_SERVER_ERROR,

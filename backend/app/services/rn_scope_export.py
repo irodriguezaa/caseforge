@@ -16,7 +16,10 @@ from openpyxl.utils import get_column_letter
 
 from app.services.jira_generation import fetch_scope_fields_for_keys
 from app.services.release_note_analyzer import iter_rn_ticket_rows
+from app.services.rn_normalized import NORMALIZED_BUCKETS
 from app.services.rn_source_type import source_type_for_rn_bucket
+from app.services.rn_vendor import detect_rn_vendor
+from app.services.tata_release_note_parser import parse_tata_release_note
 
 SCOPE_HEADERS = [
     "Key",
@@ -30,20 +33,31 @@ SCOPE_HEADERS = [
 
 _ACTIVIDAD_LABEL = {
     "functionality": "Technical Epic",
+    "technical_epics": "Technical Epic",
     "nco": "NCO",
+    "qco": "QCO",
     "tri": "TRI",
     "qa_bug": "QA Bug",
     "qc_bug": "QC Bug",
+    "qa_bugs": "QA Bug",
+    "qc_bugs": "QC Bug",
     "qa_qc": "QA/QC Bug",
+    "incidents": "Incident",
+    "known_issues": "Known Issue",
+    "qa_evidence": "QA Evidence",
 }
 
 _ACTIVIDAD_ORDER = {
     "Technical Epic": 0,
     "NCO": 1,
-    "QA Bug": 2,
-    "QC Bug": 3,
-    "QA/QC Bug": 4,
-    "TRI": 5,
+    "QCO": 2,
+    "QA Bug": 3,
+    "QC Bug": 4,
+    "QA/QC Bug": 5,
+    "TRI": 6,
+    "Incident": 7,
+    "Known Issue": 8,
+    "QA Evidence": 9,
 }
 
 _HEADER_FILL = PatternFill("solid", fgColor="1F4E78")
@@ -71,13 +85,32 @@ def _description_from_cell(ticket_id: str, cell_text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+def _tata_scope_hits(pdf_bytes: bytes, filename: str) -> list[tuple[str, str, str]]:
+    scope = parse_tata_release_note(pdf_bytes, filename)
+    hits: list[tuple[str, str, str]] = []
+    for bucket in NORMALIZED_BUCKETS:
+        for item in getattr(scope, bucket):
+            hits.append((item.id, item.title, bucket))
+    return hits
+
+
 def extract_rn_scope_rows(
     pdf_bytes: bytes,
     *,
     jira_fields: dict[str, dict[str, str]] | None = None,
     fetch_jira: bool = True,
+    filename: str = "",
 ) -> list[dict[str, str]]:
-    hits = iter_rn_ticket_rows(pdf_bytes)
+    if detect_rn_vendor(filename, pdf_bytes) == "tata":
+        hits = _tata_scope_hits(pdf_bytes, filename)
+        unique_keys = False
+    else:
+        hits = (
+            iter_rn_ticket_rows(pdf_bytes, filename)
+            if filename
+            else iter_rn_ticket_rows(pdf_bytes)
+        )
+        unique_keys = True
     fields = dict(jira_fields or {})
     if fetch_jira and hits:
         missing = [ticket_id for ticket_id, _cell, _bucket in hits if ticket_id.upper() not in fields]
@@ -88,11 +121,20 @@ def extract_rn_scope_rows(
     seen: set[str] = set()
     for ticket_id, cell_text, bucket in hits:
         key = ticket_id.strip().upper()
-        if not key or key in seen:
+        if not key:
             continue
-        seen.add(key)
         jira = fields.get(key) or {}
-        source = source_type_for_rn_bucket(bucket, jira.get("issuetype"))
+        source = source_type_for_rn_bucket(bucket, jira.get("issuetype") if unique_keys else None)
+        actividad = _ACTIVIDAD_LABEL.get(source) or _ACTIVIDAD_LABEL.get(bucket, "Technical Epic")
+        if unique_keys:
+            if key in seen:
+                continue
+            seen.add(key)
+        else:
+            pair = f"{key}|{actividad}"
+            if pair in seen:
+                continue
+            seen.add(pair)
         descripcion = _description_from_cell(ticket_id, cell_text)
         if not descripcion:
             descripcion = (jira.get("summary") or "").strip()
@@ -101,7 +143,7 @@ def extract_rn_scope_rows(
         rows.append(
             {
                 "key": key,
-                "actividad": _ACTIVIDAD_LABEL.get(source, "Technical Epic"),
+                "actividad": actividad,
                 "descripcion": descripcion,
                 "prioridad": (jira.get("priority") or "").strip(),
                 "estado": (jira.get("status") or "").strip(),
@@ -123,8 +165,11 @@ def build_rn_scope_workbook(
     *,
     jira_fields: dict[str, dict[str, str]] | None = None,
     fetch_jira: bool = True,
+    filename: str = "",
 ) -> bytes:
-    rows = extract_rn_scope_rows(pdf_bytes, jira_fields=jira_fields, fetch_jira=fetch_jira)
+    rows = extract_rn_scope_rows(
+        pdf_bytes, jira_fields=jira_fields, fetch_jira=fetch_jira, filename=filename
+    )
     workbook = Workbook()
     sheet = workbook.active
     sheet.title = "Alcance RN"

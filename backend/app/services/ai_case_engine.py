@@ -178,7 +178,7 @@ _ISSUE_KEY = re.compile(r"\b([A-Z][A-Z0-9]+-\d+)\b")
 _ISSUE_KEY_ONLY = re.compile(r"^[A-Z][A-Z0-9]+-\d+$")
 
 
-def _tickets_by_section(pdf_bytes: bytes) -> dict[str, list[tuple[str, str]]]:
+def _tickets_by_section(pdf_bytes: bytes, filename: str = "") -> dict[str, list[tuple[str, str]]]:
     """Section -> [(ticket_id, cell_text), ...] via the shared RN table walk."""
     buckets: dict[str, list[tuple[str, str]]] = {
         "functionality": [],
@@ -187,7 +187,7 @@ def _tickets_by_section(pdf_bytes: bytes) -> dict[str, list[tuple[str, str]]]:
         "qa_qc": [],
     }
     seen: dict[str, set[str]] = {key: set() for key in buckets}
-    for ticket_id, cell_text, bucket in iter_rn_ticket_rows(pdf_bytes):
+    for ticket_id, cell_text, bucket in iter_rn_ticket_rows(pdf_bytes, filename):
         if bucket not in buckets or ticket_id in seen[bucket]:
             continue
         seen[bucket].add(ticket_id)
@@ -272,7 +272,7 @@ def _from_evidence(
 ) -> list[GeneratedCaseCandidate]:
     if not pdf_bytes:
         return []
-    tickets = _tickets_by_section(pdf_bytes)
+    tickets = _tickets_by_section(pdf_bytes, rn_filename)
     candidates: list[GeneratedCaseCandidate] = []
     for ticket_id, cell_text in tickets.get("functionality", []):
         candidate = _candidate_from_functionality_ticket(ticket_id, cell_text, rn_filename, existing)
@@ -748,7 +748,11 @@ def generate_release_app_candidates(
     tickets: dict[str, list[tuple[str, str]]] | None = None,
     restrict_to_functionality_keys: set[str] | None = None,
 ) -> GenerateCasesResponse:
-    parsed_tickets = tickets if tickets is not None else (_tickets_by_section(pdf_bytes) if pdf_bytes else {})
+    parsed_tickets = (
+        tickets
+        if tickets is not None
+        else (_tickets_by_section(pdf_bytes, rn_filename or "") if pdf_bytes else {})
+    )
     allowed = {key.upper() for key in (restrict_to_functionality_keys or set()) if key}
     if allowed:
         parsed_tickets = {

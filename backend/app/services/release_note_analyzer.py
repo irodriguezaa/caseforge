@@ -30,6 +30,9 @@ import pdfplumber
 from pypdf import PdfReader
 
 from app.schemas.release import ReleaseAnalysisBase
+from app.services.rn_normalized import damco_scope_from_legacy_hits, tata_legacy_hits
+from app.services.rn_vendor import detect_rn_vendor
+from app.services.tata_release_note_parser import parse_tata_release_note
 
 
 def calculate_business_days(start_date: date | None, end_date: date | None) -> int:
@@ -314,12 +317,20 @@ class TableCounts:
 _RN_BUCKETS = ("functionality", "nco", "tri", "qa_qc")
 
 
-def iter_rn_ticket_rows(pdf_bytes: bytes) -> list[tuple[str, str, str]]:
+def iter_rn_ticket_rows(pdf_bytes: bytes, filename: str = "") -> list[tuple[str, str, str]]:
     """Walks RN tables with the same sticky-section + TOC-skip rules as count extraction.
 
     Returns (ticket_id, cell_text, bucket) in document order. Used by both the Release
     analyzer counts and Release Apps case generation so the two cannot diverge.
+    Tata documents use a parallel header-aware walker; DAMCO keeps this implementation.
     """
+    if detect_rn_vendor(filename, pdf_bytes) == "tata":
+        scope = parse_tata_release_note(pdf_bytes, filename)
+        return tata_legacy_hits(scope)
+    return _iter_damco_ticket_rows(pdf_bytes)
+
+
+def _iter_damco_ticket_rows(pdf_bytes: bytes) -> list[tuple[str, str, str]]:
     hits: list[tuple[str, str, str]] = []
     current_section: str | None = None
     any_numbered_heading_found = False
@@ -448,7 +459,7 @@ class RuleBasedPdfAnalyzer:
         except Exception:
             return ""
 
-    def _extract_table_counts(self, pdf_bytes: bytes) -> TableCounts:
+    def _extract_table_counts(self, pdf_bytes: bytes, filename: str = "") -> TableCounts:
         """Reads every table on every page via pdfplumber's coordinate-based detection,
         interleaved with numbered-heading text found at real page positions -- not by pypdf's
         linear text, which corrupts page-break continuations. A table with no section change
@@ -459,7 +470,9 @@ class RuleBasedPdfAnalyzer:
         sentence marks the QA/QC table.
         """
         counts: dict[str, set[str]] = {key: set() for key in _RN_BUCKETS}
-        for ticket_id, _cell_text, bucket in iter_rn_ticket_rows(pdf_bytes):
+        for ticket_id, _cell_text, bucket in iter_rn_ticket_rows(pdf_bytes, filename):
+            if bucket not in counts:
+                continue
             counts[bucket].add(ticket_id)
         return TableCounts(
             functionality=len(counts["functionality"]),
@@ -470,9 +483,93 @@ class RuleBasedPdfAnalyzer:
 
     def analyze(self, filename: str, pdf_bytes: bytes) -> ReleaseAnalysisBase:
         text = self.extract_text(pdf_bytes)
-        table_counts = self._extract_table_counts(pdf_bytes)
         detected_name = _detect_name_from_page1(pdf_bytes)
-        return self._build_analysis(filename, text, table_counts, detected_name)
+        if detect_rn_vendor(filename, pdf_bytes, text=text) == "tata":
+            scope = parse_tata_release_note(pdf_bytes, filename)
+            return self._build_tata_analysis(filename, text, scope, detected_name)
+        table_counts = self._extract_table_counts(pdf_bytes, filename)
+        analysis = self._build_analysis(filename, text, table_counts, detected_name)
+        hits = _iter_damco_ticket_rows(pdf_bytes)
+        analysis.raw_analysis["vendor"] = "damco"
+        analysis.raw_analysis["normalized"] = damco_scope_from_legacy_hits(
+            hits,
+            device=analysis.detected_platform,
+            version=analysis.detected_version,
+        ).to_dict()
+        return analysis
+
+    def _build_tata_analysis(
+        self,
+        filename: str,
+        text: str,
+        scope,
+        detected_name: str | None,
+    ) -> ReleaseAnalysisBase:
+        observations: list[str] = []
+        detected_version = scope.version
+        if not detected_version:
+            fn_version_match = re.search(r"v?([0-9]+\.[0-9]+(?:\.[0-9]+)?)", filename)
+            if fn_version_match:
+                detected_version = fn_version_match.group(1).strip()
+        detected_platform = scope.device
+        detected_description = _detect_description(text)
+        if not text:
+            observations.append(
+                "El archivo PDF no contiene texto extraíble (puede ser un documento escaneado o protegido)."
+            )
+        else:
+            if not detected_name:
+                observations.append("No se pudo determinar el Nombre con certeza; captúrelo manualmente.")
+            if not detected_platform:
+                observations.append(
+                    "No se detectó un dispositivo reconocido con suficiente evidencia; selecciónelo manualmente."
+                )
+            if not detected_version:
+                observations.append("No se detectó el número de versión en el documento; ingréselo manualmente.")
+            if scope.technical_epics:
+                observations.append(
+                    f"Se detectaron {len(scope.technical_epics)} Technical Epic(s) TATA."
+                )
+            if scope.incidents:
+                observations.append(
+                    f"Se identificaron {len(scope.incidents)} incidente(s) (INCIDENT ID); "
+                    "no clasificados como TRI."
+                )
+            if scope.qco:
+                observations.append(
+                    f"Se identificaron {len(scope.qco)} QCO(s); no clasificados como QC Bug."
+                )
+            if scope.known_issues:
+                observations.append(
+                    f"Se identificaron {len(scope.known_issues)} Known Issue(s); fuera de Functional Scope."
+                )
+            if scope.qa_evidence:
+                observations.append(
+                    f"Se identificaron {len(scope.qa_evidence)} evidencia(s) QA; no son QA Bugs."
+                )
+        return ReleaseAnalysisBase(
+            pdf_filename=filename,
+            detected_name=detected_name,
+            detected_version=detected_version,
+            detected_platform=detected_platform,
+            detected_description=detected_description,
+            features_count=len(scope.technical_epics),
+            qa_qc_issues_count=len(scope.qa_bugs) + len(scope.qc_bugs),
+            nco_issues_count=len(scope.nco),
+            tri_issues_count=len(scope.tri),
+            detected_devices=detected_platform,
+            proposed_coverage=None,
+            estimation_text=None,
+            observations=observations,
+            raw_analysis={
+                "text_length": len(text),
+                "pages_analyzed": len(text.split("\n\n")),
+                "filename": filename,
+                "vendor": "tata",
+                "normalized": scope.to_dict(),
+            },
+            qc_engine_version="v0.1",
+        )
 
     def _build_analysis(
         self, filename: str, text: str, table_counts: TableCounts, detected_name: str | None
