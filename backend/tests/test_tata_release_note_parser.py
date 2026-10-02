@@ -15,6 +15,7 @@ from tests.test_release_note_analyzer import ALL_FIXTURES, ROKU, WEB
 FIXTURES = Path(__file__).parent / "fixtures"
 
 LAUNCHER_9122 = "tata_launcher_9.12.2.pdf"
+LAUNCHER_9124 = "tata_launcher_9.12.4.pdf"
 LAUNCHER_9120 = "tata_launcher_9.12.0.pdf"
 LAUNCHER_12 = "tata_launcher_12.0.0.pdf"
 LAUNCHER_10 = "tata_launcher_10.0.0.pdf"
@@ -35,6 +36,12 @@ _INCIDENTS_9122 = {
     "ATSCL-3044",
     "ATSCL-3043",
     "ATSCL-3093",
+}
+_INCIDENTS_9124 = {
+    "ATSCL-2758",
+    "ATSCL-2936",
+    "ATSCL-2853",
+    "ATSCL-2834",
 }
 _EPICS_12 = {
     "ATSCL-2867",
@@ -77,22 +84,52 @@ def test_cell_ticket_regex_still_anchors_to_start_for_damco() -> None:
     assert _CELL_TICKET_RE.match("WEBCL-3721: TE-2026-WEBCL-activacion-hbomax").group(0) == "WEBCL-3721"
 
 
-def test_launcher_9122_incidents_not_tri_or_functionality() -> None:
+def test_launcher_9122_incidents_normalize_to_tri_not_functionality() -> None:
     scope = _scope(LAUNCHER_9122)
     analysis = _analyze(LAUNCHER_9122)
     assert set(scope.ids_for("incidents")) == _INCIDENTS_9122
+    assert set(scope.ids_for("tri")) == _INCIDENTS_9122
     assert scope.ids_for("technical_epics") == []
-    assert scope.ids_for("tri") == []
     assert scope.ids_for("qco") == []
     assert scope.ids_for("qa_bugs") == []
     assert scope.ids_for("qc_bugs") == []
+    assert all(item.source_category == "INCIDENT" for item in scope.incidents)
+    assert all(item.normalized_category == "TRI" for item in scope.incidents)
+    assert all(item.normalized_category == "TRI" for item in scope.tri)
     assert analysis.features_count == 0
-    assert analysis.tri_issues_count == 0
+    assert analysis.tri_issues_count == len(_INCIDENTS_9122)
     assert analysis.raw_analysis["vendor"] == "tata"
     buckets = _tickets_by_section(_bytes(LAUNCHER_9122), LAUNCHER_9122)
     assert buckets["functionality"] == []
-    assert buckets["tri"] == []
+    assert {tid for tid, _ in buckets["tri"]} == _INCIDENTS_9122
     assert buckets["qa_qc"] == []
+
+
+def test_launcher_9124_four_incidents_are_normalized_tri() -> None:
+    scope = _scope(LAUNCHER_9124)
+    analysis = _analyze(LAUNCHER_9124)
+    assert set(scope.ids_for("incidents")) == _INCIDENTS_9124
+    assert set(scope.ids_for("tri")) == _INCIDENTS_9124
+    assert scope.ids_for("technical_epics") == []
+    assert analysis.features_count == 0
+    assert analysis.tri_issues_count == 4
+    assert analysis.raw_analysis["vendor"] == "tata"
+    assert len(analysis.raw_analysis["normalized"]["incidents"]) == 4
+    assert len(analysis.raw_analysis["normalized"]["tri"]) == 4
+    for item in scope.incidents:
+        assert item.id in _INCIDENTS_9124
+        assert item.source_category == "INCIDENT"
+        assert item.normalized_category == "TRI"
+        assert item.section or item.table_header or item.column
+    buckets = _tickets_by_section(_bytes(LAUNCHER_9124), LAUNCHER_9124)
+    assert buckets["functionality"] == []
+    assert {tid for tid, _ in buckets["tri"]} == _INCIDENTS_9124
+    rows = extract_rn_scope_rows(_bytes(LAUNCHER_9124), fetch_jira=False, filename=LAUNCHER_9124)
+    incident_tri = {row["key"] for row in rows if row["actividad"] == "Incident / TRI"}
+    assert incident_tri == _INCIDENTS_9124
+    assert all(row["actividad"] != "Incident" for row in rows)
+    assert all(row["actividad"] != "TRI" for row in rows)
+    assert all(row["actividad"] != "Technical Epic" for row in rows)
 
 
 def test_launcher_9122_qa_evidence_repeats_incident_ids_without_becoming_qa_bugs() -> None:
@@ -104,7 +141,8 @@ def test_launcher_9122_qa_evidence_repeats_incident_ids_without_becoming_qa_bugs
     by_act = {}
     for row in rows:
         by_act.setdefault(row["actividad"], set()).add(row["key"])
-    assert by_act["Incident"] == _INCIDENTS_9122
+    assert by_act["Incident / TRI"] == _INCIDENTS_9122
+    assert "Incident" not in by_act
     assert "QA Bug" not in by_act
     assert "QC Bug" not in by_act
     assert "TRI" not in by_act
@@ -136,8 +174,9 @@ def test_launcher_9120_known_issues_are_not_functional_scope() -> None:
     known = [row for row in rows if row["actividad"] == "Known Issue"]
     functional = [row for row in rows if row["actividad"] == "Technical Epic"]
     assert functional == []
-    # Table may have zero parseable IDs; the section must still not leak into Epics/TRI.
+    # Known Issues stay out of TRI; productive INCIDENT IDs are Incident / TRI.
     assert all(row["actividad"] != "TRI" for row in rows)
+    assert all(row["actividad"] != "Technical Epic" for row in known)
     assert isinstance(known, list)
 
 
@@ -164,13 +203,15 @@ def test_launcher_10_bracketed_epic_and_tbrf_split() -> None:
     assert epic.tbrf_id == "TBRFRE-1734"
 
 
-def test_stv_lg_incidente_is_not_tri_and_epics_reconstruct_split_ids() -> None:
+def test_stv_lg_incidente_is_tri_and_epics_reconstruct_split_ids() -> None:
     scope = _scope(STV_LG)
     analysis = _analyze(STV_LG)
     assert "SCTCL-3085" in scope.ids_for("incidents")
-    assert analysis.tri_issues_count == 0
+    assert "SCTCL-3085" in scope.ids_for("tri")
+    assert analysis.tri_issues_count >= 1
     assert analysis.detected_platform == "STV Tata LG"
     epic_ids = set(scope.ids_for("technical_epics"))
+    assert "SCTCL-3085" not in epic_ids
     assert not any(key.startswith("TBRFRE-") for key in epic_ids)
     assert any(key.startswith("SCTCL-") for key in epic_ids)
 
@@ -180,7 +221,9 @@ def test_stv_samsung_device_and_incidente() -> None:
     analysis = _analyze(STV_SAMSUNG)
     assert analysis.detected_platform == "STV Tata Samsung"
     assert set(scope.ids_for("incidents")) >= {"SCTCL-3074", "SCTCL-3098"}
-    assert analysis.tri_issues_count == 0
+    assert set(scope.ids_for("tri")) >= {"SCTCL-3074", "SCTCL-3098"}
+    assert analysis.tri_issues_count >= 2
+    assert "SCTCL-3074" not in scope.ids_for("technical_epics")
 
 
 def test_stv_hisense_debit_epics_not_tbrf() -> None:
@@ -201,8 +244,13 @@ def test_hbomax_issue_id_is_incident_not_epic_and_kd43_rejected() -> None:
     assert analysis.detected_platform != "ADR"
     assert "SCTCL-3172" in scope.ids_for("incidents")
     assert "SCTCL-3172" not in scope.ids_for("technical_epics")
+    assert "SCTCL-3172" not in scope.ids_for("tri")
     assert "KD-43" not in scope.ids_for("incidents")
     assert analysis.features_count == 0
+    assert analysis.tri_issues_count == 0
+    issue = next(item for item in scope.incidents if item.id == "SCTCL-3172")
+    assert issue.source_category == "ISSUE"
+    assert issue.normalized_category != "TRI"
 
 
 def test_qco_never_promoted_to_qc_bug_even_if_heading_exists() -> None:
@@ -226,6 +274,7 @@ def test_excel_damco_web_actividad_set_unchanged() -> None:
         "TRI",
     }
     assert "Incident" not in {row["actividad"] for row in rows}
+    assert "Incident / TRI" not in {row["actividad"] for row in rows}
     assert "QCO" not in {row["actividad"] for row in rows}
 
 
@@ -256,5 +305,5 @@ def test_empty_tata_categories_stay_empty_on_bugfix_only_rn() -> None:
     assert scope.qco == []
     assert scope.qa_bugs == []
     assert scope.qc_bugs == []
-    assert scope.tri == []
     assert scope.technical_epics == []
+    assert set(scope.ids_for("tri")) == _INCIDENTS_9122

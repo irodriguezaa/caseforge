@@ -1,7 +1,8 @@
 """Header-aware Tata Release Note parser.
 
 Does not share heading classifiers or ticket regexes with the DAMCO walker.
-QCO stays qco[]. INCIDENT stays incidents[]. TBRF is never an Epic.
+QCO stays qco[]. INCIDENT is extracted as incidents and projected to TRI for CaseForge.
+TBRF is never an Epic. Known Issues and QA Evidence are never TRI.
 """
 
 from __future__ import annotations
@@ -12,7 +13,7 @@ from typing import Any
 
 import pdfplumber
 
-from app.services.rn_normalized import NORMALIZED_BUCKETS, NormalizedRnScope, RnItem
+from app.services.rn_normalized import NORMALIZED_BUCKETS, NormalizedRnScope, RnItem, project_tata_incidents_to_tri
 
 _TATA_KEY_RE = re.compile(r"\b([A-Z]{3,10})-\s*(\d{2,6})\b")
 _TBRF_PROJECTS = {"TBRF", "TBRFRE", "BRFRE", "BRF"}
@@ -21,6 +22,7 @@ _EPIC_HEADER = re.compile(r"EPIC\s*IDS?|TECHNICAL\s+EPIC", re.IGNORECASE)
 _BRF_HEADER = re.compile(r"TBRF|TECHNICAL\s+BRF|\bBRF\b", re.IGNORECASE)
 _INCIDENT_HEADER = re.compile(r"INCIDENT(?:E|\s*ID)?", re.IGNORECASE)
 _BUG_ID_HEADER = re.compile(r"BUG\s*ID|ISSUE\s*ID", re.IGNORECASE)
+_INCIDENT_SOURCE_RE = re.compile(r"INCIDENT(?:E|\s*ID)?|ISSUES\s+ADDRESSED", re.IGNORECASE)
 
 _HEADING_BUCKETS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"KNOWN\s+ISSUES?", re.IGNORECASE), "known_issues"),
@@ -105,6 +107,43 @@ def classify_tata_table_headers(header_row: list[str | None], current: str | Non
     if re.search(r"\bTRI\b", upper):
         return "tri"
     return None
+
+
+def _source_category(bucket: str, section: str, table_header: str, column: str) -> str:
+    if bucket == "incidents":
+        header_blob = f"{table_header} {column}"
+        if re.search(r"ISSUE\s*ID|BUG\s*ID", header_blob, re.IGNORECASE) and not _INCIDENT_SOURCE_RE.search(
+            header_blob
+        ):
+            return "ISSUE"
+        if _INCIDENT_SOURCE_RE.search(header_blob) or _INCIDENT_SOURCE_RE.search(section):
+            return "INCIDENT"
+        return "ISSUE"
+    if bucket == "tri":
+        return "TRI"
+    if bucket == "technical_epics":
+        return "TECHNICAL_EPIC"
+    if bucket == "nco":
+        return "NCO"
+    if bucket == "qco":
+        return "QCO"
+    if bucket == "qa_bugs":
+        return "QA_BUG"
+    if bucket == "qc_bugs":
+        return "QC_BUG"
+    if bucket == "known_issues":
+        return "KNOWN_ISSUE"
+    if bucket == "qa_evidence":
+        return "QA_EVIDENCE"
+    return bucket.upper()
+
+
+def _normalized_category(bucket: str, source_category: str) -> str:
+    if bucket == "incidents" and source_category == "INCIDENT":
+        return "TRI"
+    if bucket == "technical_epics":
+        return "TECHNICAL_EPIC"
+    return bucket.upper()
 
 
 def _header_index(header_row: list[str | None], pattern: re.Pattern[str]) -> int | None:
@@ -218,7 +257,9 @@ def parse_tata_release_note(pdf_bytes: bytes, filename: str = "") -> NormalizedR
             if version_match:
                 scope.version = version_match.group(1)
     except Exception:
+        project_tata_incidents_to_tri(scope)
         return scope
+    project_tata_incidents_to_tri(scope)
     return scope
 
 
@@ -330,6 +371,7 @@ def _ingest_table(
             column = bucket
 
         title = " | ".join(_norm_cell(cell) for cell in row if _norm_cell(cell))
+        source_category = _source_category(bucket, section, table_header, column)
         for key in keys:
             if key in seen[bucket]:
                 continue
@@ -343,6 +385,8 @@ def _ingest_table(
                     column=column,
                     tbrf_id=tbrf_id,
                     page=page,
+                    source_category=source_category,
+                    normalized_category=_normalized_category(bucket, source_category),
                 )
             )
 

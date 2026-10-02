@@ -56,6 +56,8 @@ def source_type_for_rn_bucket(bucket: str, issuetype: str | None = None) -> str:
         return SOURCE_QC_BUG
     if bucket == "incidents":
         return SOURCE_INCIDENT
+    if bucket == "incident_tri":
+        return "incident_tri"
     if bucket == "known_issues":
         return SOURCE_KNOWN_ISSUE
     if bucket == "qa_evidence":

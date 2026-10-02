@@ -43,6 +43,7 @@ _ACTIVIDAD_LABEL = {
     "qc_bugs": "QC Bug",
     "qa_qc": "QA/QC Bug",
     "incidents": "Incident",
+    "incident_tri": "Incident / TRI",
     "known_issues": "Known Issue",
     "qa_evidence": "QA Evidence",
 }
@@ -55,9 +56,10 @@ _ACTIVIDAD_ORDER = {
     "QC Bug": 4,
     "QA/QC Bug": 5,
     "TRI": 6,
-    "Incident": 7,
-    "Known Issue": 8,
-    "QA Evidence": 9,
+    "Incident / TRI": 7,
+    "Incident": 8,
+    "Known Issue": 9,
+    "QA Evidence": 10,
 }
 
 _HEADER_FILL = PatternFill("solid", fgColor="1F4E78")
@@ -90,7 +92,15 @@ def _tata_scope_hits(pdf_bytes: bytes, filename: str) -> list[tuple[str, str, st
     hits: list[tuple[str, str, str]] = []
     for bucket in NORMALIZED_BUCKETS:
         for item in getattr(scope, bucket):
-            hits.append((item.id, item.title, bucket))
+            if bucket == "incidents":
+                if item.source_category == "INCIDENT":
+                    continue
+                hits.append((item.id, item.title, "incidents"))
+                continue
+            excel_bucket = bucket
+            if bucket == "tri" and item.source_category == "INCIDENT":
+                excel_bucket = "incident_tri"
+            hits.append((item.id, item.title, excel_bucket))
     return hits
 
 

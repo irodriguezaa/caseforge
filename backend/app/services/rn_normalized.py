@@ -32,6 +32,8 @@ class RnItem:
     column: str = ""
     tbrf_id: str | None = None
     page: int = 0
+    source_category: str = ""
+    normalized_category: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -96,8 +98,25 @@ def damco_scope_from_legacy_hits(
     return scope
 
 
+def project_tata_incidents_to_tri(scope: NormalizedRnScope) -> None:
+    """TATA INCIDENT ID / INCIDENTE is a productive issue → CaseForge TRI.
+
+    Known Issues, QA Evidence, QCO and QA/QC bugs are not projected.
+    """
+    seen = {item.id.upper() for item in scope.tri}
+    for item in scope.incidents:
+        if (item.source_category or "INCIDENT") != "INCIDENT":
+            continue
+        item.source_category = "INCIDENT"
+        item.normalized_category = "TRI"
+        if item.id.upper() in seen:
+            continue
+        seen.add(item.id.upper())
+        scope.tri.append(item)
+
+
 def tata_legacy_hits(scope: NormalizedRnScope) -> list[tuple[str, str, str]]:
-    """Only Technical Epics become functionality. QCO/Incident never become qa_qc/tri."""
+    """Technical Epics → functionality. Tata INCIDENT projects to tri, not functionality."""
     hits: list[tuple[str, str, str]] = []
     mapping = (
         ("technical_epics", "functionality"),
@@ -106,7 +125,6 @@ def tata_legacy_hits(scope: NormalizedRnScope) -> list[tuple[str, str, str]]:
         ("qa_bugs", "qa_bugs"),
         ("qc_bugs", "qc_bugs"),
         ("qco", "qco"),
-        ("incidents", "incidents"),
         ("known_issues", "known_issues"),
         ("qa_evidence", "qa_evidence"),
     )

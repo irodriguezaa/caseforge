@@ -531,9 +531,14 @@ class RuleBasedPdfAnalyzer:
                     f"Se detectaron {len(scope.technical_epics)} Technical Epic(s) TATA."
                 )
             if scope.incidents:
+                projected = sum(1 for item in scope.incidents if item.source_category == "INCIDENT")
                 observations.append(
-                    f"Se identificaron {len(scope.incidents)} incidente(s) (INCIDENT ID); "
-                    "no clasificados como TRI."
+                    f"Se identificaron {projected} incidente(s) productivo(s) (INCIDENT ID) "
+                    "normalizados como TRI."
+                )
+            elif scope.tri:
+                observations.append(
+                    f"Se identificaron {len(scope.tri)} incidencia(s) productiva(s) (TRI)."
                 )
             if scope.qco:
                 observations.append(

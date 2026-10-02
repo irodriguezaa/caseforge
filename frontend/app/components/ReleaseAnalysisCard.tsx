@@ -4,6 +4,10 @@ import { useState } from "react";
 import { api, ApiRequestError } from "@/lib/api";
 import type { ReleaseAnalysis } from "@/lib/types";
 
+function isTataAnalysis(analysis: ReleaseAnalysis): boolean {
+  return (analysis.raw_analysis as { vendor?: string } | undefined)?.vendor === "tata";
+}
+
 interface ReleaseAnalysisCardProps {
   analysis: ReleaseAnalysis;
   qcResources?: number | null;
@@ -30,6 +34,13 @@ export function ReleaseAnalysisCard({
   const [exportError, setExportError] = useState<string | null>(null);
   const canExtract =
     (releaseId != null && releaseId > 0) || Boolean(analysis.pdf_file_path);
+  const tata = isTataAnalysis(analysis);
+  const metricTiles = [
+    { label: "Funcionalidades", value: analysis.features_count },
+    { label: "NCOS", value: analysis.nco_issues_count },
+    { label: "QA/QC Bugs", value: analysis.qa_qc_issues_count },
+    { label: tata ? "TRI (Incident)" : "TRIS", value: analysis.tri_issues_count },
+  ];
 
   async function handleExtractScope(): Promise<void> {
     if (!canExtract || exporting) {
@@ -69,12 +80,7 @@ export function ReleaseAnalysisCard({
             gap: "10px",
           }}
         >
-          {[
-            { label: "Funcionalidades", value: analysis.features_count },
-            { label: "NCOS", value: analysis.nco_issues_count },
-            { label: "QA/QC Bugs", value: analysis.qa_qc_issues_count },
-            { label: "TRIS", value: analysis.tri_issues_count },
-          ].map((stat) => (
+          {metricTiles.map((stat) => (
             <div
               key={stat.label}
               style={{
@@ -136,6 +142,13 @@ export function ReleaseAnalysisCard({
             ))}
           </div>
         )}
+        {tata && analysis.observations.length > 0 ? (
+          <ul className="muted" style={{ fontSize: "12.5px", margin: "10px 0 0", paddingLeft: "18px" }}>
+            {analysis.observations.map((row) => (
+              <li key={row}>{row}</li>
+            ))}
+          </ul>
+        ) : null}
         {personDays != null && hasEffort ? (
           <p className="muted" style={{ fontSize: "12.5px", margin: "14px 0 0" }}>
             Días-persona: {Number(personDays).toFixed(1)} (jornada de 6 h). La ventana de ejecución es el calendario startDate → endDate y no se calcula con el esfuerzo.
