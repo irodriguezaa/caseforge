@@ -109,3 +109,8 @@ class ReleaseWithCounts(ReleaseRead):
     test_case_count: int = 0
     latest_analysis: ReleaseAnalysisRead | None = None
     # deliverable_name is inherited from ReleaseRead (populated in the list/get routers).
+
+
+class RnScopeExportRequest(BaseModel):
+    pdf_file_path: str
+    filename: str | None = None

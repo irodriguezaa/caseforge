@@ -621,6 +621,7 @@ export default function ReleaseDetailPage(): React.ReactElement {
           <div style={{ marginTop: "1rem" }}>
             <ReleaseAnalysisCard
               analysis={analysis}
+              releaseId={releaseId}
               qcResources={qcResources}
               executionDays={liveExecutionDays}
               effortHours={isApp ? estimationHours : null}

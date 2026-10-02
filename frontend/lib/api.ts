@@ -246,6 +246,63 @@ export const api = {
   // QCO_ZEPHYR_PUBLISH — kept; UI hidden via SHOW_QCO_ZEPHYR_PUBLISH.
   publishOperativaToQco: (releaseId: number) =>
     request<PublishCasesResponse>(`/api/releases/${releaseId}/publish-qco`, { method: "POST" }),
+  exportRnScope: async (options: {
+    releaseId?: number;
+    pdfFilePath?: string | null;
+    filename?: string | null;
+    downloadName: string;
+  }): Promise<void> => {
+    let response: Response;
+    try {
+      if (options.releaseId != null) {
+        response = await fetch(apiUrl(`/api/releases/${options.releaseId}/rn-scope/export`), {
+          cache: "no-store",
+          credentials: "include",
+        });
+      } else if (options.pdfFilePath) {
+        response = await fetch(apiUrl("/api/releases/rn-scope/export"), {
+          method: "POST",
+          cache: "no-store",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            pdf_file_path: options.pdfFilePath,
+            filename: options.filename || undefined,
+          }),
+        });
+      } else {
+        throw new ApiRequestError(400, "Analiza el RN antes de extraer el alcance.");
+      }
+    } catch (err) {
+      if (err instanceof ApiRequestError) {
+        throw err;
+      }
+      throw new ApiRequestError(503, "No se pudo contactar al servidor para extraer el alcance.");
+    }
+    const contentType = response.headers.get("content-type") ?? "";
+    if (!response.ok) {
+      const body = (await response.json().catch(() => ({}))) as { detail?: unknown; message?: string };
+      const detail = typeof body.detail === "string" ? body.detail : body.message;
+      throw new ApiRequestError(response.status, detail || "No se pudo extraer el alcance del RN.");
+    }
+    if (contentType.includes("application/json")) {
+      const body = (await response.json().catch(() => ({}))) as { detail?: string; message?: string };
+      throw new ApiRequestError(502, body.detail ?? body.message ?? "El servidor no devolvió un Excel.");
+    }
+    const blob = await response.blob();
+    if (blob.size < 64) {
+      throw new ApiRequestError(502, "El Excel exportado llegó vacío.");
+    }
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const safe = options.downloadName.replace(/[<>:"/\\|?*]+/g, "_").replace(/\s+/g, "_").slice(0, 80) || "RN";
+    link.href = url;
+    link.download = `Alcance_RN_${safe}.xlsx`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  },
   exportReleaseTestCases: async (releaseId: number, releaseName: string): Promise<void> => {
     let response: Response;
     try {

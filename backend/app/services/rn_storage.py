@@ -46,3 +46,16 @@ def read_release_note_pdf(path: str | None) -> bytes | None:
     except OSError:
         return None
     return data or None
+
+
+def read_stored_release_note_pdf(path: str | None) -> bytes | None:
+    """Reads a PDF only if the path sits under RN_STORAGE_DIR."""
+    if not path:
+        return None
+    try:
+        target = Path(path).resolve()
+        root = Path(settings.rn_storage_dir).resolve()
+        target.relative_to(root)
+    except (OSError, ValueError):
+        return None
+    return read_release_note_pdf(str(target))

@@ -34,8 +34,10 @@ from app.schemas.release import (
     ReleaseRead,
     ReleaseUpdate,
     ReleaseWithCounts,
+    RnScopeExportRequest,
 )
 from app.services.ai_case_engine import _tickets_by_section, generate_release_app_candidates
+from app.services.rn_scope_export import build_rn_scope_workbook
 from app.services.revalidation_engine import (
     candidates_from_incremental_plan,
     generate_revalidation_candidates,
@@ -57,7 +59,12 @@ from app.services.release_note_analyzer import (
     RuleBasedPdfAnalyzer,
     calculate_business_days,
 )
-from app.services.rn_storage import persist_release_note_pdf, read_release_note_pdf, delete_release_note_pdf
+from app.services.rn_storage import (
+    persist_release_note_pdf,
+    read_release_note_pdf,
+    read_stored_release_note_pdf,
+    delete_release_note_pdf,
+)
 
 router = APIRouter(prefix="/api/v1/releases", tags=["releases"])
 
@@ -214,6 +221,46 @@ async def analyze_release_note(
         analysis=extracted,
         calculated_business_days=0,
     )
+
+
+def _xlsx_attachment(payload: bytes, raw_name: str, ascii_name: str) -> Response:
+    disposition = (
+        f"attachment; filename=\"{ascii_name}\"; "
+        f"filename*=UTF-8''{quote(raw_name)}"
+    )
+    return Response(
+        content=payload,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": disposition,
+            "Content-Length": str(len(payload)),
+        },
+    )
+
+
+def _rn_scope_xlsx(pdf_bytes: bytes, raw_name: str) -> Response:
+    try:
+        payload = build_rn_scope_workbook(pdf_bytes)
+    except Exception as exc:
+        raise HTTPException(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"No se pudo generar el Excel de alcance: {exc}",
+        ) from exc
+    return _xlsx_attachment(payload, raw_name, "Alcance_RN.xlsx")
+
+
+@router.post("/rn-scope/export")
+def export_analyzed_rn_scope(body: RnScopeExportRequest) -> Response:
+    """Excel of RN tickets after analyze-rn, before the Release exists."""
+    pdf_bytes = read_stored_release_note_pdf(body.pdf_file_path)
+    if not pdf_bytes:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND,
+            detail="No se encontró el PDF del RN. Vuelve a analizar el Release Note.",
+        )
+    stem = (body.filename or "RN").rsplit(".", 1)[0]
+    raw_name = f"Alcance_RN_{stem}.xlsx".replace(" ", "_")
+    return _rn_scope_xlsx(pdf_bytes, raw_name)
 
 
 @router.get("", response_model=list[ReleaseWithCounts])
@@ -909,6 +956,27 @@ def generate_cases_from_rn(
     proposal.estimation_hours = summary["estimation_hours"]
     proposal.estimation_days = summary["estimation_days"]
     return proposal
+
+
+@router.get("/{release_id}/rn-scope/export")
+def export_release_rn_scope(release_id: int, db: Session = Depends(get_db)) -> Response:
+    """Excel of Technical Epic / NCO / QA Bug / QC Bug / TRI from the stored RN."""
+    release = get_release_or_404(release_id, db)
+    analysis = _latest_analysis(db, release.id)
+    if analysis is None:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND,
+            detail="No hay un RN asociado a esta Release. Analiza y crea la Release desde el PDF primero.",
+        )
+    pdf_bytes = read_stored_release_note_pdf(analysis.pdf_file_path)
+    if not pdf_bytes:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND,
+            detail="No se encontró el PDF del RN almacenado.",
+        )
+    label = release.name or analysis.pdf_filename or "Release"
+    raw_name = f"Alcance_RN_{label}.xlsx".replace(" ", "_")
+    return _rn_scope_xlsx(pdf_bytes, raw_name)
 
 
 @router.get("/{release_id}/test-cases/export")

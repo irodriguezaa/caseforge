@@ -139,6 +139,98 @@ def _search_children(client, parent_key: str) -> list[dict[str, Any]]:
     return issues
 
 
+_SCOPE_FIELDS = [
+    "summary",
+    "description",
+    "issuetype",
+    "status",
+    "priority",
+    "versions",
+    "fixVersions",
+]
+_SCOPE_TIMEOUT = 45.0
+
+
+def _unique_issue_keys(keys: list[str]) -> list[str]:
+    unique: list[str] = []
+    seen: set[str] = set()
+    for key in keys:
+        normalized = (key or "").strip().upper()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        unique.append(normalized)
+    return unique
+
+
+def _version_names(value: Any) -> str:
+    if not isinstance(value, list):
+        return ""
+    names: list[str] = []
+    for item in value:
+        if isinstance(item, dict):
+            name = str(item.get("name") or "").strip()
+            if name:
+                names.append(name)
+        elif item:
+            names.append(str(item).strip())
+    return ", ".join(names)
+
+
+def fetch_scope_fields_for_keys(keys: list[str]) -> dict[str, dict[str, str]]:
+    """Batch Jira lookup for RN-scope Excel columns. Empty if Jira is missing.
+
+    Does not load epics, children, or Gherkin. Used only by Extraer alcance RN.
+    """
+    unique = _unique_issue_keys(keys)
+    if not unique:
+        return {}
+    try:
+        client_cm = _client(timeout=_SCOPE_TIMEOUT)
+    except JiraNotConfiguredError:
+        return {}
+
+    found: dict[str, dict[str, str]] = {}
+    try:
+        with client_cm as client:
+            for start in range(0, len(unique), 50):
+                chunk = unique[start : start + 50]
+                jql = "key in (" + ", ".join(chunk) + ")"
+                next_page_token: str | None = None
+                while True:
+                    body: dict[str, Any] = {
+                        "jql": jql,
+                        "maxResults": 100,
+                        "fields": list(_SCOPE_FIELDS),
+                    }
+                    if next_page_token:
+                        body["nextPageToken"] = next_page_token
+                    response = client.post("/rest/api/3/search/jql", json=body)
+                    if response.status_code != 200:
+                        break
+                    payload = response.json()
+                    for issue in payload.get("issues") or []:
+                        key = str(issue.get("key") or "").strip().upper()
+                        fields = issue.get("fields") or {}
+                        if not key:
+                            continue
+                        found[key] = {
+                            "summary": str(fields.get("summary") or "").strip(),
+                            "description": adf_to_text(fields.get("description"))[:4000],
+                            "issuetype": ((fields.get("issuetype") or {}).get("name") or "").strip(),
+                            "status": ((fields.get("status") or {}).get("name") or "").strip(),
+                            "priority": ((fields.get("priority") or {}).get("name") or "").strip(),
+                            "affected_versions": _version_names(fields.get("versions")),
+                            "fix_versions": _version_names(fields.get("fixVersions")),
+                        }
+                    next_page_token = payload.get("nextPageToken") or None
+                    if not next_page_token:
+                        break
+    except JiraApiError:
+        return found
+    return found
+
+
 def fetch_issuetypes_for_keys(keys: list[str]) -> dict[str, str]:
     """One JQL search for issuetype only. Empty if Jira is missing or a key 404s.
 
