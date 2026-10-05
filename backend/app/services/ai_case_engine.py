@@ -177,6 +177,38 @@ _METRICS_RE = re.compile(r"\bm[eé]tric|\banalytics\b|\bga4\b|\bfirebase\b|\bmdp
 _ISSUE_KEY = re.compile(r"\b([A-Z][A-Z0-9]+-\d+)\b")
 _ISSUE_KEY_ONLY = re.compile(r"^[A-Z][A-Z0-9]+-\d+$")
 
+_LAST_RESORT_EXCLUDE = re.compile(
+    r"setup de m[eé]tricas|\b(m[eé]tric|analytics|telemetr)|"
+    r"alta de llaves|llaves de configuraci[oó]n en el dispositivo|"
+    r"metadata:\s*alta|module_version|"
+    r"\bsmartlib\b|\bnanocdn\b|"
+    r"inicializa(r)? (el )?(player|engine|m[oó]dulo)|"
+    r"\binitialize\b|\bload module\b|\bset config\b",
+    re.IGNORECASE,
+)
+_LAST_RESORT_ALLOW = re.compile(
+    r"pantalla|panel|navegaci|reproduc|\blive\b|\bvod\b|"
+    r"grabar|grabaci[oó]n|perfil|bot[oó]n|control player|"
+    r"usuario|experiencia|migraci[oó]n|marca|m[oó]dulo|"
+    r"canal|gu[ií]a|ticket|modal|carrusel|player|epg|"
+    r"timeshift|npvr|login|registro|paypal|pago|checkout|"
+    r"banner|home|men[uú]|activaci[oó]n|\bactivar\b|\bhbo\b|"
+    r"visible para el usuario",
+    re.IGNORECASE,
+)
+
+
+def last_resort_applies(cell_text: str, ticket_id: str = "") -> bool:
+    """True when RN functionality may yield one gated basic_validation case.
+
+    Excludes metrics, key provisioning, and libraries without UX. Does not invent
+    screens; the candidate only restates the RN cell.
+    """
+    blob = f"{ticket_id} {cell_text}"
+    if _LAST_RESORT_EXCLUDE.search(blob):
+        return False
+    return bool(_LAST_RESORT_ALLOW.search(blob))
+
 
 def _tickets_by_section(pdf_bytes: bytes, filename: str = "") -> dict[str, list[tuple[str, str]]]:
     """Section -> [(ticket_id, cell_text), ...] via the shared RN table walk."""
@@ -275,6 +307,8 @@ def _from_evidence(
     tickets = _tickets_by_section(pdf_bytes, rn_filename)
     candidates: list[GeneratedCaseCandidate] = []
     for ticket_id, cell_text in tickets.get("functionality", []):
+        if not last_resort_applies(cell_text, ticket_id):
+            continue
         candidate = _candidate_from_functionality_ticket(ticket_id, cell_text, rn_filename, existing)
         if candidate is not None:
             candidates.append(candidate)
@@ -684,19 +718,53 @@ def _from_llm(
     return candidates
 
 
+def _covered_rn_keys(
+    already: list[GeneratedCaseCandidate],
+    inventory: list[CoverageUnit] | None = None,
+) -> set[str]:
+    covered: set[str] = set()
+    for unit in inventory or []:
+        if unit.rn_key:
+            covered.add(unit.rn_key.strip().upper())
+    for candidate in already:
+        for raw in (
+            candidate.related_functionality or "",
+            candidate.related_jira or "",
+        ):
+            for part in raw.split("|"):
+                key = part.strip().upper()
+                if key:
+                    covered.add(key)
+    return covered
+
+
 def _merge_last_resort(
     pdf_bytes: bytes | None,
     rn_filename: str,
     existing: list[dict[str, str]],
     already: list[GeneratedCaseCandidate],
+    inventory: list[CoverageUnit] | None = None,
+    tickets: dict[str, list[tuple[str, str]]] | None = None,
 ) -> list[GeneratedCaseCandidate]:
-    covered: set[str] = set()
-    for candidate in already:
-        for key in (candidate.related_functionality, candidate.related_jira):
-            if key:
-                covered.add(key.strip().upper())
+    covered = _covered_rn_keys(already, inventory)
+    if tickets is not None:
+        extras: list[GeneratedCaseCandidate] = []
+        for ticket_id, cell_text in tickets.get("functionality", []):
+            if ticket_id.strip().upper() in covered:
+                continue
+            if not last_resort_applies(cell_text, ticket_id):
+                continue
+            candidate = _candidate_from_functionality_ticket(
+                ticket_id, cell_text, rn_filename, existing
+            )
+            if candidate is not None:
+                extras.append(candidate)
+        extras = apply_qc_rules(extras)
+        return already + extras
     extras = _from_evidence(pdf_bytes, rn_filename, existing)
-    return already + [row for row in extras if (row.related_jira or "").upper() not in covered]
+    return already + [
+        row for row in extras if (row.related_jira or "").upper() not in covered
+    ]
 
 
 def _keep_scoped_candidates(
@@ -836,9 +904,7 @@ def generate_release_app_candidates(
                     f"({', '.join(unit.coverage_id for unit in still_missing)})."
                 )
             if not candidates:
-                candidates = jira_candidates or _from_evidence(
-                    pdf_bytes, rn_filename or "", existing_cases
-                )
+                candidates = jira_candidates or []
                 engine = "evidence-jira" if jira_candidates else "evidence-fallback"
         except Exception as exc:
             status = getattr(exc, "status_code", None) or getattr(
@@ -851,15 +917,25 @@ def generate_release_app_candidates(
                 _llm_safe_text(exc),
             )
             logger.warning("LLM fallback activated")
-            candidates = jira_candidates or _from_evidence(
-                pdf_bytes, rn_filename or "", existing_cases
-            )
+            candidates = jira_candidates or []
             engine = "evidence-jira" if jira_candidates else "evidence-fallback"
     elif jira_candidates:
-        candidates = _merge_last_resort(pdf_bytes, rn_filename or "", existing_cases, jira_candidates)
+        candidates = jira_candidates
         engine = "evidence-jira"
     else:
+        candidates = []
+
+    candidates = _merge_last_resort(
+        pdf_bytes,
+        rn_filename or "",
+        existing_cases,
+        candidates,
+        inventory=inventory,
+        tickets=parsed_tickets,
+    )
+    if not candidates and pdf_bytes:
         candidates = _from_evidence(pdf_bytes, rn_filename or "", existing_cases)
+        engine = "evidence"
 
     candidates = _keep_scoped_candidates(candidates, allowed or None)
     candidates = apply_qc_rules(candidates, release_context=release_context, stats=stats)

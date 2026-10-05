@@ -85,27 +85,26 @@ def test_missing_account_is_functional_when_screen_holds() -> None:
     assert clf.observable_then
 
 
-def test_missing_key_is_functional_when_user_sees_key_without_error() -> None:
+def test_missing_key_is_not_independent_ag() -> None:
     clf = classify_scenario(
         "No se logra obtener una llave",
-        "Given una llave no se encuentra en el response\n"
+        "Given una llave no se encuentra en el response de la API /apa/metadata\n"
         "When la aplicación intenta construir la leyenda\n"
         "Then el espacio donde debería mostrarse la leyenda debe mostrar la llave\n"
         "And no debe mostrarse un texto de error visible para el usuario\n",
     )
-    assert clf.role in {"A", "G"}
-    assert any("llave" in item.lower() or "error" in item.lower() for item in clf.observable_then)
+    assert clf.role == "B"
 
 
-def test_empty_key_is_functional_when_slot_stays_empty() -> None:
+def test_empty_key_is_not_independent_ag() -> None:
     clf = classify_scenario(
         "La llave se encuentra vacía",
-        "Given una llave está vacía en el response\n"
+        "Given una llave está vacía en el response de /apa/metadata\n"
         "When la aplicación intenta construir la leyenda\n"
         "Then el espacio donde debería mostrarse la leyenda debe quedar vacío\n"
         "And no debe mostrarse un texto de error visible para el usuario\n",
     )
-    assert clf.role in {"A", "G"}
+    assert clf.role == "B"
 
 
 def test_truncated_text_is_functional_when_ellipsis_is_visible() -> None:
@@ -172,8 +171,8 @@ def test_adrpr_style_story_roles() -> None:
     assert roles["Visualización del Ticket actualizado"] in {"A", "G"}
     assert roles["Lectura de la cuenta desde el contrato de confirmación"] == "C"
     assert roles["Manejo de cuenta no disponible"] in {"A", "G"}
-    assert roles["No se logra obtener una llave"] in {"A", "G"}
-    assert roles["La llave se encuentra vacía"] in {"A", "G"}
+    assert roles["No se logra obtener una llave"] == "B"
+    assert roles["La llave se encuentra vacía"] == "B"
     assert roles["Visualización de Ticket con método de pago asociado"] in {"A", "G"}
     text_roles = _roles(STORY_TEXT)
     assert text_roles["Mostrar texto informativo"] in {"A", "G"}
@@ -213,12 +212,12 @@ def test_inventory_covers_observable_gaps_without_tripling_flows() -> None:
     units = build_coverage_inventory(_artifacts(), "rn.pdf")
     scenarios = {unit.scenario for unit in units}
     assert "Manejo de cuenta no disponible" in scenarios
-    assert "No se logra obtener una llave" in scenarios
-    assert "La llave se encuentra vacía" in scenarios
+    assert "No se logra obtener una llave" not in scenarios
+    assert "La llave se encuentra vacía" not in scenarios
     assert "Manejo de texto con longitud excedida" in scenarios
     assert "Visualización del texto PayPal en los flujos soportados" in scenarios
     assert "Lectura de la cuenta desde el contrato de confirmación" not in scenarios
-    assert len(units) == 8
+    assert len(units) == 6
     for unit in units:
         assert unit.role in {"A", "G"}
         assert "EPIC-1" in unit.traceability
@@ -241,18 +240,10 @@ def test_materialized_steps_hide_implementation_tokens() -> None:
     )
     assert "paymentMethodData" not in blob
     assert "la aplicación construye" not in blob.lower()
-    missing_key = next(
-        item
-        for item in cases
-        if "No se logra obtener una llave" in (item.evidence or "")
-    )
-    key_expected = " ".join(step.expected_result for step in missing_key.steps)
-    assert "llave" in key_expected.lower()
-    assert "error" in key_expected.lower()
     joined_evidence = " | ".join(item.evidence or "" for item in cases)
     assert "Manejo de cuenta no disponible" in joined_evidence
-    assert "No se logra obtener una llave" in joined_evidence
-    assert "La llave se encuentra vacía" in joined_evidence
+    assert "No se logra obtener una llave" not in joined_evidence
+    assert "La llave se encuentra vacía" not in joined_evidence
     assert "longitud excedida" in joined_evidence
     assert "flujos soportados" in joined_evidence
     covers = [cid for item in cases for cid in item.covers]

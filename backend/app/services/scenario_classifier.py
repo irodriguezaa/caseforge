@@ -93,10 +93,21 @@ _NO_USER_ERROR = re.compile(
     r"no (se )?(presenta|muestra) (un )?error",
     re.IGNORECASE,
 )
-_VISIBLE_EMPTINESS_OR_KEY = re.compile(
-    r"(quedar|queda|quede) vac[ií][oa]|"
+_KEY_TOKEN_SCENARIO = re.compile(
+    r"no se logra obtener una llave|"
+    r"la llave se encuentra vac[ií]a|"
     r"(mostrar|mostrarse|muestra) la llave|"
-    r"espacio donde.{0,80}(llave|vac[ií]o|leyenda)",
+    r"espacio donde.{0,80}(mostrarse la leyenda|la llave)|"
+    r"alta de llaves|"
+    r"llaves de configuraci[oó]n en el dispositivo|"
+    r"/apa/metadata|apa/metadata",
+    re.IGNORECASE,
+)
+_PRODUCT_CONTROL_UX = re.compile(
+    r"\b(bot[oó]n|carrusel|mosaico|control player|mini ?epg|"
+    r"gu[ií]a de (tv|programaci)|canales recientes|"
+    r"panel de (audio|m[aá]s opciones|hora)|"
+    r"grabar|modal de grabaci)\b",
     re.IGNORECASE,
 )
 _VISIBLE_TRUNCATION = re.compile(
@@ -231,8 +242,6 @@ def _has_user_verifiable_then(text: str) -> bool:
         re.search(r"\b(texto|final|mostrar|mostrarse|visualiz|leyenda)\b", text, re.I)
         or _USER_VISIBLE_SURFACE.search(text)
     ):
-        return True
-    if _VISIBLE_EMPTINESS_OR_KEY.search(text):
         return True
     if _LAYOUT_HOLDS.search(text) and re.search(
         r"\b(fija|fijo|aprobado|mantiene|mantenerse|consistente)\b", text, re.I
@@ -408,6 +417,19 @@ def classify_scenario(title: str, body: str) -> ScenarioClassification:
             technical_notes=technical,
             reason="Métrica, analytics o telemetría sin consecuencia observable de QC.",
         )
+
+    if _KEY_TOKEN_SCENARIO.search(title) or _KEY_TOKEN_SCENARIO.search(blob):
+        if not _PRODUCT_CONTROL_UX.search(blob):
+            return ScenarioClassification(
+                role="B",
+                given=given,
+                when=when,
+                then=then,
+                technical_notes=technical + then or [title],
+                special_condition=special_pre or title,
+                normal_precondition=normal_pre,
+                reason="Llave/configuración técnica o Then de token; no es cobertura A/G independiente.",
+            )
 
     if _CONFIG_AS_SUBJECT.search(title) and not re.search(
         r"se muestra|no se muestra|visualiza|el usuario ve|no bloquea",

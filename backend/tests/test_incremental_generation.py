@@ -125,7 +125,8 @@ def test_first_nuevo_is_full_and_second_is_delta_only(client, monkeypatch, tmp_p
     )
     first = client.post(f"/api/v1/releases/{first_id}/generate-cases").json()
     assert first["engine"] in {"evidence", "evidence-jira", "evidence-fallback"}
-    assert len(first["candidates"]) == analysis["features_count"] == 5
+    assert analysis["features_count"] == 5
+    assert len(first["candidates"]) == 3
     first_ids = {row["test_case_id"] for row in client.get(f"/api/v1/releases/{first_id}/test-cases").json()}
 
     second = client.post(
@@ -161,7 +162,8 @@ def test_regenerate_first_release_does_not_treat_self_as_baseline(
     first = client.post(f"/api/v1/releases/{release_id}/generate-cases").json()
     again = client.post(f"/api/v1/releases/{release_id}/generate-cases?regenerate=true").json()
     assert again["engine"] == first["engine"]
-    assert len(again["candidates"]) == analysis["features_count"] == 5
+    assert analysis["features_count"] == 5
+    assert len(again["candidates"]) == 3
 
 
 def test_incremental_qa_nco_is_deterministic_and_does_not_call_llm(

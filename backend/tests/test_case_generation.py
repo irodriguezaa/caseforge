@@ -110,7 +110,7 @@ def test_generate_rejects_be_release(client, monkeypatch) -> None:
     draft = client.post("/api/v1/releases-be").json()
     client.patch(
         f"/api/v1/releases-be/{draft['id']}",
-        json={"name": "BE-GEN", "regresivo_scope": "COMPLETO"},
+        json={"name": "BE-GEN", "swf": "BE Hitss", "regresivo_scope": "COMPLETO"},
     )
     qc = client.post(f"/api/v1/releases-be/{draft['id']}/create-release").json()
     response = client.post(f"/api/v1/releases/{qc['id']}/generate-cases")
@@ -133,14 +133,14 @@ def test_generate_operativa_uses_matrix_pipeline(client, monkeypatch) -> None:
     response = client.post(f"/api/v1/releases/{qc['id']}/generate-cases")
     assert response.status_code == 200
     body = response.json()
-    assert body["engine"] == "operativa-v4.1"
+    assert body["engine"] == "operativa-v4.3"
     assert body["brfs_analyzed"] > 0
     # Without HN/CA the generic pipeline does not invent TCs.
     assert body["test_case_count"] == 0
     assert body["persisted"] is False
     second = client.post(f"/api/v1/releases/{qc['id']}/generate-cases").json()
     assert second["already_generated"] is False
-    assert second["engine"] == "operativa-v4.1"
+    assert second["engine"] == "operativa-v4.3"
 
 
 def test_analyze_rn_stores_pdf_path(client, monkeypatch, tmp_path) -> None:
@@ -167,10 +167,14 @@ def test_generate_from_web_rn_proposes_functionality_candidates_without_persisti
     assert body["has_analysis"] is True
     assert body["engine"] == "evidence"
     assert body["status"] == "PROPOSED"
-    assert len(body["candidates"]) == analysis["features_count"] == 5
+    assert len(body["candidates"]) == 3
+    assert analysis["features_count"] == 5
     assert all(row["basic_validation"] is True for row in body["candidates"])
     jiras = {row["related_jira"] for row in body["candidates"]}
     assert "TBRFRE-2105" not in jiras
+    assert "WEBCL-3153" not in jiras
+    assert "WEBCL-3767" not in jiras
+    assert jiras == {"WEBCL-3721", "WEBCL-3779", "WEBCL-3762"}
     for row in body["candidates"]:
         assert row["name"]
         assert row["description"]
@@ -181,11 +185,11 @@ def test_generate_from_web_rn_proposes_functionality_candidates_without_persisti
         assert row["review_required"] is True
         assert row["related_jira"]
     after = client.get(f"/api/v1/releases/{release_id}/test-cases").json()
-    assert len(after) == 5
+    assert len(after) == 3
     assert all(row["generated_by_engine"] is True for row in after)
     assert all(row["source_type"] == "functionality" for row in after)
     assert all(row["source_type"] == "functionality" for row in body["candidates"])
-    assert body["test_case_count"] == 5
+    assert body["test_case_count"] == 3
     from app.services.qc_effort import estimate_release_from_cases
 
     hours, days = estimate_release_from_cases(after)
@@ -201,12 +205,12 @@ def test_generate_does_not_duplicate_when_called_twice(
     assert first["persisted"] is True
     assert first["already_generated"] is False
     listed = client.get(f"/api/v1/releases/{release_id}/test-cases").json()
-    assert len(listed) == 5
+    assert len(listed) == 3
     second = client.post(f"/api/v1/releases/{release_id}/generate-cases").json()
     assert second["already_generated"] is True
-    assert second["test_case_count"] == 5
+    assert second["test_case_count"] == 3
     listed_again = client.get(f"/api/v1/releases/{release_id}/test-cases").json()
-    assert len(listed_again) == 5
+    assert len(listed_again) == 3
     assert {row["test_case_id"] for row in listed} == {row["test_case_id"] for row in listed_again}
 
 
@@ -299,17 +303,17 @@ def test_llm_structured_payload_is_returned(client, monkeypatch, tmp_path) -> No
     body = response.json()
     assert body["engine"] == "llm"
     assert body["persisted"] is True
-    assert len(body["candidates"]) == 1
-    assert body["candidates"][0]["related_jira"] == "WEBCL-3767"
-    assert body["candidates"][0]["covers"] == ["COV-001"]
+    paypal = [row for row in body["candidates"] if row["name"] == "Validar checkout PayPal"]
+    assert len(paypal) == 1
+    assert paypal[0]["related_jira"] == "WEBCL-3767"
+    assert paypal[0]["covers"] == ["COV-001"]
     assert body["coverage_unit_count"] >= 1
     posted = json.loads(fake_client.post.call_args.kwargs["json"]["messages"][1]["content"])
     assert "coverage_inventory" in posted
     assert posted["coverage_inventory"]
     assert "coverage_id" in posted["coverage_inventory"][0]
     stored = client.get(f"/api/v1/releases/{release_id}/test-cases").json()
-    assert len(stored) == 1
-    assert stored[0]["test_case_name"] == "Validar checkout PayPal"
+    assert any(row["test_case_name"] == "Validar checkout PayPal" for row in stored)
 
 
 def test_llm_logs_attempt_and_success_without_leaking_api_key(
@@ -441,9 +445,10 @@ def test_llm_error_logs_fallback_without_leaking_api_key(
 
 def test_evidence_fallback_skips_untracked_alcance_tickets() -> None:
     candidates = _from_evidence(WEB_RN.read_bytes(), WEB_RN.name, [])
-    assert len(candidates) == 5
+    assert {row.related_jira for row in candidates} == {"WEBCL-3721", "WEBCL-3779", "WEBCL-3762"}
     assert all(row.related_jira != "TBRFRE-2105" for row in candidates)
     assert all(row.basic_validation is True for row in candidates)
+    assert all(row.related_jira not in {"WEBCL-3153", "WEBCL-3767"} for row in candidates)
 
 
 def test_shared_walk_roku_web_aaf_functionality_matches_analyzer() -> None:
@@ -482,9 +487,9 @@ def test_generate_roku_web_aaf_proposes_functionality_candidates(
         body = response.json()
         assert body["persisted"] is True
         assert body["status"] == "PROPOSED"
-        assert len(body["candidates"]) >= len(expected)
         jiras = {row["related_jira"] for row in body["candidates"]}
-        assert expected <= jiras, path.name
+        assert jiras <= expected, path.name
+        assert jiras
         listed = client.get(f"/api/v1/releases/{release_id}/test-cases").json()
         assert len(listed) == len(body["candidates"])
 
@@ -940,8 +945,7 @@ Scenario: El partido finaliza y se muestra el marcador
     )
     assert len(candidates) == 1
     assert "AAF-10" in (candidates[0].related_jira or "")
-    assert "AAF-11" in (candidates[0].related_jira or "")
-    assert stats.consolidated_functional >= 1
+    assert candidates[0].covers == ["COV-001"]
 
 
 def test_title_is_aligned_when_polarity_contradicts_expected() -> None:

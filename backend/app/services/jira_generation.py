@@ -321,14 +321,14 @@ def fetch_artifacts_for_keys(keys: list[str]) -> list[dict[str, Any]]:
                         children_raw = _search_children(client, key)
                     except JiraApiError:
                         children_raw = []
-                feature_children = [
-                    _issue_payload(child)
-                    for child in children_raw
-                    if _is_feature_summary((child.get("fields") or {}).get("summary") or "")
-                ]
-                artifact["children"] = feature_children
+                children = [_issue_payload(child) for child in children_raw]
+                artifact["children"] = children
                 artifact["child_count"] = len(children_raw)
-                artifact["feature_child_count"] = len(feature_children)
+                artifact["feature_child_count"] = sum(
+                    1
+                    for child in children
+                    if _is_feature_summary(child.get("summary") or "")
+                )
                 artifacts.append(artifact)
     except JiraApiError:
         return artifacts

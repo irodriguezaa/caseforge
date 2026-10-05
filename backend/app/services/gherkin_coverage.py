@@ -88,6 +88,29 @@ def gherkin_source_text(description: str) -> str:
     return description.strip()
 
 
+def _block_dedupe_key(block: dict[str, Any]) -> str:
+    title = re.sub(r"\s+", " ", (block.get("title") or "").strip().lower())
+    body = re.sub(r"\s+", " ", (block.get("body") or "").strip().lower())
+    return f"{title}\n{body}"
+
+
+def extract_gherkin_blocks(description: str, acceptance_criteria: str = "") -> list[dict[str, Any]]:
+    """Scenario blocks from description and/or acceptance criteria, without duplicates."""
+    blocks: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for raw in (description, acceptance_criteria):
+        text = gherkin_source_text(raw or "")
+        if not text:
+            continue
+        for block in parse_gherkin_blocks(text):
+            key = _block_dedupe_key(block)
+            if not key.strip() or key in seen:
+                continue
+            seen.add(key)
+            blocks.append(block)
+    return blocks
+
+
 def parse_gherkin_blocks(description: str) -> list[dict[str, Any]]:
     if not description or not description.strip():
         return []
@@ -374,6 +397,169 @@ def _coverage_unit(
     )
 
 
+def _units_from_story_blocks(
+    *,
+    blocks: list[dict[str, Any]],
+    story: dict[str, Any],
+    epic_key: str,
+    rn_filename: str,
+    vocab: str,
+    stats: GenerationStats,
+    seq_holder: list[int],
+) -> list[CoverageUnit]:
+    units: list[CoverageUnit] = []
+    story_key = story.get("key") or epic_key
+    classified: list[tuple[dict[str, Any], ScenarioClassification]] = []
+    support_notes: list[str] = []
+    support_conditions: list[str] = []
+    for block in blocks:
+        clf = classify_scenario(block["title"], block["body"])
+        classified.append((block, clf))
+        if clf.role in {"B", "C"}:
+            record_classification(stats, clf, block["title"])
+            support_notes.extend(clf.technical_notes or [block["title"]])
+            if clf.special_condition:
+                support_conditions.append(clf.special_condition)
+            elif clf.role == "B":
+                support_conditions.append(block["title"])
+        elif clf.role in {"D", "E", "F"}:
+            record_classification(stats, clf, block["title"])
+
+    if support_notes:
+        stats.attached_support += 1
+    condition_b = "; ".join(dict.fromkeys(support_conditions)) or None
+    extra_support = "; ".join(dict.fromkeys(support_notes)) or None
+
+    def _next_id() -> str:
+        seq_holder[0] += 1
+        return f"COV-{seq_holder[0]:03d}"
+
+    for block, clf in classified:
+        if clf.role not in {"A", "G"}:
+            continue
+        title = block["title"]
+        body = block["body"]
+        evidence = f"{story_key}: {title}\n{body[:1500]}"
+        needs_story_condition = bool(support_conditions)
+        if needs_story_condition and not clf.special_condition:
+            clf.special_condition = condition_b
+        examples = block["examples"] if block["outline"] else []
+        strategy = example_strategy(examples) if examples else "single"
+        trace = f"RN={epic_key}; Story={story_key}; Scenario={title}"
+
+        if strategy == "group" and examples:
+            extra = format_examples(examples)
+            tech_group = None
+            if _examples_are_http_same_behavior(examples):
+                codes = []
+                for example in examples:
+                    codes.extend(
+                        value for value in example.values() if _HTTP_CODE.match(value.strip())
+                    )
+                tech_group = "HTTP " + ", ".join(dict.fromkeys(codes))
+                extra = (
+                    "Códigos HTTP explícitos en Examples (mismo comportamiento): "
+                    + ", ".join(dict.fromkeys(codes))
+                )
+            extra = "; ".join(part for part in (extra, extra_support) if part)
+            units.append(
+                _coverage_unit(
+                    coverage_id=_next_id(),
+                    clf=clf,
+                    title=title,
+                    body=body,
+                    evidence=evidence,
+                    epic_key=epic_key,
+                    story_key=story_key,
+                    rn_filename=rn_filename,
+                    vocab=vocab,
+                    extra_test_data=extra,
+                    requires_condition=needs_story_condition,
+                    strategy=strategy,
+                    technical_group=tech_group,
+                    condition_b=condition_b,
+                    trace=trace,
+                )
+            )
+            continue
+
+        if strategy == "group_by_outcome" and examples:
+            for outcome, group in group_examples_by_outcome(examples).items():
+                extra = "; ".join(
+                    part for part in (format_examples(group), extra_support) if part
+                )
+                units.append(
+                    _coverage_unit(
+                        coverage_id=_next_id(),
+                        clf=clf,
+                        title=f"{title} ({outcome})"[:250],
+                        body=body,
+                        evidence=evidence + "\n" + extra,
+                        epic_key=epic_key,
+                        story_key=story_key,
+                        rn_filename=rn_filename,
+                        vocab=vocab,
+                        extra_test_data=extra,
+                        requires_condition=needs_story_condition,
+                        strategy=strategy,
+                        technical_group=f"outcome:{outcome}",
+                        condition_b=condition_b,
+                        trace=trace + f"; outcome={outcome}",
+                    )
+                )
+            continue
+
+        if strategy == "split_functional" and examples:
+            for example in examples:
+                label = ", ".join(f"{k}={v}" for k, v in example.items() if v)
+                extra = "; ".join(
+                    part
+                    for part in ("Example funcional explícito: " + label, extra_support)
+                    if part
+                )
+                units.append(
+                    _coverage_unit(
+                        coverage_id=_next_id(),
+                        clf=clf,
+                        title=f"{title} ({label})"[:250],
+                        body=body,
+                        evidence=evidence + "\n" + label,
+                        epic_key=epic_key,
+                        story_key=story_key,
+                        rn_filename=rn_filename,
+                        vocab=vocab,
+                        extra_test_data=extra,
+                        requires_condition=needs_story_condition,
+                        strategy=strategy,
+                        technical_group=None,
+                        condition_b=condition_b,
+                        trace=trace + f"; example={label}",
+                    )
+                )
+            continue
+
+        units.append(
+            _coverage_unit(
+                coverage_id=_next_id(),
+                clf=clf,
+                title=title,
+                body=body,
+                evidence=evidence,
+                epic_key=epic_key,
+                story_key=story_key,
+                rn_filename=rn_filename,
+                vocab=vocab,
+                extra_test_data=extra_support,
+                requires_condition=needs_story_condition,
+                strategy=strategy,
+                technical_group=None,
+                condition_b=condition_b,
+                trace=trace,
+            )
+        )
+    return units
+
+
 def build_coverage_inventory(
     artifacts: list[dict[str, Any]],
     rn_filename: str,
@@ -382,170 +568,43 @@ def build_coverage_inventory(
     """A/G coverage units from Jira Gherkin. Not Test Cases."""
     stats = stats or GenerationStats()
     units: list[CoverageUnit] = []
-    seq = 0
+    seq_holder = [0]
     for artifact in artifacts:
         epic_key = artifact.get("key") or ""
-        sources = artifact.get("children") or []
-        if not sources:
-            sources = [artifact]
-        for story in sources:
-            story_key = story.get("key") or epic_key
-            description = story.get("description") or ""
-            ac = story.get("acceptance_criteria") or artifact.get("acceptance_criteria") or ""
-            combined = gherkin_source_text(description)
-            blocks = parse_gherkin_blocks(combined)
-            if not blocks:
-                continue
-            vocab = ac.strip()
-            classified: list[tuple[dict[str, Any], ScenarioClassification]] = []
-            support_notes: list[str] = []
-            support_conditions: list[str] = []
+        children = list(artifact.get("children") or [])
+        sources = children or [artifact]
+        seen_blocks: set[str] = set()
+        added_before = len(units)
+
+        def _consume(story: dict[str, Any]) -> None:
+            ac = story.get("acceptance_criteria") or ""
+            blocks = extract_gherkin_blocks(story.get("description") or "", ac)
+            unique: list[dict[str, Any]] = []
             for block in blocks:
-                clf = classify_scenario(block["title"], block["body"])
-                classified.append((block, clf))
-                if clf.role in {"B", "C"}:
-                    record_classification(stats, clf, block["title"])
-                    support_notes.extend(clf.technical_notes or [block["title"]])
-                    if clf.special_condition:
-                        support_conditions.append(clf.special_condition)
-                    elif clf.role == "B":
-                        support_conditions.append(block["title"])
-                elif clf.role in {"D", "E", "F"}:
-                    record_classification(stats, clf, block["title"])
-
-            if support_notes:
-                stats.attached_support += 1
-            condition_b = "; ".join(dict.fromkeys(support_conditions)) or None
-            extra_support = "; ".join(dict.fromkeys(support_notes)) or None
-
-            for block, clf in classified:
-                if clf.role not in {"A", "G"}:
+                key = _block_dedupe_key(block)
+                if key in seen_blocks:
                     continue
-                title = block["title"]
-                body = block["body"]
-                evidence = f"{story_key}: {title}\n{body[:1500]}"
-                needs_story_condition = bool(support_conditions)
-                if needs_story_condition and not clf.special_condition:
-                    clf.special_condition = condition_b
-                examples = block["examples"] if block["outline"] else []
-                strategy = example_strategy(examples) if examples else "single"
-                trace = f"RN={epic_key}; Story={story_key}; Scenario={title}"
-
-                def _next_id() -> str:
-                    nonlocal seq
-                    seq += 1
-                    return f"COV-{seq:03d}"
-
-                if strategy == "group" and examples:
-                    extra = format_examples(examples)
-                    tech_group = None
-                    if _examples_are_http_same_behavior(examples):
-                        codes = []
-                        for example in examples:
-                            codes.extend(
-                                value for value in example.values() if _HTTP_CODE.match(value.strip())
-                            )
-                        tech_group = "HTTP " + ", ".join(dict.fromkeys(codes))
-                        extra = (
-                            "Códigos HTTP explícitos en Examples (mismo comportamiento): "
-                            + ", ".join(dict.fromkeys(codes))
-                        )
-                    extra = "; ".join(part for part in (extra, extra_support) if part)
-                    units.append(
-                        _coverage_unit(
-                            coverage_id=_next_id(),
-                            clf=clf,
-                            title=title,
-                            body=body,
-                            evidence=evidence,
-                            epic_key=epic_key,
-                            story_key=story_key,
-                            rn_filename=rn_filename,
-                            vocab=vocab,
-                            extra_test_data=extra,
-                            requires_condition=needs_story_condition,
-                            strategy=strategy,
-                            technical_group=tech_group,
-                            condition_b=condition_b,
-                            trace=trace,
-                        )
-                    )
-                    continue
-
-                if strategy == "group_by_outcome" and examples:
-                    for outcome, group in group_examples_by_outcome(examples).items():
-                        extra = "; ".join(
-                            part for part in (format_examples(group), extra_support) if part
-                        )
-                        units.append(
-                            _coverage_unit(
-                                coverage_id=_next_id(),
-                                clf=clf,
-                                title=f"{title} ({outcome})"[:250],
-                                body=body,
-                                evidence=evidence + "\n" + extra,
-                                epic_key=epic_key,
-                                story_key=story_key,
-                                rn_filename=rn_filename,
-                                vocab=vocab,
-                                extra_test_data=extra,
-                                requires_condition=needs_story_condition,
-                                strategy=strategy,
-                                technical_group=f"outcome:{outcome}",
-                                condition_b=condition_b,
-                                trace=trace + f"; outcome={outcome}",
-                            )
-                        )
-                    continue
-
-                if strategy == "split_functional" and examples:
-                    for example in examples:
-                        label = ", ".join(f"{k}={v}" for k, v in example.items() if v)
-                        extra = "; ".join(
-                            part
-                            for part in ("Example funcional explícito: " + label, extra_support)
-                            if part
-                        )
-                        units.append(
-                            _coverage_unit(
-                                coverage_id=_next_id(),
-                                clf=clf,
-                                title=f"{title} ({label})"[:250],
-                                body=body,
-                                evidence=evidence + "\n" + label,
-                                epic_key=epic_key,
-                                story_key=story_key,
-                                rn_filename=rn_filename,
-                                vocab=vocab,
-                                extra_test_data=extra,
-                                requires_condition=needs_story_condition,
-                                strategy=strategy,
-                                technical_group=None,
-                                condition_b=condition_b,
-                                trace=trace + f"; example={label}",
-                            )
-                        )
-                    continue
-
-                units.append(
-                    _coverage_unit(
-                        coverage_id=_next_id(),
-                        clf=clf,
-                        title=title,
-                        body=body,
-                        evidence=evidence,
-                        epic_key=epic_key,
-                        story_key=story_key,
-                        rn_filename=rn_filename,
-                        vocab=vocab,
-                        extra_test_data=extra_support,
-                        requires_condition=needs_story_condition,
-                        strategy=strategy,
-                        technical_group=None,
-                        condition_b=condition_b,
-                        trace=trace,
-                    )
+                seen_blocks.add(key)
+                unique.append(block)
+            if not unique:
+                return
+            vocab = (ac or artifact.get("acceptance_criteria") or "").strip()
+            units.extend(
+                _units_from_story_blocks(
+                    blocks=unique,
+                    story=story,
+                    epic_key=epic_key,
+                    rn_filename=rn_filename,
+                    vocab=vocab,
+                    stats=stats,
+                    seq_holder=seq_holder,
                 )
+            )
+
+        for story in sources:
+            _consume(story)
+        if len(units) == added_before and children:
+            _consume(artifact)
     return units
 
 

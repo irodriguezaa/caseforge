@@ -222,7 +222,8 @@ def test_nuevo_still_uses_standard_generation(client, monkeypatch, tmp_path) -> 
     client.patch(f"/api/v1/releases/{nuevo_id}", json={"release_type": "NUEVO"})
     nuevo = client.post(f"/api/v1/releases/{nuevo_id}/generate-cases").json()
     assert nuevo["engine"] == "evidence"
-    assert len(nuevo["candidates"]) == analysis["features_count"] == 5
+    assert analysis["features_count"] == 5
+    assert len(nuevo["candidates"]) == 3
 
 
 def test_evolutivo_does_not_use_revalidation_engine(client, monkeypatch, tmp_path) -> None:
