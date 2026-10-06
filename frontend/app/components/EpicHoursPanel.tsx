@@ -5,6 +5,16 @@ import { useState } from "react";
 import { BarList } from "@/app/components/BarList";
 import { downloadEpicHoursExcel } from "@/lib/exportEpicHours";
 
+const JIRA_BROWSE_BASE = "https://dlatvarg.atlassian.net/browse";
+
+function jiraIssueUrl(key: string): string | null {
+  const trimmed = key.trim();
+  if (!/^[A-Z][A-Z0-9_]+-\d+$/i.test(trimmed)) {
+    return null;
+  }
+  return `${JIRA_BROWSE_BASE}/${encodeURIComponent(trimmed)}`;
+}
+
 export function EpicHoursPanel({
   items,
   fileName,
@@ -35,7 +45,7 @@ export function EpicHoursPanel({
         <div className="panel-body">
           <div className="epic-hours-toolbar">
             <p className="muted" style={{ margin: 0 }}>
-              Esfuerzo estimado QC consolidado por EPC. La etiqueta es el key de Jira.
+              Esfuerzo estimado QC consolidado por EPC. Click en el key abre el issue en Jira.
             </p>
             <button type="button" className="secondary" disabled={exporting || items.length === 0} onClick={exportExcel}>
               <Download size={14} />
@@ -46,6 +56,7 @@ export function EpicHoursPanel({
             items={items}
             color="var(--kpi-teal, var(--accent))"
             wideLabels
+            hrefForLabel={jiraIssueUrl}
             formatValue={(value) => `${value.toFixed(1)} h`}
           />
         </div>

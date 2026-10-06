@@ -339,6 +339,8 @@ table.activity tr.selected { background: var(--accent-dim); }
 .bar-row { display: grid; grid-template-columns: 96px 1fr 40px; align-items: center; gap: 10px; font-size: 12px; }
 .bar-list-wide .bar-row { grid-template-columns: 168px 1fr 56px; }
 .bar-row .bar-label { color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+a.bar-label { text-decoration: none; }
+a.bar-label:hover { color: var(--accent); text-decoration: underline; }
 .bar-list-wide .bar-row .bar-label { white-space: normal; overflow: visible; text-overflow: unset; line-height: 1.25; word-break: break-word; }
 button.epic-hours-toggle {
   width: 100%;
