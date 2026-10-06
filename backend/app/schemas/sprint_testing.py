@@ -5,6 +5,7 @@ class SprintOption(BaseModel):
     id: str
     label: str
     filter_id: str | None = None
+    execution_filter_id: str | None = None
     actionable: bool
 
 
@@ -44,6 +45,20 @@ class ProgramMetrics(BaseModel):
     consistency_ok: bool
 
 
+class ExecutionProgramMetrics(BaseModel):
+    program_key: str
+    display_name: str
+    total: int
+    blocker: int
+    non_blocker: int
+
+
+class ExecutionMetrics(BaseModel):
+    filter_id: str
+    issue_count: int
+    programs: list[ExecutionProgramMetrics]
+
+
 class SprintTestingRead(BaseModel):
     sprint: SprintTestingSprint
     swf: str
@@ -52,3 +67,4 @@ class SprintTestingRead(BaseModel):
     other_issue_count: int
     programs: list[ProgramMetrics]
     consistency_ok: bool
+    execution: ExecutionMetrics | None = None

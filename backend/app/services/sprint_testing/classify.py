@@ -43,6 +43,11 @@ def is_technical_epic(issuetype: str | None) -> bool:
     return normalize_label(issuetype) == "technical epic"
 
 
+def is_blocker_priority(priority: str | None) -> bool:
+    key = normalize_label(priority)
+    return "blocker" in key or "impedimento" in key or "bloqueador" in key
+
+
 def classify_status(status: str | None, category_key: str | None = None) -> tuple[Bucket, str]:
     """Return (bucket, display label). Jira Done category counts as closed."""
     raw = (status or "").strip() or "Sin estado"

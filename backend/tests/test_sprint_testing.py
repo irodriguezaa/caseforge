@@ -2,8 +2,8 @@
 
 from tests.conftest import login_as
 from app.services.sprint_testing.catalog import get_swf
-from app.services.sprint_testing.classify import classify_status, is_technical_epic
-from app.services.sprint_testing.service import aggregate_issues, build_sprint_testing
+from app.services.sprint_testing.classify import classify_status, is_blocker_priority, is_technical_epic
+from app.services.sprint_testing.service import aggregate_execution_issues, aggregate_issues, build_sprint_testing
 
 
 def _issue(key: str, project: str, status: str, issuetype: str = "Technical Epic") -> dict:
@@ -41,6 +41,14 @@ def test_only_technical_epic_is_counted() -> None:
     assert not is_technical_epic("Epic")
     assert not is_technical_epic("Story")
     assert not is_technical_epic("QA Bug")
+
+
+def test_blocker_priority_aliases() -> None:
+    assert is_blocker_priority("Blocker") is True
+    assert is_blocker_priority("Supone un impedimento") is True
+    assert is_blocker_priority("Impedimento") is True
+    assert is_blocker_priority("Critical") is False
+    assert is_blocker_priority("Major") is False
 
 
 def test_adt_example_graph1_and_graph2() -> None:
@@ -120,6 +128,44 @@ def test_zero_programs_are_omitted() -> None:
     assert [row.program_key for row in payload.programs] == ["WEBCL"]
 
 
+def test_execution_counts_blocker_by_program() -> None:
+    hitss = get_swf("hitss")
+    assert hitss is not None
+
+    def _exec(key: str, project: str, priority: str) -> dict:
+        return {
+            "key": key,
+            "fields": {
+                "issuetype": {"name": "Bug"},
+                "status": {"name": "In Progress"},
+                "project": {"key": project},
+                "priority": {"name": priority},
+                "summary": key,
+            },
+        }
+
+    payload = aggregate_execution_issues(
+        "117704",
+        hitss,
+        [
+            _exec("ADTCL-1", "ADTCL", "Blocker"),
+            _exec("ADTCL-2", "ADTCL", "Major"),
+            _exec("ADTCL-3", "ADTCL", "Impedimento"),
+            _exec("WINCL-1", "WINCL", "Critical"),
+        ],
+    )
+    assert payload.filter_id == "117704"
+    assert payload.issue_count == 4
+    adt = next(row for row in payload.programs if row.program_key == "ADTCL")
+    assert adt.blocker == 2
+    assert adt.non_blocker == 1
+    assert adt.total == 3
+    win = next(row for row in payload.programs if row.program_key == "WINCL")
+    assert win.blocker == 0
+    assert win.non_blocker == 1
+    assert all(row.program_key not in {"WEBCL", "AAFCL"} for row in payload.programs)
+
+
 def test_sprint_46_is_not_actionable(client) -> None:
     response = client.get("/api/v1/sprint-testing", params={"sprint": "46", "swf": "hitss"})
     assert response.status_code == 400
@@ -133,8 +179,10 @@ def test_options_mark_future_sprints(client) -> None:
     by_id = {item["id"]: item for item in body["sprints"]}
     assert by_id["44"]["actionable"] is True
     assert by_id["44"]["filter_id"] == "117698"
+    assert by_id["44"]["execution_filter_id"] == "117704"
     assert by_id["45"]["actionable"] is True
     assert by_id["45"]["filter_id"] == "117703"
+    assert by_id["45"]["execution_filter_id"] is None
     assert by_id["46"]["actionable"] is False
 
 
@@ -181,11 +229,15 @@ def test_build_paginates_and_dedupes(monkeypatch) -> None:
             return None
 
         def get(self, path: str) -> _FakeResponse:
+            if path.endswith("117704"):
+                return _FakeResponse({"jql": "execution"})
             assert path == "/rest/api/3/filter/117698"
             return _FakeResponse({"jql": "project in (ADTCL, WINCL)"})
 
         def post(self, path: str, json: dict) -> _FakeResponse:
             assert path == "/rest/api/3/search/jql"
+            if json.get("jql") == "execution":
+                return _FakeResponse({"issues": [], "nextPageToken": None})
             if json.get("nextPageToken") == "page-2":
                 return _FakeResponse(pages[1])
             return _FakeResponse(pages[0])

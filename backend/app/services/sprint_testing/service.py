@@ -5,6 +5,8 @@ from __future__ import annotations
 from typing import Any
 
 from app.schemas.sprint_testing import (
+    ExecutionMetrics,
+    ExecutionProgramMetrics,
     ProgramMetrics,
     ProgramOption,
     SprintOption,
@@ -15,9 +17,10 @@ from app.schemas.sprint_testing import (
 )
 from app.services.jira_client import fetch_raw_issues_by_filter
 from app.services.sprint_testing.catalog import SWFS, SPRINTS, SwfDef, get_sprint, get_swf
-from app.services.sprint_testing.classify import classify_status, is_technical_epic
+from app.services.sprint_testing.classify import classify_status, is_blocker_priority, is_technical_epic
 
 _ISSUE_FIELDS = ["summary", "issuetype", "status", "project"]
+_EXECUTION_FIELDS = ["summary", "issuetype", "status", "project", "priority"]
 
 
 class SprintTestingConfigError(ValueError):
@@ -31,6 +34,7 @@ def list_options() -> SprintTestingOptions:
                 id=item.id,
                 label=item.label,
                 filter_id=item.filter_id,
+                execution_filter_id=item.execution_filter_id,
                 actionable=bool(item.filter_id),
             )
             for item in SPRINTS
@@ -97,6 +101,43 @@ def _issuetype_name(issue: dict[str, Any]) -> str:
     return str((fields.get("issuetype") or {}).get("name") or "")
 
 
+def _priority_name(issue: dict[str, Any]) -> str:
+    fields = issue.get("fields") or {}
+    return str((fields.get("priority") or {}).get("name") or "")
+
+
+def aggregate_execution_issues(
+    filter_id: str,
+    swf: SwfDef,
+    issues: list[dict[str, Any]],
+) -> ExecutionMetrics:
+    grouped: dict[str, list[dict[str, Any]]] = {program.program_key.upper(): [] for program in swf.programs}
+    for issue in issues:
+        key = _project_key(issue)
+        if key in grouped:
+            grouped[key].append(issue)
+    programs: list[ExecutionProgramMetrics] = []
+    for program in swf.programs:
+        rows = grouped[program.program_key]
+        if not rows:
+            continue
+        blocker = sum(1 for issue in rows if is_blocker_priority(_priority_name(issue)))
+        programs.append(
+            ExecutionProgramMetrics(
+                program_key=program.program_key,
+                display_name=program.display_name,
+                total=len(rows),
+                blocker=blocker,
+                non_blocker=len(rows) - blocker,
+            )
+        )
+    return ExecutionMetrics(
+        filter_id=filter_id,
+        issue_count=sum(row.total for row in programs),
+        programs=programs,
+    )
+
+
 def build_sprint_testing(sprint_id: str, swf_id: str) -> SprintTestingRead:
     sprint = get_sprint(sprint_id)
     if sprint is None:
@@ -109,7 +150,11 @@ def build_sprint_testing(sprint_id: str, swf_id: str) -> SprintTestingRead:
     if swf is None:
         raise SprintTestingConfigError("SWF no reconocido.")
     issues = fetch_raw_issues_by_filter(sprint.filter_id, _ISSUE_FIELDS)
-    return aggregate_issues(sprint.id, sprint.label, sprint.filter_id, swf, issues)
+    payload = aggregate_issues(sprint.id, sprint.label, sprint.filter_id, swf, issues)
+    if sprint.execution_filter_id:
+        execution_issues = fetch_raw_issues_by_filter(sprint.execution_filter_id, _EXECUTION_FIELDS)
+        payload.execution = aggregate_execution_issues(sprint.execution_filter_id, swf, execution_issues)
+    return payload
 
 
 def aggregate_issues(

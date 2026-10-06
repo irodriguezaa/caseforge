@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { ExecutivePieChart } from "@/app/components/ExecutivePieChart";
+import { ExecutionPriorityBars } from "@/app/components/ExecutionPriorityBars";
 import { GroupedStackedBars } from "@/app/components/GroupedStackedBars";
 import { api } from "@/lib/api";
 import type { SprintTestingOptions, SprintTestingRead } from "@/lib/types";
@@ -103,8 +104,8 @@ export default function SprintTestingPage(): React.ReactElement {
       {error && <p className="error-text">{error}</p>}
       {loading && <p className="muted">Cargando información de Jira...</p>}
 
-      {!loading && canQuery && data && data.programs.length === 0 && (
-        <p className="muted">No hay Technical Epics para este Sprint y SWF.</p>
+      {!loading && canQuery && data && data.programs.length === 0 && !data.execution?.programs.length && (
+        <p className="muted">No hay Technical Epics ni issues de ejecución para este Sprint y SWF.</p>
       )}
 
       {!loading && data && data.programs.length > 0 && (
@@ -158,6 +159,39 @@ export default function SprintTestingPage(): React.ReactElement {
             </div>
           </div>
         </>
+      )}
+
+      {!loading && data && data.execution && (
+        <div className="panel" style={{ marginTop: "14px" }}>
+          <div className="panel-header">
+            <h2>Issues del Sprint en ejecución</h2>
+          </div>
+          <div className="panel-body">
+            <p className="muted" style={{ marginTop: 0, marginBottom: 4 }}>
+              Issues del Sprint en curso, por dispositivo: Blocker vs no Blocker.
+            </p>
+            <p className="muted" style={{ marginTop: 0, fontSize: "11px" }}>
+              Filtro Jira: {data.execution.filter_id}
+            </p>
+            {data.execution.programs.length === 0 ? (
+              <p className="muted">No hay issues de ejecución para este SWF.</p>
+            ) : (
+              <ExecutionPriorityBars programs={data.execution.programs} />
+            )}
+          </div>
+        </div>
+      )}
+      {!loading && data && !data.execution && canQuery && (
+        <div className="panel" style={{ marginTop: "14px" }}>
+          <div className="panel-header">
+            <h2>Issues del Sprint en ejecución</h2>
+          </div>
+          <div className="panel-body">
+            <p className="muted" style={{ marginTop: 0 }}>
+              Este Sprint aún no tiene un Saved Filter de issues en ejecución.
+            </p>
+          </div>
+        </div>
       )}
     </div>
   );

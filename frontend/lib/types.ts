@@ -770,6 +770,7 @@ export interface SprintTestingSprintOption {
   id: string;
   label: string;
   filter_id: string | null;
+  execution_filter_id: string | null;
   actionable: boolean;
 }
 
@@ -811,4 +812,17 @@ export interface SprintTestingRead {
   other_issue_count: number;
   programs: SprintTestingProgramMetrics[];
   consistency_ok: boolean;
+  execution: {
+    filter_id: string;
+    issue_count: number;
+    programs: SprintTestingExecutionProgram[];
+  } | null;
+}
+
+export interface SprintTestingExecutionProgram {
+  program_key: string;
+  display_name: string;
+  total: number;
+  blocker: number;
+  non_blocker: number;
 }
