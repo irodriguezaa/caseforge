@@ -58,31 +58,56 @@ export function durationDays(personDays: number, resources: number): number {
   return Math.round((personDays / testers) * 10) / 10;
 }
 
-export function hoursByTechnicalEpic(
-  cases: Array<{
-    component?: string | null;
-    hn_source?: string | null;
-    technical_epic?: string | null;
-    priority?: string | null;
-    complexity?: string | null;
-    estimation_hours?: number | null;
-  }>,
-): { label: string; value: number }[] {
-  const grouped = new Map<string, number>();
-  for (const row of cases) {
-    const key = (row.hn_source || row.technical_epic || row.component || "Sin EPC").trim() || "Sin EPC";
-    const hours =
-      row.estimation_hours != null && Number.isFinite(Number(row.estimation_hours))
-        ? Number(row.estimation_hours)
-        : estimateCaseMinutes(row.priority, row.complexity) / 60;
-    grouped.set(key, (grouped.get(key) || 0) + hours);
+export type EpicHoursCase = {
+  test_case_id: string;
+  test_case_name: string;
+  component?: string | null;
+  hn_source?: string | null;
+  technical_epic?: string | null;
+  priority?: string | null;
+  complexity?: string | null;
+  status?: string | null;
+  estimation_hours?: number | null;
+};
+
+export type EpicHoursGroup = {
+  key: string;
+  hours: number;
+  cases: EpicHoursCase[];
+};
+
+function caseHours(row: EpicHoursCase): number {
+  if (row.estimation_hours != null && Number.isFinite(Number(row.estimation_hours))) {
+    return Number(row.estimation_hours);
   }
-  return [...grouped.entries()]
-    .map(([key, hours]) => ({
-      label: key === "Sin EPC" ? "Sin EPC" : `TE ${key}`,
-      value: Math.round(hours * 10) / 10,
-    }))
-    .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label, "es"));
+  return estimateCaseMinutes(row.priority, row.complexity) / 60;
+}
+
+export function primaryEpicKey(row: EpicHoursCase): string {
+  const raw = (row.component || row.technical_epic || row.hn_source || "Sin EPC").trim() || "Sin EPC";
+  return raw.split("|")[0]?.trim() || "Sin EPC";
+}
+
+export function groupHoursByTechnicalEpic(cases: EpicHoursCase[]): EpicHoursGroup[] {
+  const grouped = new Map<string, EpicHoursGroup>();
+  for (const row of cases) {
+    const key = primaryEpicKey(row);
+    const hours = caseHours(row);
+    const current = grouped.get(key);
+    if (current) {
+      current.hours += hours;
+      current.cases.push(row);
+      continue;
+    }
+    grouped.set(key, { key, hours, cases: [row] });
+  }
+  return [...grouped.values()]
+    .map((row) => ({ ...row, hours: Math.round(row.hours * 10) / 10 }))
+    .sort((a, b) => b.hours - a.hours || a.key.localeCompare(b.key, "es"));
+}
+
+export function hoursByTechnicalEpic(cases: EpicHoursCase[]): { label: string; value: number }[] {
+  return groupHoursByTechnicalEpic(cases).map((row) => ({ label: row.key, value: row.hours }));
 }
 
 export function estimateReleaseEffortLegacyCount(testCaseCount: number): { hours: number; days: number } {

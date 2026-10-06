@@ -4,8 +4,8 @@ import { Download, Pencil, Plus, Sparkles, Trash2, Upload } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { BarList } from "@/app/components/BarList";
 import { EditTestCaseModal } from "@/app/components/EditTestCaseModal";
+import { EpicHoursPanel } from "@/app/components/EpicHoursPanel";
 import { ImportTestCasesPanel } from "@/app/components/ImportTestCasesPanel";
 import { InfoTooltip } from "@/app/components/InfoTooltip";
 import { OperativaCoverageMatrix } from "@/app/components/OperativaCoverageMatrix";
@@ -17,7 +17,7 @@ import { useAuth } from "@/lib/auth";
 import { BE_REGRESIVO_SCOPE_LABEL, OPERATIVA_DEVICE_OPTIONS, SHOW_QCO_ZEPHYR_PUBLISH, VALIDATION_TYPE_OPTIONS } from "@/lib/constants";
 import { calculateBusinessDays } from "@/lib/dateUtils";
 import { nextTestCaseId } from "@/lib/testCaseId";
-import { QC_ESTIMATION_TOOLTIP, QC_OPERATIVA_ESTIMATION_TOOLTIP, durationDays, estimateOperativaEffort, estimateReleaseEffortFromCases, estimateReleaseEffortLegacyCount, hoursByTechnicalEpic, stripDeviceFromCaseName } from "@/lib/qcEffort";
+import { QC_ESTIMATION_TOOLTIP, QC_OPERATIVA_ESTIMATION_TOOLTIP, durationDays, estimateOperativaEffort, estimateReleaseEffortFromCases, estimateReleaseEffortLegacyCount, groupHoursByTechnicalEpic, stripDeviceFromCaseName } from "@/lib/qcEffort";
 import type { CoverageMatrixResponse, EpcRead, GenerateCasesResponse, PublishCasesResponse, Release, ReleaseAnalysis, ReleaseStatus, TestCase } from "@/lib/types";
 import { formatRnSourceType } from "@/lib/types";
 
@@ -327,7 +327,7 @@ export default function ReleaseDetailPage(): React.ReactElement {
     }
     return testCases.filter((row) => (row.device || "").trim() === deviceFilter);
   }, [testCases, deviceFilter]);
-  const epicHours = useMemo(() => hoursByTechnicalEpic(visibleCases), [visibleCases]);
+  const epicHours = useMemo(() => groupHoursByTechnicalEpic(visibleCases), [visibleCases]);
 
   if (loadError) {
     return (
@@ -848,22 +848,10 @@ export default function ReleaseDetailPage(): React.ReactElement {
           ))}
         </div>
         {isApp && (
-          <div className="panel" style={{ margin: "4px 0 14px" }}>
-            <div className="panel-header">
-              <h2>Horas por Technical Epic</h2>
-            </div>
-            <div className="panel-body">
-              <p className="muted" style={{ marginTop: 0, marginBottom: "10px" }}>
-                Esfuerzo estimado QC consolidado por EPC. La etiqueta es el key de Jira.
-              </p>
-              <BarList
-                items={epicHours}
-                color="var(--kpi-teal, var(--accent))"
-                wideLabels
-                formatValue={(value) => `${value.toFixed(1)} h`}
-              />
-            </div>
-          </div>
+          <EpicHoursPanel
+            groups={epicHours}
+            fileName={`Horas_EPC_${release.name.replace(/[<>:"/\\|?*]+/g, "_").slice(0, 60)}.xlsx`}
+          />
         )}
         </>
       )}
