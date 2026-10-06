@@ -60,8 +60,10 @@ def _program_metrics(program_key: str, display_name: str, issues: list[dict[str,
     closed: dict[str, int] = {}
     for issue in issues:
         fields = issue.get("fields") or {}
-        status = ((fields.get("status") or {}).get("name") or "").strip()
-        bucket, label = classify_status(status)
+        status_obj = fields.get("status") or {}
+        status = (status_obj.get("name") or "").strip()
+        category = ((status_obj.get("statusCategory") or {}).get("key") or "").strip()
+        bucket, label = classify_status(status, category)
         target = {"todo": todo, "development": development, "testing": testing, "closed": closed}[bucket]
         target[label] = target.get(label, 0) + 1
     total = len(issues)

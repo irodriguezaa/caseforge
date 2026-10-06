@@ -19,11 +19,18 @@ _TESTING_CANONICAL = {
 }
 _CLOSED_CANONICAL = {
     "roll out": "Roll Out",
+    "roll-out": "Roll Out",
+    "rollout": "Roll Out",
     "done": "Done",
     "canceled": "Canceled",
     "cancelled": "Canceled",
     "cancelado": "Canceled",
     "cancelada": "Canceled",
+    "finalizada": "Finalizada",
+    "finalizado": "Finalizada",
+    "closed": "Closed",
+    "cerrado": "Cerrado",
+    "cerrada": "Cerrado",
 }
 
 
@@ -35,8 +42,8 @@ def is_technical_epic(issuetype: str | None) -> bool:
     return normalize_label(issuetype) == "technical epic"
 
 
-def classify_status(status: str | None) -> tuple[Bucket, str]:
-    """Return (bucket, display label). Unknown statuses go to development unchanged."""
+def classify_status(status: str | None, category_key: str | None = None) -> tuple[Bucket, str]:
+    """Return (bucket, display label). Jira Done category counts as closed."""
     raw = (status or "").strip() or "Sin estado"
     key = normalize_label(raw)
     if key in _TODO:
@@ -45,4 +52,6 @@ def classify_status(status: str | None) -> tuple[Bucket, str]:
         return "testing", _TESTING_CANONICAL[key]
     if key in _CLOSED_CANONICAL:
         return "closed", _CLOSED_CANONICAL[key]
+    if normalize_label(category_key) == "done":
+        return "closed", raw
     return "development", raw

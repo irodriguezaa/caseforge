@@ -9,21 +9,28 @@ const BAR_KEYS = [
   { id: "closed", label: "Cerrado" },
 ] as const;
 
-const PALETTE = [
-  "var(--kpi-blue)",
-  "var(--kpi-teal)",
-  "var(--warning)",
-  "var(--kpi-gray)",
-  "var(--success)",
-  "var(--danger)",
-  "var(--accent)",
-  "#8b7ec8",
-  "#c47a54",
-  "#5aa2a0",
+const DEV_COLOR = "#C9B896";
+const CLOSED_COLOR = "#3D9B6E";
+const TESTING_COLORS: Record<string, string> = {
+  Integration: "#6B5B95",
+  "QA Validation": "#3B6FA0",
+  "QC Validation": "#8B95A1",
+  Validation: "#8B95A1",
+};
+const TESTING_LEGEND = [
+  { label: "QA Validation", color: "#3B6FA0" },
+  { label: "Validation", color: "#8B95A1" },
+  { label: "Integration", color: "#6B5B95" },
 ];
 
 function barTotal(counts: Record<string, number>): number {
   return Object.values(counts).reduce((sum, value) => sum + value, 0);
+}
+
+function segmentColor(barId: string, status: string): string {
+  if (barId === "development") return DEV_COLOR;
+  if (barId === "closed") return CLOSED_COLOR;
+  return TESTING_COLORS[status] ?? "#8B95A1";
 }
 
 export function GroupedStackedBars({
@@ -32,16 +39,6 @@ export function GroupedStackedBars({
   programs: SprintTestingProgramMetrics[];
 }): React.ReactElement {
   const [hovered, setHovered] = useState<string | null>(null);
-  const statuses = Array.from(
-    new Set(
-      programs.flatMap((row) => [
-        ...Object.keys(row.development),
-        ...Object.keys(row.testing),
-        ...Object.keys(row.closed),
-      ]),
-    ),
-  );
-  const colorOf = (status: string): string => PALETTE[statuses.indexOf(status) % PALETTE.length];
   const maxBar = Math.max(
     1,
     ...programs.flatMap((row) => [
@@ -53,10 +50,18 @@ export function GroupedStackedBars({
 
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "flex-end", gap: "28px", overflowX: "auto", minHeight: "190px" }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "flex-end",
+          gap: "12px",
+          width: "100%",
+          minHeight: "220px",
+        }}
+      >
         {programs.map((program) => (
-          <div key={program.program_key} style={{ minWidth: "132px", flex: "0 0 auto" }}>
-            <div style={{ display: "flex", alignItems: "flex-end", gap: "8px", height: "160px" }}>
+          <div key={program.program_key} style={{ flex: "1 1 0", minWidth: 0 }}>
+            <div style={{ display: "flex", alignItems: "flex-end", gap: "6px", height: "180px" }}>
               {BAR_KEYS.map((bar) => {
                 const counts = program[bar.id];
                 const total = barTotal(counts);
@@ -99,24 +104,24 @@ export function GroupedStackedBars({
                         </div>
                         <div style={{ color: "var(--text-muted)" }}>Total: {total}</div>
                         {Object.entries(counts).map(([status, value]) => (
-                          <div key={status} style={{ color: colorOf(status) }}>
+                          <div key={status} style={{ color: "var(--text)" }}>
                             {status}: {value}
                           </div>
                         ))}
                       </div>
                     )}
-                    <span style={{ fontSize: "10px", color: "var(--text-dim)", fontVariantNumeric: "tabular-nums" }}>
+                    <span style={{ fontSize: "11px", color: "var(--text-muted)", fontVariantNumeric: "tabular-nums" }}>
                       {total || ""}
                     </span>
                     <div
                       style={{
                         width: "100%",
-                        maxWidth: "28px",
+                        maxWidth: "48px",
                         display: "flex",
                         flexDirection: "column-reverse",
                         height: `${(total / maxBar) * 100}%`,
                         minHeight: total > 0 ? "2px" : 0,
-                        borderRadius: "3px 3px 0 0",
+                        borderRadius: "4px 4px 0 0",
                         overflow: "hidden",
                         background: total === 0 ? "var(--surface-2)" : undefined,
                       }}
@@ -129,21 +134,23 @@ export function GroupedStackedBars({
                             style={{
                               width: "100%",
                               height: `${(value / (total || 1)) * 100}%`,
-                              background: colorOf(status),
+                              background: segmentColor(bar.id, status),
                             }}
                           />
                         );
                       })}
                     </div>
-                    <span style={{ fontSize: "9px", color: "var(--text-dim)", textAlign: "center" }}>{bar.label}</span>
+                    <span style={{ fontSize: "10px", color: "var(--text-dim)", textAlign: "center", lineHeight: 1.2 }}>
+                      {bar.label}
+                    </span>
                   </div>
                 );
               })}
             </div>
             <div
               style={{
-                marginTop: "8px",
-                fontSize: "11px",
+                marginTop: "10px",
+                fontSize: "12px",
                 color: "var(--text)",
                 textAlign: "center",
                 fontWeight: 600,
@@ -154,19 +161,25 @@ export function GroupedStackedBars({
           </div>
         ))}
       </div>
-      {statuses.length > 0 && (
-        <div style={{ display: "flex", gap: "14px", flexWrap: "wrap", marginTop: "14px" }}>
-          {statuses.map((status) => (
-            <span
-              key={status}
-              style={{ display: "inline-flex", alignItems: "center", gap: "5px", fontSize: "11px", color: "var(--text-muted)" }}
-            >
-              <span style={{ width: "8px", height: "8px", borderRadius: "2px", background: colorOf(status) }} />
-              {status}
-            </span>
-          ))}
-        </div>
-      )}
+      <div style={{ display: "flex", gap: "16px", flexWrap: "wrap", marginTop: "16px" }}>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: "5px", fontSize: "11px", color: "var(--text-muted)" }}>
+          <span style={{ width: "8px", height: "8px", borderRadius: "2px", background: DEV_COLOR }} />
+          Desarrollo
+        </span>
+        {TESTING_LEGEND.map((item) => (
+          <span
+            key={item.label}
+            style={{ display: "inline-flex", alignItems: "center", gap: "5px", fontSize: "11px", color: "var(--text-muted)" }}
+          >
+            <span style={{ width: "8px", height: "8px", borderRadius: "2px", background: item.color }} />
+            {item.label}
+          </span>
+        ))}
+        <span style={{ display: "inline-flex", alignItems: "center", gap: "5px", fontSize: "11px", color: "var(--text-muted)" }}>
+          <span style={{ width: "8px", height: "8px", borderRadius: "2px", background: CLOSED_COLOR }} />
+          Cerrado
+        </span>
+      </div>
     </div>
   );
 }

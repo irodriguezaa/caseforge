@@ -1,16 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { ExecutivePieChart } from "@/app/components/ExecutivePieChart";
 import { GroupedStackedBars } from "@/app/components/GroupedStackedBars";
-import { StackedBarChart } from "@/app/components/StackedBarChart";
 import { api } from "@/lib/api";
 import type { SprintTestingOptions, SprintTestingRead } from "@/lib/types";
-
-const OPEN_CLOSED = ["Abierto", "Cerrado"] as const;
-const OPEN_CLOSED_COLORS: Record<string, string> = {
-  Abierto: "var(--warning)",
-  Cerrado: "var(--success)",
-};
 
 export default function SprintTestingPage(): React.ReactElement {
   const [options, setOptions] = useState<SprintTestingOptions | null>(null);
@@ -63,12 +57,10 @@ export default function SprintTestingPage(): React.ReactElement {
     };
   }, [sprint, swf, canQuery]);
 
-  const openClosed = useMemo(() => {
-    const chart: Record<string, Record<string, number>> = {};
-    for (const row of data?.programs ?? []) {
-      chart[row.display_name] = { Abierto: row.open, Cerrado: row.closed_total };
-    }
-    return chart;
+  const totals = useMemo(() => {
+    const open = data?.programs.reduce((sum, row) => sum + row.open, 0) ?? 0;
+    const closed = data?.programs.reduce((sum, row) => sum + row.closed_total, 0) ?? 0;
+    return { open, closed };
   }, [data]);
 
   return (
@@ -124,15 +116,11 @@ export default function SprintTestingPage(): React.ReactElement {
             </div>
             <div className="metric-cell">
               <div className="metric-label">Abiertos</div>
-              <div className="metric-value">
-                {data.programs.reduce((sum, row) => sum + row.open, 0)}
-              </div>
+              <div className="metric-value">{totals.open}</div>
             </div>
             <div className="metric-cell">
               <div className="metric-label">Cerrados</div>
-              <div className="metric-value">
-                {data.programs.reduce((sum, row) => sum + row.closed_total, 0)}
-              </div>
+              <div className="metric-value">{totals.closed}</div>
             </div>
             <div className="metric-cell">
               <div className="metric-label">SWF</div>
@@ -148,8 +136,8 @@ export default function SprintTestingPage(): React.ReactElement {
             </div>
             <div className="panel-body">
               <p className="muted" style={{ marginTop: 0 }}>
-                Tres barras por programa. Cada segmento es el estado real de Jira. To Do no entra en
-                estas barras.
+                Se muestra el estado de las Technical Epics por dispositivo, cada segmento es el estado real de
+                Jira.
               </p>
               <GroupedStackedBars programs={data.programs} />
             </div>
@@ -161,13 +149,9 @@ export default function SprintTestingPage(): React.ReactElement {
             </div>
             <div className="panel-body">
               <p className="muted" style={{ marginTop: 0 }}>
-                To Do cuenta como abierto. Abierto + cerrado = total de Technical Epics del programa.
+                Abierto + cerrado = total de Technical Epics del programa.
               </p>
-              <StackedBarChart
-                data={openClosed}
-                categories={[...OPEN_CLOSED]}
-                colors={OPEN_CLOSED_COLORS}
-              />
+              <ExecutivePieChart open={totals.open} closed={totals.closed} />
             </div>
           </div>
         </>

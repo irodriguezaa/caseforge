@@ -27,8 +27,11 @@ def test_classify_aliases() -> None:
     assert classify_status("QA Validation") == ("testing", "QA Validation")
     assert classify_status("Cancelled") == ("closed", "Canceled")
     assert classify_status("Canceled") == ("closed", "Canceled")
+    assert classify_status("Finalizada") == ("closed", "Finalizada")
     assert classify_status("In Progress") == ("development", "In Progress")
     assert classify_status("Blocked") == ("development", "Blocked")
+    assert classify_status("Released", "done") == ("closed", "Released")
+    assert classify_status("QA Validation", "done") == ("testing", "QA Validation")
 
 
 def test_only_technical_epic_is_counted() -> None:
@@ -77,6 +80,30 @@ def test_adt_example_graph1_and_graph2() -> None:
     assert payload.other_issue_count == 1
     assert payload.technical_epic_count == 26
     assert payload.consistency_ok is True
+
+
+def test_done_category_moves_open_to_closed() -> None:
+    hitss = get_swf("hitss")
+    assert hitss is not None
+    issues = [_issue(f"ADTCL-{i}", "ADTCL", "In Progress") for i in range(1, 8)]
+    extra = []
+    for index in range(8, 15):
+        extra.append(
+            {
+                "key": f"ADTCL-{index}",
+                "fields": {
+                    "issuetype": {"name": "Technical Epic"},
+                    "status": {"name": "Finalizada", "statusCategory": {"key": "done"}},
+                    "project": {"key": "ADTCL"},
+                    "summary": f"ADTCL-{index}",
+                },
+            }
+        )
+    payload = aggregate_issues("44", "Sprint 44", "117698", hitss, issues + extra)
+    adt = payload.programs[0]
+    assert adt.open == 7
+    assert adt.closed_total == 7
+    assert adt.closed.get("Finalizada") == 7
 
 
 def test_zero_programs_are_omitted() -> None:
