@@ -34,6 +34,8 @@ import type {
   PublishCasesResponse,
   QcCalendarDayResponse,
   QcCalendarWeekResponse,
+  SprintTestingOptions,
+  SprintTestingRead,
   Release,
   ReleaseKpisRead,
   ReleaseAnalysis,
@@ -419,6 +421,11 @@ export const api = {
     return request<QcDashboardSummary>(`/api/dashboard/qc-summary${suffix}`);
   },
   getReleaseKpis: () => request<ReleaseKpisRead>("/api/kpis/releases"),
+  getSprintTestingOptions: () => request<SprintTestingOptions>("/api/sprint-testing/options"),
+  getSprintTesting: (sprint: string, swf: string) =>
+    request<SprintTestingRead>(
+      `/api/sprint-testing?sprint=${encodeURIComponent(sprint)}&swf=${encodeURIComponent(swf)}`,
+    ),
   getCalendarDay: (date?: string) => {
     const suffix = date ? `?date=${encodeURIComponent(date)}` : "";
     return request<QcCalendarDayResponse>(`/api/calendar/day${suffix}`);

@@ -8,7 +8,7 @@ import { homePathForRole, isReleaseModulePath, useAuth } from "@/lib/auth";
 export function AppShell({ children }: { children: React.ReactNode }): React.ReactElement {
   const pathname = usePathname();
   const router = useRouter();
-  const { user, loading, canSeeDashboard, canSeeKpis, canSeeReleases } = useAuth();
+  const { user, loading, canSeeDashboard, canSeeKpis, canSeeReleases, canSeeSprintTesting } = useAuth();
   const isLogin = pathname === "/login";
 
   useEffect(() => {
@@ -32,7 +32,10 @@ export function AppShell({ children }: { children: React.ReactNode }): React.Rea
     if (!canSeeReleases && isReleaseModulePath(pathname)) {
       router.replace(homePathForRole(user.role));
     }
-  }, [loading, isLogin, user, canSeeDashboard, canSeeKpis, canSeeReleases, pathname, router]);
+    if (!canSeeSprintTesting && pathname.startsWith("/sprint-testing")) {
+      router.replace(homePathForRole(user.role));
+    }
+  }, [loading, isLogin, user, canSeeDashboard, canSeeKpis, canSeeReleases, canSeeSprintTesting, pathname, router]);
 
   if (isLogin) {
     return <>{children}</>;

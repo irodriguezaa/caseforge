@@ -12,6 +12,7 @@ interface AuthContextValue {
   canSeeDashboard: boolean;
   canSeeKpis: boolean;
   canSeeReleases: boolean;
+  canSeeSprintTesting: boolean;
   canLoadRn: boolean;
   canChangeReleaseStatus: boolean;
   canDeleteRelease: boolean;
@@ -73,6 +74,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
       canSeeDashboard: role === "jefe" || role === "lider" || role === "consulta",
       canSeeKpis: role === "jefe" || role === "lider" || role === "consulta",
       canSeeReleases: role === "jefe" || role === "lider" || role === "tester",
+      canSeeSprintTesting: role === "jefe" || role === "lider",
       canLoadRn: role === "jefe" || role === "lider" || role === "tester",
       canChangeReleaseStatus: role === "jefe" || role === "lider",
       canDeleteRelease: role === "jefe",

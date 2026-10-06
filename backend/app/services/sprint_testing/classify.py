@@ -1,0 +1,48 @@
+"""Classify Jira status into Graph 1 buckets and Graph 2 open/closed."""
+
+from __future__ import annotations
+
+import re
+from typing import Literal
+
+Bucket = Literal["todo", "testing", "closed", "development"]
+
+_WS = re.compile(r"\s+")
+
+_TODO = {"to do", "tareas por hacer"}
+_TESTING_CANONICAL = {
+    "integration": "Integration",
+    "qa validation": "QA Validation",
+    "qc validation": "QC Validation",
+    "validate qc": "QC Validation",
+    "validation": "QC Validation",
+}
+_CLOSED_CANONICAL = {
+    "roll out": "Roll Out",
+    "done": "Done",
+    "canceled": "Canceled",
+    "cancelled": "Canceled",
+    "cancelado": "Canceled",
+    "cancelada": "Canceled",
+}
+
+
+def normalize_label(text: str | None) -> str:
+    return _WS.sub(" ", (text or "").strip().lower())
+
+
+def is_technical_epic(issuetype: str | None) -> bool:
+    return normalize_label(issuetype) == "technical epic"
+
+
+def classify_status(status: str | None) -> tuple[Bucket, str]:
+    """Return (bucket, display label). Unknown statuses go to development unchanged."""
+    raw = (status or "").strip() or "Sin estado"
+    key = normalize_label(raw)
+    if key in _TODO:
+        return "todo", "To Do"
+    if key in _TESTING_CANONICAL:
+        return "testing", _TESTING_CANONICAL[key]
+    if key in _CLOSED_CANONICAL:
+        return "closed", _CLOSED_CANONICAL[key]
+    return "development", raw

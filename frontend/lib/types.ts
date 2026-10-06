@@ -765,3 +765,50 @@ export interface QcCalendarWeekResponse {
   feed?: string;
   outlook_note?: string | null;
 }
+
+export interface SprintTestingSprintOption {
+  id: string;
+  label: string;
+  filter_id: string | null;
+  actionable: boolean;
+}
+
+export interface SprintTestingProgramOption {
+  program_key: string;
+  display_name: string;
+}
+
+export interface SprintTestingSwfOption {
+  id: string;
+  label: string;
+  programs: SprintTestingProgramOption[];
+}
+
+export interface SprintTestingOptions {
+  sprints: SprintTestingSprintOption[];
+  swfs: SprintTestingSwfOption[];
+}
+
+export interface SprintTestingProgramMetrics {
+  program_key: string;
+  display_name: string;
+  total: number;
+  todo: Record<string, number>;
+  development: Record<string, number>;
+  testing: Record<string, number>;
+  closed: Record<string, number>;
+  open: number;
+  closed_total: number;
+  unclassified: Record<string, number>;
+  consistency_ok: boolean;
+}
+
+export interface SprintTestingRead {
+  sprint: { id: string; label: string; filter_id: string };
+  swf: string;
+  filter_issue_count: number;
+  technical_epic_count: number;
+  other_issue_count: number;
+  programs: SprintTestingProgramMetrics[];
+  consistency_ok: boolean;
+}

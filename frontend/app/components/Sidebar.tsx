@@ -1,6 +1,6 @@
 "use client";
 
-import { Bug, ChevronDown, ChevronRight, Gauge, LayoutDashboard, LogOut, Package } from "lucide-react";
+import { BarChart3, Bug, ChevronDown, ChevronRight, Gauge, LayoutDashboard, LogOut, Package } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -39,7 +39,7 @@ const ROLE_LABEL: Record<AuthRole, string> = {
 
 export function Sidebar(): React.ReactElement {
   const pathname = usePathname();
-  const { user, logout, canSeeDashboard, canSeeKpis, canSeeReleases } = useAuth();
+  const { user, logout, canSeeDashboard, canSeeKpis, canSeeReleases, canSeeSprintTesting } = useAuth();
   const [detailOrigin, setDetailOrigin] = useState<ReleaseChildId | null>(null);
   const [releaseOpen, setReleaseOpen] = useState(true);
   const [kpisOpen, setKpisOpen] = useState(true);
@@ -87,6 +87,7 @@ export function Sidebar(): React.ReactElement {
   }, [releaseGroupActive]);
 
   const dashboardActive = pathname === "/";
+  const sprintTestingActive = pathname.startsWith("/sprint-testing");
   const kpisActive = pathname.startsWith("/kpis");
   const releasesKpiActive = pathname === "/kpis/releases" || pathname.startsWith("/kpis/releases/");
   const defectsOperativaActive = pathname.startsWith("/kpis/operativas");
@@ -151,6 +152,13 @@ export function Sidebar(): React.ReactElement {
             </div>
           )}
         </div>
+        )}
+
+        {canSeeSprintTesting && (
+          <Link href="/sprint-testing" className={`sidebar-link${sprintTestingActive ? " active" : ""}`}>
+            <BarChart3 size={16} strokeWidth={2} aria-hidden="true" />
+            <span>Sprint Testing</span>
+          </Link>
         )}
 
         {canSeeReleases && (

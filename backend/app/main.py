@@ -22,6 +22,7 @@ from app.routers.releases import router as releases_router
 from app.routers.test_case_revalidations import router as test_case_revalidations_router
 from app.routers.test_cases import router as test_cases_router
 from app.routers.test_steps import router as test_steps_router
+from app.routers.sprint_testing import router as sprint_testing_router
 
 app = FastAPI(title="CaseForge API", version="0.3.0")
 
@@ -87,6 +88,7 @@ app.include_router(qc_tickets_router)
 app.include_router(dashboard_router)
 app.include_router(kpis_router)
 app.include_router(calendar_router)
+app.include_router(sprint_testing_router)
 
 # Deliverable / Release lineage / Revalidations (Alternative C)
 app.include_router(deliverables_router)

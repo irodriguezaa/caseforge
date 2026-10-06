@@ -353,3 +353,36 @@ def count_open_blocker_issues(filter_id: str) -> int:
             if not next_page_token or not issues:
                 break
         return total
+
+
+def fetch_raw_issues_by_filter(filter_id: str, fields: list[str]) -> list[dict[str, Any]]:
+    """All issues in a saved filter. Paginates with nextPageToken; dedupes by key."""
+    ensure_authenticated()
+    collected: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    with _client() as client:
+        jql = _jql_for_saved_filter(client, filter_id)
+        next_page_token: str | None = None
+        while True:
+            body: dict[str, Any] = {
+                "jql": jql,
+                "maxResults": _SEARCH_PAGE_SIZE,
+                "fields": fields,
+            }
+            if next_page_token:
+                body["nextPageToken"] = next_page_token
+            response = client.post("/rest/api/3/search/jql", json=body)
+            if response.status_code != 200:
+                raise JiraApiError(response.status_code, response.text[:500])
+            payload = response.json()
+            issues = payload.get("issues") or []
+            for issue in issues:
+                key = str(issue.get("key") or "").strip().upper()
+                if not key or key in seen:
+                    continue
+                seen.add(key)
+                collected.append(issue)
+            next_page_token = payload.get("nextPageToken") or None
+            if not next_page_token or not issues:
+                break
+    return collected

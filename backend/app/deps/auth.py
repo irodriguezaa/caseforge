@@ -32,3 +32,4 @@ def require_roles(*roles: Role):
 require_dashboard = require_roles(Role.JEFE, Role.LIDER, Role.CONSULTA)
 require_jefe = require_roles(Role.JEFE)
 require_status_change = require_roles(Role.JEFE, Role.LIDER)
+require_sprint_testing = require_roles(Role.JEFE, Role.LIDER)
