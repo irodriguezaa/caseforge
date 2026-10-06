@@ -4,8 +4,8 @@ import { Download, Pencil, Plus, Sparkles, Trash2, Upload } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { BarList } from "@/app/components/BarList";
 import { EditTestCaseModal } from "@/app/components/EditTestCaseModal";
+import { EpicHoursPanel } from "@/app/components/EpicHoursPanel";
 import { ImportTestCasesPanel } from "@/app/components/ImportTestCasesPanel";
 import { InfoTooltip } from "@/app/components/InfoTooltip";
 import { OperativaCoverageMatrix } from "@/app/components/OperativaCoverageMatrix";
@@ -847,24 +847,7 @@ export default function ReleaseDetailPage(): React.ReactElement {
             </div>
           ))}
         </div>
-        {isApp && (
-          <div className="panel" style={{ margin: "4px 0 14px" }}>
-            <div className="panel-header">
-              <h2>Horas por Technical Epic</h2>
-            </div>
-            <div className="panel-body">
-              <p className="muted" style={{ marginTop: 0, marginBottom: "10px" }}>
-                Esfuerzo estimado QC consolidado por EPC. La etiqueta es el key de Jira.
-              </p>
-              <BarList
-                items={epicHours}
-                color="var(--kpi-teal, var(--accent))"
-                wideLabels
-                formatValue={(value) => `${value.toFixed(1)} h`}
-              />
-            </div>
-          </div>
-        )}
+        {isApp && <EpicHoursPanel items={epicHours} fileName={release.name} />}
         </>
       )}
 

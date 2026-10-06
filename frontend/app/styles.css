@@ -337,8 +337,24 @@ table.activity tr.selected { background: var(--accent-dim); }
 
 .bar-list { display: flex; flex-direction: column; gap: 9px; }
 .bar-row { display: grid; grid-template-columns: 96px 1fr 40px; align-items: center; gap: 10px; font-size: 12px; }
-.bar-list-wide .bar-row { grid-template-columns: 148px 1fr 56px; }
+.bar-list-wide .bar-row { grid-template-columns: 168px 1fr 56px; }
 .bar-row .bar-label { color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bar-list-wide .bar-row .bar-label { white-space: normal; overflow: visible; text-overflow: unset; line-height: 1.25; word-break: break-word; }
+button.epic-hours-toggle {
+  width: 100%;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font-weight: 600;
+  padding: 10px 14px;
+}
+button.epic-hours-toggle:hover:not(:disabled) { background: var(--surface-2); }
+.epic-hours-toggle h2 { pointer-events: none; }
+.epic-hours-chevron { color: var(--text-dim); transition: transform .15s ease; }
+.epic-hours-chevron.open { transform: rotate(180deg); }
+.epic-hours-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.epic-hours-toolbar button { display: inline-flex; align-items: center; gap: 6px; }
 .bar-track { background: var(--border); border-radius: 4px; height: 8px; overflow: hidden; }
 .bar-fill { height: 100%; border-radius: 4px; min-width: 2px; }
 .bar-row .bar-value { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }

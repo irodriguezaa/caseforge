@@ -79,7 +79,7 @@ export function hoursByTechnicalEpic(
   }
   return [...grouped.entries()]
     .map(([key, hours]) => ({
-      label: key === "Sin EPC" ? "Sin EPC" : `TE ${key}`,
+      label: key,
       value: Math.round(hours * 10) / 10,
     }))
     .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label, "es"));
