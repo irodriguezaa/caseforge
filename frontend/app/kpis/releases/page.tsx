@@ -37,6 +37,11 @@ export default function KpisReleasesPage(): React.ReactElement {
     return chart;
   }, [data]);
 
+  const deliverablesWithVersions = useMemo(
+    () => (data?.by_deliverable ?? []).filter((row) => row.versions != null && row.versions >= 2),
+    [data],
+  );
+
   return (
     <div className="page page-wide">
       <div className="kpi-page-head">
@@ -121,8 +126,8 @@ export default function KpisReleasesPage(): React.ReactElement {
             </div>
             <div className="panel-body">
               <p className="kpi-volume-caption">
-                Muestra los ciclos QC y versiones de los Entregables de Release App. BE y
-                Operativas no participan en este indicador.
+                Muestra los ciclos QC y Entregables de Release App. BE con más de 2 versiones.
+                Nota. Operativas no participan en este indicador.
               </p>
               <table className="activity kpi-deliverable-table">
                 <thead>
@@ -133,7 +138,7 @@ export default function KpisReleasesPage(): React.ReactElement {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.by_deliverable.map((row) => (
+                  {deliverablesWithVersions.map((row) => (
                     <tr
                       key={
                         row.deliverable_id != null
@@ -143,9 +148,16 @@ export default function KpisReleasesPage(): React.ReactElement {
                     >
                       <td>{row.deliverable_name}</td>
                       <td className="num">{row.releases}</td>
-                      <td className="num">{row.versions == null ? "N/A" : row.versions}</td>
+                      <td className="num">{row.versions}</td>
                     </tr>
                   ))}
+                  {deliverablesWithVersions.length === 0 && (
+                    <tr>
+                      <td colSpan={3} className="muted">
+                        No hay Entregables con 2 o más versiones QC.
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
