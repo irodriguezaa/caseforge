@@ -257,11 +257,12 @@ def _exec_issue(
     priority: str,
     summary: str,
     description: object,
+    issuetype: str = "QA Bug",
 ) -> dict:
     return {
         "key": key,
         "fields": {
-            "issuetype": {"name": "Bug"},
+            "issuetype": {"name": issuetype},
             "status": {"name": status},
             "project": {"key": project},
             "priority": {"name": priority},
@@ -288,7 +289,7 @@ def test_execution_issue_rows_filter_and_truncate() -> None:
                 {"type": "doc", "content": [{"type": "paragraph", "content": [{"type": "text", "text": "falla"}]}]},
             ),
             _exec_issue("ATSCL-9", "ATSCL", "To Do", "Major", "Otro SWF", "fuera"),
-            _exec_issue("WINCL-2", "WINCL", "QA Validation", "Minor", "Layout", "x" * 600),
+            _exec_issue("WINCL-2", "WINCL", "QA Validation", "Minor", "Layout", "x" * 600, issuetype="QC Bug"),
         ],
     )
     assert [row.key for row in rows] == ["ADTCL-1", "WINCL-2"]
@@ -296,6 +297,8 @@ def test_execution_issue_rows_filter_and_truncate() -> None:
     assert rows[0].description == "falla"
     assert rows[0].status == "In Progress"
     assert rows[0].priority == "Blocker"
+    assert rows[0].issue_type == "QA Bug"
+    assert rows[1].issue_type == "QC Bug"
     assert len(rows[1].description) == 500
     assert rows[1].description.endswith("…")
 
@@ -312,6 +315,7 @@ def test_issues_workbook_headers() -> None:
         [
             ExecutionIssueRow(
                 key="ADTCL-1",
+                issue_type="QA Bug",
                 summary="Playback",
                 description="falla",
                 status="In Progress",
@@ -325,7 +329,8 @@ def test_issues_workbook_headers() -> None:
     sheet = book.active
     assert [cell.value for cell in sheet[1]] == ISSUE_HEADERS
     assert sheet["A2"].value == "ADTCL-1"
-    assert sheet["E2"].value == "Blocker"
+    assert sheet["B2"].value == "QA Bug"
+    assert sheet["F2"].value == "Blocker"
 
 
 def test_executive_pptx_has_two_slides() -> None:
@@ -380,6 +385,10 @@ def test_executive_pptx_has_two_slides() -> None:
     )
     deck = Presentation(BytesIO(build_executive_pptx(payload)))
     assert len(deck.slides) == 2
+    epic_table = next(shape.table for shape in deck.slides[0].shapes if shape.has_table)
+    headers = [epic_table.cell(0, col).text.strip() for col in range(len(epic_table.columns))]
+    assert "To Do" not in headers
+    assert headers == ["Dispositivo", "Desarrollo", "Testing", "Cerrado", "Abierto", "Total"]
 
 
 def test_export_issues_requires_execution_filter(client) -> None:

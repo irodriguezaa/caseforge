@@ -55,6 +55,7 @@ class ExecutionProgramMetrics(BaseModel):
 
 class ExecutionIssueRow(BaseModel):
     key: str
+    issue_type: str
     summary: str
     description: str
     status: str

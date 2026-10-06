@@ -17,7 +17,7 @@ from pptx.util import Inches, Pt
 
 from app.schemas.sprint_testing import ExecutionIssueRow, SprintTestingRead
 
-ISSUE_HEADERS = ["Key", "Summary", "Description", "Estado", "Prioridad", "Dispositivo"]
+ISSUE_HEADERS = ["Key", "Issue Type", "Summary", "Description", "Estado", "Prioridad", "Dispositivo"]
 
 _HEADER_FILL = PatternFill("solid", fgColor="1B2A49")
 _HEADER_FONT = Font(name="Calibri", bold=True, color="FFFFFF", size=11)
@@ -59,7 +59,7 @@ def build_issues_workbook(rows: list[ExecutionIssueRow]) -> bytes:
         cell.font = _HEADER_FONT
         cell.alignment = Alignment(wrap_text=True, vertical="center", horizontal="center")
         cell.border = _THIN
-    widths = [16, 42, 55, 18, 16, 18]
+    widths = [16, 16, 42, 55, 18, 16, 18]
     for index, width in enumerate(widths, start=1):
         sheet.column_dimensions[get_column_letter(index)].width = width
     sheet.row_dimensions[1].height = 28
@@ -67,12 +67,20 @@ def build_issues_workbook(rows: list[ExecutionIssueRow]) -> bytes:
     sheet.auto_filter.ref = f"A1:{get_column_letter(len(ISSUE_HEADERS))}1"
 
     for row_index, row in enumerate(rows, start=2):
-        values = [row.key, row.summary, row.description, row.status, row.priority, row.device]
+        values = [
+            row.key,
+            row.issue_type,
+            row.summary,
+            row.description,
+            row.status,
+            row.priority,
+            row.device,
+        ]
         for col, value in enumerate(values, start=1):
             cell = sheet.cell(row_index, col, _excel_value(value))
             cell.font = _CELL_FONT
             cell.border = _THIN
-            cell.alignment = Alignment(wrap_text=col in {2, 3}, vertical="top")
+            cell.alignment = Alignment(wrap_text=col in {3, 4}, vertical="top")
         sheet.row_dimensions[row_index].height = 36
 
     buffer = io.BytesIO()
@@ -217,7 +225,7 @@ def _build_epics_slide(slide: Any, payload: SprintTestingRead) -> None:
     for index, (value, label, accent) in enumerate(cards):
         _kpi_card(slide, start + index * (card_w + gap), Inches(1.12), card_w, value, label, accent)
 
-    headers = ["Dispositivo", "Desarrollo", "Testing", "Cerrado", "To Do", "Abierto", "Total"]
+    headers = ["Dispositivo", "Desarrollo", "Testing", "Cerrado", "Abierto", "Total"]
     rows = payload.programs
     table_rows = max(len(rows) + 1, 2)
     table_shape = slide.shapes.add_table(
@@ -241,7 +249,6 @@ def _build_epics_slide(slide: Any, payload: SprintTestingRead) -> None:
             str(_sum_bucket(program.development)),
             str(_sum_bucket(program.testing)),
             str(program.closed_total),
-            str(_sum_bucket(program.todo)),
             str(program.open),
             str(program.total),
         ]

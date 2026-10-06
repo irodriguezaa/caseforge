@@ -153,6 +153,7 @@ def list_execution_issue_rows(swf: SwfDef, issues: list[dict[str, Any]]) -> list
         rows.append(
             ExecutionIssueRow(
                 key=str(issue.get("key") or "").strip().upper(),
+                issue_type=_issuetype_name(issue).strip(),
                 summary=_summary(issue),
                 description=_description(issue),
                 status=_status_name(issue),
