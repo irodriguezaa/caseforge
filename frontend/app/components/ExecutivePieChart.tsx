@@ -85,10 +85,34 @@ function Donut({
 
 function ExecutiveArrow(): React.ReactElement {
   return (
-    <svg width="44" height="18" viewBox="0 0 44 18" aria-hidden="true" style={{ flexShrink: 0, color: "var(--text-dim)" }}>
-      <line x1="2" y1="9" x2="34" y2="9" stroke="currentColor" strokeWidth="1" />
-      <polyline points="28,3 36,9 28,15" fill="none" stroke="currentColor" strokeWidth="1" />
-    </svg>
+    <div
+      aria-hidden="true"
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: "6px",
+        flexShrink: 0,
+        padding: "0 6px",
+        minWidth: "72px",
+      }}
+    >
+      <svg width="64" height="28" viewBox="0 0 64 28">
+        <path d="M3 10h32V5.2L53 14 35 22.8V18H3z" fill="#5B7394" />
+      </svg>
+      <span
+        style={{
+          fontSize: "9px",
+          letterSpacing: "0.08em",
+          textTransform: "uppercase",
+          color: "var(--text-dim)",
+          fontWeight: 600,
+        }}
+      >
+        por programa
+      </span>
+    </div>
   );
 }
 

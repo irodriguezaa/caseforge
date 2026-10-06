@@ -148,8 +148,11 @@ export default function SprintTestingPage(): React.ReactElement {
               <h2>Abiertos vs cerrados</h2>
             </div>
             <div className="panel-body">
-              <p className="muted" style={{ marginTop: 0 }}>
+              <p className="muted" style={{ marginTop: 0, marginBottom: 4 }}>
                 Abierto + cerrado = total de Technical Epics del programa.
+              </p>
+              <p className="muted" style={{ marginTop: 0, fontSize: "11px" }}>
+                Filtro Jira: {data.sprint.filter_id}
               </p>
               <ExecutivePieChart open={totals.open} closed={totals.closed} programs={data.programs} />
             </div>
