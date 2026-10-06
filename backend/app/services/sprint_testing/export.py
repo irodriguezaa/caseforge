@@ -115,13 +115,6 @@ def _add_text(
     run.font.name = "Calibri"
 
 
-def _clip(text: str, limit: int) -> str:
-    value = (text or "").strip()
-    if len(value) <= limit:
-        return value
-    return value[: limit - 1].rstrip() + "…"
-
-
 def _sum_bucket(values: dict[str, int]) -> int:
     return sum(values.values())
 
@@ -235,18 +228,19 @@ def _build_executive_slide(slide: Any, payload: SprintTestingRead) -> None:
     for index, (value, label, accent) in enumerate(cards):
         _kpi_card(slide, start + index * (card_w + gap), Inches(1.04), card_w, value, label, accent)
 
-    _add_text(slide, Inches(0.4), Inches(1.92), Inches(6.5), Inches(0.28), "Technical Epics", size=13, bold=True, color=NAVY)
+    _add_text(slide, Inches(0.4), Inches(2.22), Inches(6.1), Inches(0.28), "Technical Epics", size=13, bold=True, color=NAVY)
     _add_text(
         slide,
-        Inches(7.15),
-        Inches(1.92),
-        Inches(5.75),
+        Inches(7.2),
+        Inches(2.22),
+        Inches(5.7),
         Inches(0.28),
         "Issues en ejecución",
         size=13,
         bold=True,
         color=NAVY,
     )
+    _add_rect(slide, Inches(6.78), Inches(2.18), Inches(0.018), Inches(4.7), GOLD)
 
     epic_headers = ["Dispositivo", "Desarrollo", "Testing", "Cerrado", "Total"]
     epic_rows = [
@@ -264,9 +258,9 @@ def _build_executive_slide(slide: Any, payload: SprintTestingRead) -> None:
         epic_table_rows,
         len(epic_headers),
         Inches(0.4),
-        Inches(2.22),
-        Inches(6.5),
-        Inches(0.26 + 0.28 * epic_table_rows),
+        Inches(2.54),
+        Inches(6.15),
+        Inches(0.32 + 0.36 * epic_table_rows),
     )
     _fill_table_header(epic_shape.table, epic_headers)
     _fill_table_body(epic_shape.table, epic_rows)
@@ -283,10 +277,10 @@ def _build_executive_slide(slide: Any, payload: SprintTestingRead) -> None:
     issue_shape = slide.shapes.add_table(
         issue_table_rows,
         len(issue_headers),
-        Inches(7.15),
-        Inches(2.22),
-        Inches(5.75),
-        Inches(0.26 + 0.28 * issue_table_rows),
+        Inches(7.2),
+        Inches(2.54),
+        Inches(5.7),
+        Inches(0.32 + 0.36 * issue_table_rows),
     )
     _fill_table_header(issue_shape.table, issue_headers)
     if execution is None:
@@ -302,34 +296,6 @@ def _build_executive_slide(slide: Any, payload: SprintTestingRead) -> None:
     else:
         _fill_table_body(issue_shape.table, issue_rows, blocker_col=1)
 
-    _add_text(slide, Inches(0.4), Inches(4.18), Inches(12.5), Inches(0.26), "Blockers", size=13, bold=True, color=RED)
-    blockers = execution.blockers if execution else []
-    shown = blockers[:7]
-    extra = len(blockers) - len(shown)
-    blocker_headers = ["Key", "Summary", "Estado"]
-    blocker_rows = [[row.key, _clip(row.summary, 90), row.status] for row in shown]
-    blocker_table_rows = max(len(blocker_rows) + 1, 2)
-    blocker_shape = slide.shapes.add_table(
-        blocker_table_rows,
-        len(blocker_headers),
-        Inches(0.4),
-        Inches(4.5),
-        Inches(12.5),
-        Inches(0.28 + 0.26 * blocker_table_rows),
-    )
-    blocker_table = blocker_shape.table
-    blocker_table.columns[0].width = Inches(1.7)
-    blocker_table.columns[1].width = Inches(8.6)
-    blocker_table.columns[2].width = Inches(2.2)
-    _fill_table_header(blocker_table, blocker_headers)
-    if not blocker_rows:
-        _set_cell(blocker_table.cell(1, 0), "Sin Blockers para este SWF.", size=11, color=MUTED, align=PP_ALIGN.LEFT)
-        _set_cell(blocker_table.cell(1, 1), "—", size=11, color=MUTED)
-        _set_cell(blocker_table.cell(1, 2), "—", size=11, color=MUTED)
-    else:
-        _fill_table_body(blocker_table, blocker_rows)
-
-    extra_note = f"  ·  +{extra} Blockers más en Extraer información" if extra > 0 else ""
     execution_filter = execution.filter_id if execution else "—"
     _add_text(
         slide,
@@ -337,7 +303,7 @@ def _build_executive_slide(slide: Any, payload: SprintTestingRead) -> None:
         Inches(7.12),
         Inches(12.5),
         Inches(0.28),
-        f"Filtros Jira {payload.sprint.filter_id} / {execution_filter}{extra_note}",
+        f"Filtros Jira {payload.sprint.filter_id} / {execution_filter}",
         size=10,
         color=MUTED,
     )

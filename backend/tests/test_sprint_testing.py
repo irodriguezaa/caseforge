@@ -388,16 +388,15 @@ def test_executive_pptx_is_one_slide_without_open_column() -> None:
     deck = Presentation(BytesIO(build_executive_pptx(payload)))
     assert len(deck.slides) == 1
     tables = [shape.table for shape in deck.slides[0].shapes if shape.has_table]
-    assert len(tables) == 3
+    assert len(tables) == 2
     epic_headers = [tables[0].cell(0, col).text.strip() for col in range(len(tables[0].columns))]
     issue_headers = [tables[1].cell(0, col).text.strip() for col in range(len(tables[1].columns))]
-    blocker_headers = [tables[2].cell(0, col).text.strip() for col in range(len(tables[2].columns))]
     assert "To Do" not in epic_headers
     assert "Abierto" not in epic_headers
     assert epic_headers == ["Dispositivo", "Desarrollo", "Testing", "Cerrado", "Total"]
     assert issue_headers == ["Dispositivo", "Blocker", "No Blocker", "Total"]
-    assert blocker_headers == ["Key", "Summary", "Estado"]
-    assert tables[2].cell(1, 0).text.strip() == "ADTCL-1"
+    texts = [shape.text_frame.text for shape in deck.slides[0].shapes if shape.has_text_frame]
+    assert not any(text.strip() == "Blockers" for text in texts)
 
 
 def test_export_issues_requires_execution_filter(client) -> None:
