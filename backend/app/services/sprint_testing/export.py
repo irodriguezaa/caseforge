@@ -172,176 +172,145 @@ def _fill_table_header(table: Any, headers: list[str]) -> None:
         _set_cell(table.cell(0, index), header, size=10, bold=True, color=WHITE, fill=NAVY)
 
 
+def _fill_table_body(table: Any, rows: list[list[str]], *, blocker_col: int | None = None) -> None:
+    if not rows:
+        _set_cell(table.cell(1, 0), "Sin datos para este SWF.", size=11, color=MUTED, align=PP_ALIGN.LEFT)
+        for col in range(1, len(table.columns)):
+            _set_cell(table.cell(1, col), "—", size=11, color=MUTED)
+        return
+    for row_index, values in enumerate(rows, start=1):
+        fill = OFF if row_index % 2 == 0 else WHITE
+        for col, value in enumerate(values):
+            highlight = blocker_col is not None and col == blocker_col and value not in {"0", "—"}
+            _set_cell(
+                table.cell(row_index, col),
+                value,
+                size=11,
+                bold=col == 0 or highlight,
+                color=RED if highlight else (NAVY if col == 0 else BODY),
+                fill=fill,
+                align=PP_ALIGN.LEFT if col == 0 else PP_ALIGN.CENTER,
+            )
+
+
 def build_executive_pptx(payload: SprintTestingRead) -> bytes:
     presentation = Presentation()
     presentation.slide_width = SLIDE_W
     presentation.slide_height = SLIDE_H
-    blank = presentation.slide_layouts[6]
-    _build_epics_slide(presentation.slides.add_slide(blank), payload)
-    _build_issues_slide(presentation.slides.add_slide(blank), payload)
+    _build_executive_slide(presentation.slides.add_slide(presentation.slide_layouts[6]), payload)
     buffer = io.BytesIO()
     presentation.save(buffer)
     return buffer.getvalue()
 
 
-def _slide_chrome(slide: Any, payload: SprintTestingRead, kicker: str) -> None:
-    _add_rect(slide, Inches(0), Inches(0), SLIDE_W, Inches(0.92), NAVY)
-    _add_text(slide, Inches(0.4), Inches(0.12), Inches(8.5), Inches(0.36), kicker, size=12, color=TEAL)
+def _build_executive_slide(slide: Any, payload: SprintTestingRead) -> None:
+    _add_rect(slide, Inches(0), Inches(0), SLIDE_W, Inches(0.88), NAVY)
+    _add_text(slide, Inches(0.4), Inches(0.1), Inches(8.5), Inches(0.28), "Reporte ejecutivo", size=12, color=TEAL)
     _add_text(
         slide,
         Inches(0.4),
-        Inches(0.4),
-        Inches(8.5),
+        Inches(0.36),
+        Inches(12.5),
         Inches(0.42),
         f"{payload.sprint.label}  ·  {payload.swf}",
         size=22,
         bold=True,
     )
-    _add_text(
-        slide,
-        Inches(0.4),
-        Inches(7.18),
-        Inches(12.5),
-        Inches(0.24),
-        "QCPulse · Sprint Testing",
-        size=10,
-        color=MUTED,
-    )
 
-
-def _build_epics_slide(slide: Any, payload: SprintTestingRead) -> None:
-    _slide_chrome(slide, payload, "Technical Epics")
-    open_count = sum(row.open for row in payload.programs)
     closed_count = sum(row.closed_total for row in payload.programs)
-    cards = [
-        (str(payload.technical_epic_count), "Technical Epics", TEAL),
-        (str(open_count), "Abiertos", GOLD),
-        (str(closed_count), "Cerrados", TEAL),
-        (_closed_pct(open_count, closed_count), "% cerrado", NAVY),
-    ]
-    card_w = Inches(2.95)
-    gap = Inches(0.18)
-    start = Inches(0.4)
-    for index, (value, label, accent) in enumerate(cards):
-        _kpi_card(slide, start + index * (card_w + gap), Inches(1.12), card_w, value, label, accent)
-
-    headers = ["Dispositivo", "Desarrollo", "Testing", "Cerrado", "Abierto", "Total"]
-    rows = payload.programs
-    table_rows = max(len(rows) + 1, 2)
-    table_shape = slide.shapes.add_table(
-        table_rows,
-        len(headers),
-        Inches(0.4),
-        Inches(2.4),
-        Inches(12.5),
-        Inches(0.38 + 0.36 * table_rows),
-    )
-    table = table_shape.table
-    _fill_table_header(table, headers)
-    if not rows:
-        _set_cell(table.cell(1, 0), "Sin Technical Epics para este SWF", size=11, color=MUTED, align=PP_ALIGN.LEFT)
-        for col in range(1, len(headers)):
-            _set_cell(table.cell(1, col), "—", size=11, color=MUTED)
-        return
-    for row_index, program in enumerate(rows, start=1):
-        values = [
-            program.display_name,
-            str(_sum_bucket(program.development)),
-            str(_sum_bucket(program.testing)),
-            str(program.closed_total),
-            str(program.open),
-            str(program.total),
-        ]
-        fill = OFF if row_index % 2 == 0 else WHITE
-        for col, value in enumerate(values):
-            _set_cell(
-                table.cell(row_index, col),
-                value,
-                size=12,
-                bold=col == 0,
-                color=NAVY if col == 0 else BODY,
-                fill=fill,
-                align=PP_ALIGN.LEFT if col == 0 else PP_ALIGN.CENTER,
-            )
-    _add_text(
-        slide,
-        Inches(0.4),
-        Inches(6.72),
-        Inches(12.5),
-        Inches(0.32),
-        f"Filtro Jira {payload.sprint.filter_id}  ·  Cerrado = Done / Roll Out / Canceled / Data Validation y categoría Done.",
-        size=10,
-        color=MUTED,
-    )
-
-
-def _build_issues_slide(slide: Any, payload: SprintTestingRead) -> None:
-    _slide_chrome(slide, payload, "Issues del Sprint en ejecución")
     execution = payload.execution
     issue_count = execution.issue_count if execution else 0
     blocker = sum(row.blocker for row in execution.programs) if execution else 0
     non_blocker = sum(row.non_blocker for row in execution.programs) if execution else 0
     cards = [
-        (str(issue_count), "Issues", TEAL),
+        (str(payload.technical_epic_count), "Technical Epics", TEAL),
+        (str(closed_count), "Cerrados", TEAL),
+        (_closed_pct(payload.technical_epic_count - closed_count, closed_count), "% cerrado", NAVY),
+        (str(issue_count), "Issues", GOLD),
         (str(blocker), "Blocker", RED),
         (str(non_blocker), "No Blocker", NAVY),
     ]
-    card_w = Inches(3.95)
-    gap = Inches(0.22)
+    card_w = Inches(2.0)
+    gap = Inches(0.12)
     start = Inches(0.4)
     for index, (value, label, accent) in enumerate(cards):
-        _kpi_card(slide, start + index * (card_w + gap), Inches(1.12), card_w, value, label, accent)
+        _kpi_card(slide, start + index * (card_w + gap), Inches(1.04), card_w, value, label, accent)
 
-    headers = ["Dispositivo", "Blocker", "No Blocker", "Total"]
-    programs = execution.programs if execution else []
-    table_rows = max(len(programs) + 1, 2)
-    table_shape = slide.shapes.add_table(
-        table_rows,
-        len(headers),
-        Inches(0.4),
-        Inches(2.4),
-        Inches(12.5),
-        Inches(0.38 + 0.36 * table_rows),
+    _add_text(slide, Inches(0.4), Inches(2.22), Inches(6.5), Inches(0.3), "Technical Epics", size=14, bold=True, color=NAVY)
+    _add_text(
+        slide,
+        Inches(7.15),
+        Inches(2.22),
+        Inches(5.75),
+        Inches(0.3),
+        "Issues en ejecución",
+        size=14,
+        bold=True,
+        color=NAVY,
     )
-    table = table_shape.table
-    _fill_table_header(table, headers)
+
+    epic_headers = ["Dispositivo", "Desarrollo", "Testing", "Cerrado", "Total"]
+    epic_rows = [
+        [
+            program.display_name,
+            str(_sum_bucket(program.development)),
+            str(_sum_bucket(program.testing)),
+            str(program.closed_total),
+            str(program.total),
+        ]
+        for program in payload.programs
+    ]
+    epic_table_rows = max(len(epic_rows) + 1, 2)
+    epic_shape = slide.shapes.add_table(
+        epic_table_rows,
+        len(epic_headers),
+        Inches(0.4),
+        Inches(2.54),
+        Inches(6.5),
+        Inches(0.34 + 0.34 * epic_table_rows),
+    )
+    _fill_table_header(epic_shape.table, epic_headers)
+    _fill_table_body(epic_shape.table, epic_rows)
+
+    issue_headers = ["Dispositivo", "Blocker", "No Blocker", "Total"]
+    if execution is None:
+        issue_rows: list[list[str]] = []
+    else:
+        issue_rows = [
+            [program.display_name, str(program.blocker), str(program.non_blocker), str(program.total)]
+            for program in execution.programs
+        ]
+    issue_table_rows = max(len(issue_rows) + 1, 2)
+    issue_shape = slide.shapes.add_table(
+        issue_table_rows,
+        len(issue_headers),
+        Inches(7.15),
+        Inches(2.54),
+        Inches(5.75),
+        Inches(0.34 + 0.34 * issue_table_rows),
+    )
+    _fill_table_header(issue_shape.table, issue_headers)
     if execution is None:
         _set_cell(
-            table.cell(1, 0),
-            "Este Sprint aún no tiene un Saved Filter de issues en ejecución.",
+            issue_shape.table.cell(1, 0),
+            "Sin filtro de issues en ejecución.",
             size=11,
             color=MUTED,
             align=PP_ALIGN.LEFT,
         )
-        for col in range(1, len(headers)):
-            _set_cell(table.cell(1, col), "—", size=11, color=MUTED)
-        return
-    if not programs:
-        _set_cell(table.cell(1, 0), "No hay issues de ejecución para este SWF.", size=11, color=MUTED, align=PP_ALIGN.LEFT)
-        for col in range(1, len(headers)):
-            _set_cell(table.cell(1, col), "—", size=11, color=MUTED)
-        return
-    for row_index, program in enumerate(programs, start=1):
-        values = [program.display_name, str(program.blocker), str(program.non_blocker), str(program.total)]
-        fill = OFF if row_index % 2 == 0 else WHITE
-        for col, value in enumerate(values):
-            color = RED if col == 1 and program.blocker else (NAVY if col == 0 else BODY)
-            _set_cell(
-                table.cell(row_index, col),
-                value,
-                size=12,
-                bold=col in {0, 1},
-                color=color,
-                fill=fill,
-                align=PP_ALIGN.LEFT if col == 0 else PP_ALIGN.CENTER,
-            )
+        for col in range(1, len(issue_headers)):
+            _set_cell(issue_shape.table.cell(1, col), "—", size=11, color=MUTED)
+    else:
+        _fill_table_body(issue_shape.table, issue_rows, blocker_col=1)
+
+    execution_filter = execution.filter_id if execution else "—"
     _add_text(
         slide,
         Inches(0.4),
-        Inches(6.72),
+        Inches(6.95),
         Inches(12.5),
-        Inches(0.32),
-        f"Filtro Jira {execution.filter_id}  ·  Blocker = Blocker / Impedimento / Bloqueador. El detalle fila a fila está en el Excel.",
+        Inches(0.36),
+        f"Filtros Jira {payload.sprint.filter_id} / {execution_filter}  ·  Cerrado = Done, Roll Out, Canceled, Data Validation.  Blocker = Blocker / Impedimento.",
         size=10,
         color=MUTED,
     )

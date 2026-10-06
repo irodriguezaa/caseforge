@@ -333,7 +333,7 @@ def test_issues_workbook_headers() -> None:
     assert sheet["F2"].value == "Blocker"
 
 
-def test_executive_pptx_has_two_slides() -> None:
+def test_executive_pptx_is_one_slide_without_open_column() -> None:
     from io import BytesIO
 
     from pptx import Presentation
@@ -384,11 +384,15 @@ def test_executive_pptx_has_two_slides() -> None:
         ),
     )
     deck = Presentation(BytesIO(build_executive_pptx(payload)))
-    assert len(deck.slides) == 2
-    epic_table = next(shape.table for shape in deck.slides[0].shapes if shape.has_table)
-    headers = [epic_table.cell(0, col).text.strip() for col in range(len(epic_table.columns))]
-    assert "To Do" not in headers
-    assert headers == ["Dispositivo", "Desarrollo", "Testing", "Cerrado", "Abierto", "Total"]
+    assert len(deck.slides) == 1
+    tables = [shape.table for shape in deck.slides[0].shapes if shape.has_table]
+    assert len(tables) == 2
+    epic_headers = [tables[0].cell(0, col).text.strip() for col in range(len(tables[0].columns))]
+    issue_headers = [tables[1].cell(0, col).text.strip() for col in range(len(tables[1].columns))]
+    assert "To Do" not in epic_headers
+    assert "Abierto" not in epic_headers
+    assert epic_headers == ["Dispositivo", "Desarrollo", "Testing", "Cerrado", "Total"]
+    assert issue_headers == ["Dispositivo", "Blocker", "No Blocker", "Total"]
 
 
 def test_export_issues_requires_execution_filter(client) -> None:
