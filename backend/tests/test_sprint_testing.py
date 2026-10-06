@@ -248,3 +248,147 @@ def test_build_paginates_and_dedupes(monkeypatch) -> None:
     assert payload.programs[0].total == 2
     assert payload.programs[0].open == 2
     assert payload.filter_issue_count == 2
+
+
+def _exec_issue(
+    key: str,
+    project: str,
+    status: str,
+    priority: str,
+    summary: str,
+    description: object,
+) -> dict:
+    return {
+        "key": key,
+        "fields": {
+            "issuetype": {"name": "Bug"},
+            "status": {"name": status},
+            "project": {"key": project},
+            "priority": {"name": priority},
+            "summary": summary,
+            "description": description,
+        },
+    }
+
+
+def test_execution_issue_rows_filter_and_truncate() -> None:
+    from app.services.sprint_testing.service import list_execution_issue_rows
+
+    hitss = get_swf("hitss")
+    assert hitss is not None
+    rows = list_execution_issue_rows(
+        hitss,
+        [
+            _exec_issue(
+                "ADTCL-1",
+                "ADTCL",
+                "In Progress",
+                "Blocker",
+                "Playback VOD",
+                {"type": "doc", "content": [{"type": "paragraph", "content": [{"type": "text", "text": "falla"}]}]},
+            ),
+            _exec_issue("ATSCL-9", "ATSCL", "To Do", "Major", "Otro SWF", "fuera"),
+            _exec_issue("WINCL-2", "WINCL", "QA Validation", "Minor", "Layout", "x" * 600),
+        ],
+    )
+    assert [row.key for row in rows] == ["ADTCL-1", "WINCL-2"]
+    assert rows[0].device == "ADT / FireTV"
+    assert rows[0].description == "falla"
+    assert rows[0].status == "In Progress"
+    assert rows[0].priority == "Blocker"
+    assert len(rows[1].description) == 500
+    assert rows[1].description.endswith("…")
+
+
+def test_issues_workbook_headers() -> None:
+    from io import BytesIO
+
+    from openpyxl import load_workbook
+
+    from app.schemas.sprint_testing import ExecutionIssueRow
+    from app.services.sprint_testing.export import ISSUE_HEADERS, build_issues_workbook
+
+    payload = build_issues_workbook(
+        [
+            ExecutionIssueRow(
+                key="ADTCL-1",
+                summary="Playback",
+                description="falla",
+                status="In Progress",
+                priority="Blocker",
+                device="ADT / FireTV",
+                program_key="ADTCL",
+            )
+        ]
+    )
+    book = load_workbook(BytesIO(payload))
+    sheet = book.active
+    assert [cell.value for cell in sheet[1]] == ISSUE_HEADERS
+    assert sheet["A2"].value == "ADTCL-1"
+    assert sheet["E2"].value == "Blocker"
+
+
+def test_executive_pptx_has_two_slides() -> None:
+    from io import BytesIO
+
+    from pptx import Presentation
+
+    from app.schemas.sprint_testing import (
+        ExecutionMetrics,
+        ExecutionProgramMetrics,
+        ProgramMetrics,
+        SprintTestingRead,
+        SprintTestingSprint,
+    )
+    from app.services.sprint_testing.export import build_executive_pptx
+
+    payload = SprintTestingRead(
+        sprint=SprintTestingSprint(id="44", label="Sprint 44", filter_id="117698"),
+        swf="Hitss",
+        filter_issue_count=10,
+        technical_epic_count=5,
+        other_issue_count=0,
+        programs=[
+            ProgramMetrics(
+                program_key="ADTCL",
+                display_name="ADT / FireTV",
+                total=5,
+                todo={"To Do": 1},
+                development={"In Progress": 2},
+                testing={"QA Validation": 1},
+                closed={"Done": 1},
+                open=4,
+                closed_total=1,
+                unclassified={},
+                consistency_ok=True,
+            )
+        ],
+        consistency_ok=True,
+        execution=ExecutionMetrics(
+            filter_id="117704",
+            issue_count=3,
+            programs=[
+                ExecutionProgramMetrics(
+                    program_key="ADTCL",
+                    display_name="ADT / FireTV",
+                    total=3,
+                    blocker=1,
+                    non_blocker=2,
+                )
+            ],
+        ),
+    )
+    deck = Presentation(BytesIO(build_executive_pptx(payload)))
+    assert len(deck.slides) == 2
+
+
+def test_export_issues_requires_execution_filter(client) -> None:
+    response = client.get("/api/v1/sprint-testing/export/issues", params={"sprint": "45", "swf": "hitss"})
+    assert response.status_code == 400
+    assert "ejecución" in response.json()["detail"]
+
+
+def test_tester_cannot_export(client) -> None:
+    login_as(client, "tester@test.com", "tester-pass")
+    denied = client.get("/api/v1/sprint-testing/export/report", params={"sprint": "44", "swf": "hitss"})
+    assert denied.status_code == 403

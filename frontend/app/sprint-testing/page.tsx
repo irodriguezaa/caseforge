@@ -14,6 +14,8 @@ export default function SprintTestingPage(): React.ReactElement {
   const [data, setData] = useState<SprintTestingRead | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [exportingIssues, setExportingIssues] = useState(false);
+  const [exportingReport, setExportingReport] = useState(false);
 
   useEffect(() => {
     api
@@ -64,6 +66,30 @@ export default function SprintTestingPage(): React.ReactElement {
     return { open, closed };
   }, [data]);
 
+  async function handleExportIssues(): Promise<void> {
+    setExportingIssues(true);
+    setError(null);
+    try {
+      await api.exportSprintTestingIssues(sprint, swf);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "No se pudo extraer la información.");
+    } finally {
+      setExportingIssues(false);
+    }
+  }
+
+  async function handleExportReport(): Promise<void> {
+    setExportingReport(true);
+    setError(null);
+    try {
+      await api.exportSprintTestingReport(sprint, swf);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "No se pudo generar el reporte ejecutivo.");
+    } finally {
+      setExportingReport(false);
+    }
+  }
+
   return (
     <div className="page page-wide">
       <div className="kpi-page-head">
@@ -74,7 +100,10 @@ export default function SprintTestingPage(): React.ReactElement {
         </div>
       </div>
 
-      <div className="filter-bar" style={{ marginBottom: "16px" }}>
+      <div
+        className="filter-bar"
+        style={{ marginBottom: "16px", display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}
+      >
         <label className="muted" style={{ display: "flex", alignItems: "center", gap: "8px" }}>
           Sprint
           <select value={sprint} onChange={(event) => setSprint(event.target.value)}>
@@ -96,6 +125,14 @@ export default function SprintTestingPage(): React.ReactElement {
             ))}
           </select>
         </label>
+        <button
+          type="button"
+          disabled={!canQuery || loading || exportingReport}
+          onClick={() => void handleExportReport()}
+          style={{ marginLeft: "auto" }}
+        >
+          {exportingReport ? "Generando..." : "Reporte ejecutivo"}
+        </button>
       </div>
 
       {!canQuery && (
@@ -165,6 +202,14 @@ export default function SprintTestingPage(): React.ReactElement {
         <div className="panel" style={{ marginTop: "14px" }}>
           <div className="panel-header">
             <h2>Issues del Sprint en ejecución</h2>
+            <button
+              type="button"
+              className="secondary"
+              disabled={exportingIssues}
+              onClick={() => void handleExportIssues()}
+            >
+              {exportingIssues ? "Extrayendo..." : "Extraer información"}
+            </button>
           </div>
           <div className="panel-body">
             <p className="muted" style={{ marginTop: 0, marginBottom: 4 }}>

@@ -64,6 +64,41 @@ function apiUrl(path: string): string {
   return `${BASE_PATH}${path.startsWith("/") ? path : `/${path}`}`;
 }
 
+async function downloadBinary(path: string, fallbackName: string, kind: "Excel" | "PPT"): Promise<void> {
+  let response: Response;
+  try {
+    response = await fetch(apiUrl(path), { cache: "no-store", credentials: "include" });
+  } catch {
+    throw new ApiRequestError(503, `No se pudo contactar al servidor para generar el ${kind}.`);
+  }
+  const contentType = response.headers.get("content-type") ?? "";
+  if (!response.ok) {
+    const body = (await response.json().catch(() => ({}))) as { detail?: unknown; message?: string };
+    const detail = typeof body.detail === "string" ? body.detail : body.message;
+    throw new ApiRequestError(response.status, detail || `No se pudo generar el ${kind}.`);
+  }
+  if (contentType.includes("application/json")) {
+    const body = (await response.json().catch(() => ({}))) as { detail?: string; message?: string };
+    throw new ApiRequestError(502, body.detail ?? body.message ?? `El servidor no devolvió un ${kind}.`);
+  }
+  const blob = await response.blob();
+  if (blob.size < 64) {
+    throw new ApiRequestError(502, `El ${kind} exportado llegó vacío.`);
+  }
+  const disposition = response.headers.get("content-disposition") ?? "";
+  const utfName = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+  const asciiName = disposition.match(/filename="([^"]+)"/i);
+  const filename = decodeURIComponent(utfName?.[1] ?? asciiName?.[1] ?? fallbackName);
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
   const headers = new Headers(init?.headers);
@@ -425,6 +460,18 @@ export const api = {
   getSprintTesting: (sprint: string, swf: string) =>
     request<SprintTestingRead>(
       `/api/sprint-testing?sprint=${encodeURIComponent(sprint)}&swf=${encodeURIComponent(swf)}`,
+    ),
+  exportSprintTestingIssues: (sprint: string, swf: string) =>
+    downloadBinary(
+      `/api/sprint-testing/export/issues?sprint=${encodeURIComponent(sprint)}&swf=${encodeURIComponent(swf)}`,
+      "Sprint_issues.xlsx",
+      "Excel",
+    ),
+  exportSprintTestingReport: (sprint: string, swf: string) =>
+    downloadBinary(
+      `/api/sprint-testing/export/report?sprint=${encodeURIComponent(sprint)}&swf=${encodeURIComponent(swf)}`,
+      "Sprint_ejecutivo.pptx",
+      "PPT",
     ),
   getCalendarDay: (date?: string) => {
     const suffix = date ? `?date=${encodeURIComponent(date)}` : "";

@@ -53,6 +53,16 @@ class ExecutionProgramMetrics(BaseModel):
     non_blocker: int
 
 
+class ExecutionIssueRow(BaseModel):
+    key: str
+    summary: str
+    description: str
+    status: str
+    priority: str
+    device: str
+    program_key: str
+
+
 class ExecutionMetrics(BaseModel):
     filter_id: str
     issue_count: int

@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.schemas.sprint_testing import (
+    ExecutionIssueRow,
     ExecutionMetrics,
     ExecutionProgramMetrics,
     ProgramMetrics,
@@ -16,11 +17,15 @@ from app.schemas.sprint_testing import (
     SwfOption,
 )
 from app.services.jira_client import fetch_raw_issues_by_filter
-from app.services.sprint_testing.catalog import SWFS, SPRINTS, SwfDef, get_sprint, get_swf
+from app.services.jira_generation import adf_to_text
+from app.services.sprint_testing.catalog import SWFS, SPRINTS, SprintDef, SwfDef, get_sprint, get_swf
 from app.services.sprint_testing.classify import classify_status, is_blocker_priority, is_technical_epic
+from app.services.sprint_testing.export import build_executive_pptx, build_issues_workbook
 
 _ISSUE_FIELDS = ["summary", "issuetype", "status", "project"]
 _EXECUTION_FIELDS = ["summary", "issuetype", "status", "project", "priority"]
+_EXPORT_FIELDS = ["summary", "description", "issuetype", "status", "project", "priority"]
+_DESCRIPTION_MAX = 500
 
 
 class SprintTestingConfigError(ValueError):
@@ -106,6 +111,78 @@ def _priority_name(issue: dict[str, Any]) -> str:
     return str((fields.get("priority") or {}).get("name") or "")
 
 
+def _status_name(issue: dict[str, Any]) -> str:
+    fields = issue.get("fields") or {}
+    return str((fields.get("status") or {}).get("name") or "")
+
+
+def _summary(issue: dict[str, Any]) -> str:
+    fields = issue.get("fields") or {}
+    return str(fields.get("summary") or "").strip()
+
+
+def _description(issue: dict[str, Any]) -> str:
+    fields = issue.get("fields") or {}
+    text = adf_to_text(fields.get("description")).strip()
+    if len(text) > _DESCRIPTION_MAX:
+        return text[: _DESCRIPTION_MAX - 1].rstrip() + "…"
+    return text
+
+
+def _resolve_sprint_swf(sprint_id: str, swf_id: str) -> tuple[SprintDef, SwfDef]:
+    sprint = get_sprint(sprint_id)
+    if sprint is None:
+        raise SprintTestingConfigError("Sprint no reconocido.")
+    swf = get_swf(swf_id)
+    if swf is None:
+        raise SprintTestingConfigError("SWF no reconocido.")
+    return sprint, swf
+
+
+def export_basename(sprint_label: str, swf_label: str) -> str:
+    return f"{sprint_label.replace(' ', '')}_{swf_label.replace(' ', '')}"
+
+
+def list_execution_issue_rows(swf: SwfDef, issues: list[dict[str, Any]]) -> list[ExecutionIssueRow]:
+    wanted = {program.program_key.upper(): program for program in swf.programs}
+    rows: list[ExecutionIssueRow] = []
+    for issue in issues:
+        program = wanted.get(_project_key(issue))
+        if program is None:
+            continue
+        rows.append(
+            ExecutionIssueRow(
+                key=str(issue.get("key") or "").strip().upper(),
+                summary=_summary(issue),
+                description=_description(issue),
+                status=_status_name(issue),
+                priority=_priority_name(issue),
+                device=program.display_name,
+                program_key=program.program_key,
+            )
+        )
+    rows.sort(key=lambda row: (row.device, row.key))
+    return rows
+
+
+def build_execution_issues_xlsx(sprint_id: str, swf_id: str) -> tuple[bytes, str]:
+    sprint, swf = _resolve_sprint_swf(sprint_id, swf_id)
+    if not sprint.execution_filter_id:
+        raise SprintTestingConfigError(
+            f"{sprint.label} aún no tiene un Saved Filter de issues en ejecución."
+        )
+    issues = fetch_raw_issues_by_filter(sprint.execution_filter_id, _EXPORT_FIELDS)
+    rows = list_execution_issue_rows(swf, issues)
+    filename = f"{export_basename(sprint.label, swf.label)}_issues.xlsx"
+    return build_issues_workbook(rows), filename
+
+
+def build_executive_report_pptx(sprint_id: str, swf_id: str) -> tuple[bytes, str]:
+    payload = build_sprint_testing(sprint_id, swf_id)
+    filename = f"{export_basename(payload.sprint.label, payload.swf)}_ejecutivo.pptx"
+    return build_executive_pptx(payload), filename
+
+
 def aggregate_execution_issues(
     filter_id: str,
     swf: SwfDef,
@@ -139,16 +216,11 @@ def aggregate_execution_issues(
 
 
 def build_sprint_testing(sprint_id: str, swf_id: str) -> SprintTestingRead:
-    sprint = get_sprint(sprint_id)
-    if sprint is None:
-        raise SprintTestingConfigError("Sprint no reconocido.")
+    sprint, swf = _resolve_sprint_swf(sprint_id, swf_id)
     if not sprint.filter_id:
         raise SprintTestingConfigError(
             f"{sprint.label} aún no tiene un Saved Filter configurado."
         )
-    swf = get_swf(swf_id)
-    if swf is None:
-        raise SprintTestingConfigError("SWF no reconocido.")
     issues = fetch_raw_issues_by_filter(sprint.filter_id, _ISSUE_FIELDS)
     payload = aggregate_issues(sprint.id, sprint.label, sprint.filter_id, swf, issues)
     if sprint.execution_filter_id:
