@@ -27,7 +27,7 @@ class SwfDef:
 
 SPRINTS: tuple[SprintDef, ...] = (
     SprintDef(id="44", label="Sprint 44", filter_id="117698"),
-    SprintDef(id="45", label="Sprint 45", filter_id=None),
+    SprintDef(id="45", label="Sprint 45", filter_id="117703"),
     SprintDef(id="46", label="Sprint 46", filter_id=None),
 )
 

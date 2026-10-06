@@ -119,8 +119,8 @@ def test_zero_programs_are_omitted() -> None:
     assert [row.program_key for row in payload.programs] == ["WEBCL"]
 
 
-def test_sprint_45_is_not_actionable(client) -> None:
-    response = client.get("/api/v1/sprint-testing", params={"sprint": "45", "swf": "hitss"})
+def test_sprint_46_is_not_actionable(client) -> None:
+    response = client.get("/api/v1/sprint-testing", params={"sprint": "46", "swf": "hitss"})
     assert response.status_code == 400
     assert "Saved Filter" in response.json()["detail"]
 
@@ -132,7 +132,8 @@ def test_options_mark_future_sprints(client) -> None:
     by_id = {item["id"]: item for item in body["sprints"]}
     assert by_id["44"]["actionable"] is True
     assert by_id["44"]["filter_id"] == "117698"
-    assert by_id["45"]["actionable"] is False
+    assert by_id["45"]["actionable"] is True
+    assert by_id["45"]["filter_id"] == "117703"
     assert by_id["46"]["actionable"] is False
 
 
