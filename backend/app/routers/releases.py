@@ -68,10 +68,10 @@ from app.services.rn_storage import (
 
 router = APIRouter(prefix="/api/v1/releases", tags=["releases"])
 
-# Allowed forward transitions. DRAFT can also be removed entirely via DELETE (see below).
+# Allowed status transitions. DRAFT can also be removed entirely via DELETE (see below).
 _VALID_TRANSITIONS: dict[ReleaseStatus, set[ReleaseStatus]] = {
     ReleaseStatus.DRAFT: {ReleaseStatus.IN_PROGRESS, ReleaseStatus.CANCELLED},
-    ReleaseStatus.IN_PROGRESS: {ReleaseStatus.COMPLETED, ReleaseStatus.CANCELLED},
+    ReleaseStatus.IN_PROGRESS: {ReleaseStatus.DRAFT, ReleaseStatus.COMPLETED, ReleaseStatus.CANCELLED},
     ReleaseStatus.COMPLETED: set(),
     ReleaseStatus.CANCELLED: set(),
 }

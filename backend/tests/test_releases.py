@@ -81,13 +81,14 @@ def test_get_release_not_found_returns_404(client) -> None:
     assert response.status_code == 404
 
 
-def test_valid_status_transition_succeeds(client) -> None:
+def test_in_progress_can_return_to_draft(client) -> None:
     release_id = _create_release(client).json()["id"]
+    client.patch(f"/api/v1/releases/{release_id}", json={"status": "IN_PROGRESS"})
 
-    response = client.patch(f"/api/v1/releases/{release_id}", json={"status": "IN_PROGRESS"})
+    response = client.patch(f"/api/v1/releases/{release_id}", json={"status": "DRAFT"})
 
     assert response.status_code == 200
-    assert response.json()["status"] == "IN_PROGRESS"
+    assert response.json()["status"] == "DRAFT"
 
 
 def test_invalid_status_transition_is_rejected(client) -> None:

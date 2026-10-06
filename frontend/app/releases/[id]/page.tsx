@@ -31,7 +31,7 @@ const emptyForm = {
 
 const NEXT_STATUS: Partial<Record<ReleaseStatus, ReleaseStatus[]>> = {
   DRAFT: ["IN_PROGRESS", "CANCELLED"],
-  IN_PROGRESS: ["COMPLETED", "CANCELLED"],
+  IN_PROGRESS: ["DRAFT", "COMPLETED", "CANCELLED"],
 };
 
 function formatDate(isoDate?: string | null): string {
