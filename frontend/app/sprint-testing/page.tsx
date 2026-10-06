@@ -151,7 +151,7 @@ export default function SprintTestingPage(): React.ReactElement {
               <p className="muted" style={{ marginTop: 0 }}>
                 Abierto + cerrado = total de Technical Epics del programa.
               </p>
-              <ExecutivePieChart open={totals.open} closed={totals.closed} />
+              <ExecutivePieChart open={totals.open} closed={totals.closed} programs={data.programs} />
             </div>
           </div>
         </>

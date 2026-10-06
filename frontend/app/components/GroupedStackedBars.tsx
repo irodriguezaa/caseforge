@@ -9,18 +9,19 @@ const BAR_KEYS = [
   { id: "closed", label: "Cerrado" },
 ] as const;
 
-const DEV_COLOR = "#C9B896";
-const CLOSED_COLOR = "#3D9B6E";
+/** Dark-theme executive palette: sand / steel / sage (high contrast, low saturation). */
+const DEV_COLOR = "#C4B59A";
+const CLOSED_COLOR = "#4A9B82";
 const TESTING_COLORS: Record<string, string> = {
-  Integration: "#6B5B95",
-  "QA Validation": "#3B6FA0",
-  "QC Validation": "#8B95A1",
-  Validation: "#8B95A1",
+  Integration: "#7B6D8D",
+  "QA Validation": "#4C7D9E",
+  "QC Validation": "#7D8794",
+  Validation: "#7D8794",
 };
 const TESTING_LEGEND = [
-  { label: "QA Validation", color: "#3B6FA0" },
-  { label: "Validation", color: "#8B95A1" },
-  { label: "Integration", color: "#6B5B95" },
+  { label: "QA Validation", color: "#4C7D9E" },
+  { label: "Validation", color: "#7D8794" },
+  { label: "Integration", color: "#7B6D8D" },
 ];
 
 function barTotal(counts: Record<string, number>): number {
@@ -30,7 +31,7 @@ function barTotal(counts: Record<string, number>): number {
 function segmentColor(barId: string, status: string): string {
   if (barId === "development") return DEV_COLOR;
   if (barId === "closed") return CLOSED_COLOR;
-  return TESTING_COLORS[status] ?? "#8B95A1";
+  return TESTING_COLORS[status] ?? "#7D8794";
 }
 
 export function GroupedStackedBars({
@@ -53,14 +54,21 @@ export function GroupedStackedBars({
       <div
         style={{
           display: "flex",
-          alignItems: "flex-end",
-          gap: "12px",
+          alignItems: "stretch",
           width: "100%",
           minHeight: "220px",
         }}
       >
-        {programs.map((program) => (
-          <div key={program.program_key} style={{ flex: "1 1 0", minWidth: 0 }}>
+        {programs.map((program, index) => (
+          <div
+            key={program.program_key}
+            style={{
+              flex: "1 1 0",
+              minWidth: 0,
+              padding: "0 14px",
+              borderLeft: index === 0 ? "none" : "1px solid var(--border-strong)",
+            }}
+          >
             <div style={{ display: "flex", alignItems: "flex-end", gap: "6px", height: "180px" }}>
               {BAR_KEYS.map((bar) => {
                 const counts = program[bar.id];
