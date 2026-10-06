@@ -244,6 +244,8 @@ table.activity th.num, table.activity td.num { text-align: right; font-variant-n
 table.activity tr:last-child td { border-bottom: 0; }
 table.activity tr.clickable { cursor: pointer; }
 table.activity tr.clickable:hover { background: var(--surface-2); }
+table.activity a { color: var(--accent); text-decoration: none; font-weight: 600; }
+table.activity a:hover { text-decoration: underline; }
 td.epc-include-cell { position: relative; z-index: 2; }
 .epc-include-label {
   display: inline-flex;

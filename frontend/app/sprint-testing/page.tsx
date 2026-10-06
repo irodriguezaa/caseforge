@@ -5,6 +5,7 @@ import { ExecutivePieChart } from "@/app/components/ExecutivePieChart";
 import { ExecutionPriorityBars } from "@/app/components/ExecutionPriorityBars";
 import { GroupedStackedBars } from "@/app/components/GroupedStackedBars";
 import { api } from "@/lib/api";
+import { jiraIssueUrl } from "@/lib/jira";
 import type { SprintTestingOptions, SprintTestingRead } from "@/lib/types";
 
 export default function SprintTestingPage(): React.ReactElement {
@@ -236,13 +237,24 @@ export default function SprintTestingPage(): React.ReactElement {
                       </tr>
                     </thead>
                     <tbody>
-                      {data.execution.blockers.map((row) => (
-                        <tr key={row.key}>
-                          <td>{row.key}</td>
-                          <td>{row.summary}</td>
-                          <td>{row.status}</td>
-                        </tr>
-                      ))}
+                      {data.execution.blockers.map((row) => {
+                        const href = jiraIssueUrl(row.key);
+                        return (
+                          <tr key={row.key}>
+                            <td>
+                              {href ? (
+                                <a href={href} target="_blank" rel="noopener noreferrer" title={`Abrir ${row.key} en Jira`}>
+                                  {row.key}
+                                </a>
+                              ) : (
+                                row.key
+                              )}
+                            </td>
+                            <td>{row.summary}</td>
+                            <td>{row.status}</td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 )}

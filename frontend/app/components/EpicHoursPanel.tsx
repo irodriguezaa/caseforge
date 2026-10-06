@@ -4,16 +4,7 @@ import { ChevronDown, Download } from "lucide-react";
 import { useState } from "react";
 import { BarList } from "@/app/components/BarList";
 import { downloadEpicHoursExcel } from "@/lib/exportEpicHours";
-
-const JIRA_BROWSE_BASE = "https://dlatvarg.atlassian.net/browse";
-
-function jiraIssueUrl(key: string): string | null {
-  const trimmed = key.trim();
-  if (!/^[A-Z][A-Z0-9_]+-\d+$/i.test(trimmed)) {
-    return null;
-  }
-  return `${JIRA_BROWSE_BASE}/${encodeURIComponent(trimmed)}`;
-}
+import { jiraIssueUrl } from "@/lib/jira";
 
 export function EpicHoursPanel({
   items,
