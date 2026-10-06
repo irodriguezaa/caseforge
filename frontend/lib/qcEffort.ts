@@ -58,6 +58,33 @@ export function durationDays(personDays: number, resources: number): number {
   return Math.round((personDays / testers) * 10) / 10;
 }
 
+export function hoursByTechnicalEpic(
+  cases: Array<{
+    component?: string | null;
+    hn_source?: string | null;
+    technical_epic?: string | null;
+    priority?: string | null;
+    complexity?: string | null;
+    estimation_hours?: number | null;
+  }>,
+): { label: string; value: number }[] {
+  const grouped = new Map<string, number>();
+  for (const row of cases) {
+    const key = (row.hn_source || row.technical_epic || row.component || "Sin EPC").trim() || "Sin EPC";
+    const hours =
+      row.estimation_hours != null && Number.isFinite(Number(row.estimation_hours))
+        ? Number(row.estimation_hours)
+        : estimateCaseMinutes(row.priority, row.complexity) / 60;
+    grouped.set(key, (grouped.get(key) || 0) + hours);
+  }
+  return [...grouped.entries()]
+    .map(([key, hours]) => ({
+      label: key === "Sin EPC" ? "Sin EPC" : `TE ${key}`,
+      value: Math.round(hours * 10) / 10,
+    }))
+    .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label, "es"));
+}
+
 export function estimateReleaseEffortLegacyCount(testCaseCount: number): { hours: number; days: number } {
   const count = Math.max(0, Math.floor(testCaseCount));
   if (count === 0) {
