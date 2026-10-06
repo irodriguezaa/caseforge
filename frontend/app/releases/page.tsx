@@ -3,14 +3,22 @@
 import { FileText, Sparkles, Upload } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ReleaseAnalysisCard } from "@/app/components/ReleaseAnalysisCard";
 import { StatusBadge } from "@/app/components/StatusBadge";
 import { api, ApiRequestError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { DEVICE_OPTIONS, RELEASE_CLUSTER_OPTIONS, VALIDATION_TYPE_OPTIONS } from "@/lib/constants";
 import { calculateBusinessDays } from "@/lib/dateUtils";
-import type { DeliverableReleaseSummary, ReleaseAnalysis, ReleaseType, ReleaseWithCounts } from "@/lib/types";
+import type { DeliverableReleaseSummary, ReleaseAnalysis, ReleaseStatus, ReleaseType, ReleaseWithCounts } from "@/lib/types";
+
+const STATUS_FILTERS: { value: "" | ReleaseStatus; label: string }[] = [
+  { value: "", label: "TODOS" },
+  { value: "DRAFT", label: "DRAFT" },
+  { value: "IN_PROGRESS", label: "IN PROGRESS" },
+  { value: "COMPLETED", label: "COMPLETED" },
+  { value: "CANCELLED", label: "CANCELLED" },
+];
 
 const emptyForm = {
   name: "",
@@ -48,6 +56,7 @@ export default function ReleasesPage(): React.ReactElement {
   const { canLoadRn, canSeeDashboard } = useAuth();
 
   const [releases, setReleases] = useState<ReleaseWithCounts[]>([]);
+  const [statusFilter, setStatusFilter] = useState<"" | ReleaseStatus>("");
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -80,6 +89,11 @@ export default function ReleasesPage(): React.ReactElement {
   };
 
   useEffect(loadReleases, []);
+
+  const visibleReleases = useMemo(() => {
+    if (!statusFilter) return releases;
+    return releases.filter((release) => release.status === statusFilter);
+  }, [releases, statusFilter]);
 
   // Calculate business days dynamically
   const businessDays = calculateBusinessDays(form.startDate, form.endDate);
@@ -541,7 +555,22 @@ export default function ReleasesPage(): React.ReactElement {
 
       {/* Listado de Releases existentes */}
       <div className="section-header">
-        <h2>Listado de Releases ({releases.length})</h2>
+        <h2>Listado de Releases ({visibleReleases.length})</h2>
+        <div className="filter-bar">
+          <label className="muted" style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            Estado
+            <select
+              value={statusFilter}
+              onChange={(event) => setStatusFilter(event.target.value as "" | ReleaseStatus)}
+            >
+              {STATUS_FILTERS.map((item) => (
+                <option key={item.label} value={item.value}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
       </div>
 
       {loading && <p className="muted">Cargando releases…</p>}
@@ -562,7 +591,7 @@ export default function ReleasesPage(): React.ReactElement {
               </tr>
             </thead>
             <tbody>
-              {releases.map((release) => (
+              {visibleReleases.map((release) => (
                 <tr
                   key={release.id}
                   className="clickable"
@@ -587,10 +616,12 @@ export default function ReleasesPage(): React.ReactElement {
                   <td>{release.test_case_count}</td>
                 </tr>
               ))}
-              {releases.length === 0 && (
+              {visibleReleases.length === 0 && (
                 <tr>
                   <td colSpan={7} className="muted">
-                    No hay releases todavía.
+                    {releases.length === 0
+                      ? "No hay releases todavía."
+                      : "No hay releases con este estado."}
                   </td>
                 </tr>
               )}
