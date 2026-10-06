@@ -28,6 +28,7 @@ def test_classify_aliases() -> None:
     assert classify_status("Cancelled") == ("closed", "Canceled")
     assert classify_status("Canceled") == ("closed", "Canceled")
     assert classify_status("Finalizada") == ("closed", "Finalizada")
+    assert classify_status("Data Validation") == ("closed", "Data Validation")
     assert classify_status("In Progress") == ("development", "In Progress")
     assert classify_status("Blocked") == ("development", "Blocked")
     assert classify_status("Released", "done") == ("closed", "Released")

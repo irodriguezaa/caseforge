@@ -31,6 +31,7 @@ _CLOSED_CANONICAL = {
     "closed": "Closed",
     "cerrado": "Cerrado",
     "cerrada": "Cerrado",
+    "data validation": "Data Validation",
 }
 
 
