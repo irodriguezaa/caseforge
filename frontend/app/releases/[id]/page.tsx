@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { BarList } from "@/app/components/BarList";
+import { EditTestCaseModal } from "@/app/components/EditTestCaseModal";
 import { ImportTestCasesPanel } from "@/app/components/ImportTestCasesPanel";
 import { InfoTooltip } from "@/app/components/InfoTooltip";
 import { OperativaCoverageMatrix } from "@/app/components/OperativaCoverageMatrix";
