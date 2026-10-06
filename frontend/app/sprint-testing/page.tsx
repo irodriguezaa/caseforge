@@ -221,7 +221,32 @@ export default function SprintTestingPage(): React.ReactElement {
             {data.execution.programs.length === 0 ? (
               <p className="muted">No hay issues de ejecución para este SWF.</p>
             ) : (
-              <ExecutionPriorityBars programs={data.execution.programs} />
+              <>
+                <ExecutionPriorityBars programs={data.execution.programs} />
+                <h3 style={{ margin: "18px 0 8px", fontSize: "13px" }}>Blockers</h3>
+                {data.execution.blockers.length === 0 ? (
+                  <p className="muted">No hay Blockers para este SWF.</p>
+                ) : (
+                  <table className="activity">
+                    <thead>
+                      <tr>
+                        <th>Key</th>
+                        <th>Summary</th>
+                        <th>Estado</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.execution.blockers.map((row) => (
+                        <tr key={row.key}>
+                          <td>{row.key}</td>
+                          <td>{row.summary}</td>
+                          <td>{row.status}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </>
             )}
           </div>
         </div>

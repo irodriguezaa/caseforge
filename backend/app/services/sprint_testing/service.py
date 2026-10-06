@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.schemas.sprint_testing import (
+    ExecutionBlockerRow,
     ExecutionIssueRow,
     ExecutionMetrics,
     ExecutionProgramMetrics,
@@ -17,15 +18,12 @@ from app.schemas.sprint_testing import (
     SwfOption,
 )
 from app.services.jira_client import fetch_raw_issues_by_filter
-from app.services.jira_generation import adf_to_text
 from app.services.sprint_testing.catalog import SWFS, SPRINTS, SprintDef, SwfDef, get_sprint, get_swf
 from app.services.sprint_testing.classify import classify_status, is_blocker_priority, is_technical_epic
 from app.services.sprint_testing.export import build_executive_pptx, build_issues_workbook
 
 _ISSUE_FIELDS = ["summary", "issuetype", "status", "project"]
-_EXECUTION_FIELDS = ["summary", "issuetype", "status", "project", "priority"]
-_EXPORT_FIELDS = ["summary", "description", "issuetype", "status", "project", "priority"]
-_DESCRIPTION_MAX = 500
+_EXECUTION_FIELDS = ["summary", "status", "project", "priority"]
 
 
 class SprintTestingConfigError(ValueError):
@@ -121,14 +119,6 @@ def _summary(issue: dict[str, Any]) -> str:
     return str(fields.get("summary") or "").strip()
 
 
-def _description(issue: dict[str, Any]) -> str:
-    fields = issue.get("fields") or {}
-    text = adf_to_text(fields.get("description")).strip()
-    if len(text) > _DESCRIPTION_MAX:
-        return text[: _DESCRIPTION_MAX - 1].rstrip() + "…"
-    return text
-
-
 def _resolve_sprint_swf(sprint_id: str, swf_id: str) -> tuple[SprintDef, SwfDef]:
     sprint = get_sprint(sprint_id)
     if sprint is None:
@@ -153,9 +143,7 @@ def list_execution_issue_rows(swf: SwfDef, issues: list[dict[str, Any]]) -> list
         rows.append(
             ExecutionIssueRow(
                 key=str(issue.get("key") or "").strip().upper(),
-                issue_type=_issuetype_name(issue).strip(),
                 summary=_summary(issue),
-                description=_description(issue),
                 status=_status_name(issue),
                 priority=_priority_name(issue),
                 device=program.display_name,
@@ -172,7 +160,7 @@ def build_execution_issues_xlsx(sprint_id: str, swf_id: str) -> tuple[bytes, str
         raise SprintTestingConfigError(
             f"{sprint.label} aún no tiene un Saved Filter de issues en ejecución."
         )
-    issues = fetch_raw_issues_by_filter(sprint.execution_filter_id, _EXPORT_FIELDS)
+    issues = fetch_raw_issues_by_filter(sprint.execution_filter_id, _EXECUTION_FIELDS)
     rows = list_execution_issue_rows(swf, issues)
     filename = f"{export_basename(sprint.label, swf.label)}_issues.xlsx"
     return build_issues_workbook(rows), filename
@@ -195,11 +183,23 @@ def aggregate_execution_issues(
         if key in grouped:
             grouped[key].append(issue)
     programs: list[ExecutionProgramMetrics] = []
+    blockers: list[ExecutionBlockerRow] = []
     for program in swf.programs:
         rows = grouped[program.program_key]
         if not rows:
             continue
-        blocker = sum(1 for issue in rows if is_blocker_priority(_priority_name(issue)))
+        blocker = 0
+        for issue in rows:
+            if not is_blocker_priority(_priority_name(issue)):
+                continue
+            blocker += 1
+            blockers.append(
+                ExecutionBlockerRow(
+                    key=str(issue.get("key") or "").strip().upper(),
+                    summary=_summary(issue),
+                    status=_status_name(issue),
+                )
+            )
         programs.append(
             ExecutionProgramMetrics(
                 program_key=program.program_key,
@@ -209,10 +209,12 @@ def aggregate_execution_issues(
                 non_blocker=len(rows) - blocker,
             )
         )
+    blockers.sort(key=lambda row: row.key)
     return ExecutionMetrics(
         filter_id=filter_id,
         issue_count=sum(row.total for row in programs),
         programs=programs,
+        blockers=blockers,
     )
 
 

@@ -816,7 +816,14 @@ export interface SprintTestingRead {
     filter_id: string;
     issue_count: number;
     programs: SprintTestingExecutionProgram[];
+    blockers: SprintTestingBlocker[];
   } | null;
+}
+
+export interface SprintTestingBlocker {
+  key: string;
+  summary: string;
+  status: string;
 }
 
 export interface SprintTestingExecutionProgram {

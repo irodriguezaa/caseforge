@@ -163,6 +163,9 @@ def test_execution_counts_blocker_by_program() -> None:
     win = next(row for row in payload.programs if row.program_key == "WINCL")
     assert win.blocker == 0
     assert win.non_blocker == 1
+    assert [row.key for row in payload.blockers] == ["ADTCL-1", "ADTCL-3"]
+    assert payload.blockers[0].summary == "ADTCL-1"
+    assert payload.blockers[0].status == "In Progress"
     assert all(row.program_key not in {"WEBCL", "AAFCL"} for row in payload.programs)
 
 
@@ -294,13 +297,10 @@ def test_execution_issue_rows_filter_and_truncate() -> None:
     )
     assert [row.key for row in rows] == ["ADTCL-1", "WINCL-2"]
     assert rows[0].device == "ADT / FireTV"
-    assert rows[0].description == "falla"
+    assert rows[0].summary == "Playback VOD"
     assert rows[0].status == "In Progress"
     assert rows[0].priority == "Blocker"
-    assert rows[0].issue_type == "QA Bug"
-    assert rows[1].issue_type == "QC Bug"
-    assert len(rows[1].description) == 500
-    assert rows[1].description.endswith("…")
+    assert rows[1].summary == "Layout"
 
 
 def test_issues_workbook_headers() -> None:
@@ -315,9 +315,7 @@ def test_issues_workbook_headers() -> None:
         [
             ExecutionIssueRow(
                 key="ADTCL-1",
-                issue_type="QA Bug",
                 summary="Playback",
-                description="falla",
                 status="In Progress",
                 priority="Blocker",
                 device="ADT / FireTV",
@@ -329,8 +327,8 @@ def test_issues_workbook_headers() -> None:
     sheet = book.active
     assert [cell.value for cell in sheet[1]] == ISSUE_HEADERS
     assert sheet["A2"].value == "ADTCL-1"
-    assert sheet["B2"].value == "QA Bug"
-    assert sheet["F2"].value == "Blocker"
+    assert sheet["C2"].value == "In Progress"
+    assert sheet["D2"].value == "Blocker"
 
 
 def test_executive_pptx_is_one_slide_without_open_column() -> None:
@@ -339,6 +337,7 @@ def test_executive_pptx_is_one_slide_without_open_column() -> None:
     from pptx import Presentation
 
     from app.schemas.sprint_testing import (
+        ExecutionBlockerRow,
         ExecutionMetrics,
         ExecutionProgramMetrics,
         ProgramMetrics,
@@ -381,18 +380,24 @@ def test_executive_pptx_is_one_slide_without_open_column() -> None:
                     non_blocker=2,
                 )
             ],
+            blockers=[
+                ExecutionBlockerRow(key="ADTCL-1", summary="Playback VOD", status="In Progress"),
+            ],
         ),
     )
     deck = Presentation(BytesIO(build_executive_pptx(payload)))
     assert len(deck.slides) == 1
     tables = [shape.table for shape in deck.slides[0].shapes if shape.has_table]
-    assert len(tables) == 2
+    assert len(tables) == 3
     epic_headers = [tables[0].cell(0, col).text.strip() for col in range(len(tables[0].columns))]
     issue_headers = [tables[1].cell(0, col).text.strip() for col in range(len(tables[1].columns))]
+    blocker_headers = [tables[2].cell(0, col).text.strip() for col in range(len(tables[2].columns))]
     assert "To Do" not in epic_headers
     assert "Abierto" not in epic_headers
     assert epic_headers == ["Dispositivo", "Desarrollo", "Testing", "Cerrado", "Total"]
     assert issue_headers == ["Dispositivo", "Blocker", "No Blocker", "Total"]
+    assert blocker_headers == ["Key", "Summary", "Estado"]
+    assert tables[2].cell(1, 0).text.strip() == "ADTCL-1"
 
 
 def test_export_issues_requires_execution_filter(client) -> None:

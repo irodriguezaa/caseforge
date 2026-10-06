@@ -55,19 +55,24 @@ class ExecutionProgramMetrics(BaseModel):
 
 class ExecutionIssueRow(BaseModel):
     key: str
-    issue_type: str
     summary: str
-    description: str
     status: str
     priority: str
     device: str
     program_key: str
 
 
+class ExecutionBlockerRow(BaseModel):
+    key: str
+    summary: str
+    status: str
+
+
 class ExecutionMetrics(BaseModel):
     filter_id: str
     issue_count: int
     programs: list[ExecutionProgramMetrics]
+    blockers: list[ExecutionBlockerRow] = Field(default_factory=list)
 
 
 class SprintTestingRead(BaseModel):
