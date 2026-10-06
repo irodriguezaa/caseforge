@@ -58,6 +58,15 @@ export function durationDays(personDays: number, resources: number): number {
   return Math.round((personDays / testers) * 10) / 10;
 }
 
+function primaryEpicKey(row: {
+  component?: string | null;
+  hn_source?: string | null;
+  technical_epic?: string | null;
+}): string {
+  const raw = (row.component || row.technical_epic || row.hn_source || "Sin EPC").trim() || "Sin EPC";
+  return raw.split("|")[0]?.trim() || "Sin EPC";
+}
+
 export function hoursByTechnicalEpic(
   cases: Array<{
     component?: string | null;
@@ -70,7 +79,7 @@ export function hoursByTechnicalEpic(
 ): { label: string; value: number }[] {
   const grouped = new Map<string, number>();
   for (const row of cases) {
-    const key = (row.hn_source || row.technical_epic || row.component || "Sin EPC").trim() || "Sin EPC";
+    const key = primaryEpicKey(row);
     const hours =
       row.estimation_hours != null && Number.isFinite(Number(row.estimation_hours))
         ? Number(row.estimation_hours)
