@@ -31,6 +31,7 @@ from app.services.gherkin_coverage import (
     materialize_coverage_units,
     sanitize_user_text,
 )
+from app.services.executability import apply_executability_gate, STABLE_GENERIC_STEP
 from app.services.jira_generation import fetch_artifacts_for_keys
 from app.services.qc_candidate_rules import apply_qc_rules
 from app.services.release_note_analyzer import iter_rn_ticket_rows
@@ -109,6 +110,17 @@ Reglas HANDOFF (obligatorias):
     Clasifica cada Scenario: A observable, B condición, C implementación, D métrica,
     E proceso QA, F fuera de alcance, G técnico CON consecuencia observable.
     No materialices C/D/E/F. No uses frases comodín para salvar un Scenario técnico.
+    Cada unidad trae test_intent, condition y observable_then.
+    Identifica la condición que hace único al escenario (Given, título, test_intent).
+    Esa condición va en precondition o test_data, NUNCA dentro del Step como
+    "el usuario recorre la experiencia cuando…".
+    Step = acción real del usuario (When de usuario). Si el When es técnico o de estado,
+    usa exactamente: "El usuario ingresa al flujo correspondiente."
+    Un Step genérico corto es válido; no debe incluir la condición ni el título.
+    Expected = Then observable. Si no hay UI específica, sé honesto:
+    "Se observa el comportamiento definido para cuando {condición}."
+    NO inventes pantallas, textos ni condiciones fuera de Gherkin, Coverage Unit, Jira o RN.
+    Si dos unidades tienen distinta condición o distinto resultado observable, NO las agrupes.
 23. Títulos funcionales, no "Validar invocación/API/status 503".
     Título, condición, step y resultado deben ser el mismo flujo.
 24. Prioridad: BLOCKER (acceso, playback, bookmark, lineal, transacción, parental,
@@ -169,7 +181,9 @@ covers es obligatorio: ids de coverage_inventory cubiertos por ese caso.
 Agrupa en covers solo unidades con el mismo comportamiento observable.
 No colapses unidades independientes en un solo caso porque compartan Funcionalidad.
 No inventes un resultado observable genérico.
-related_functionality y related_jira DEBEN ser keys de Jira (ej. PROJ-123),
+Cada candidato debe conservar test_intent/condition de las unidades en covers:
+precondition, test_data o action deben permitir a QC distinguir ese escenario de
+otro parecido. related_functionality y related_jira DEBEN ser keys de Jira (ej. PROJ-123),
 nunca el summary del Epic/Story.
 """
 
@@ -267,16 +281,20 @@ def _candidate_from_functionality_ticket(
         name=name[:250],
         description=summary[:2000] or cell_text[:2000],
         precondition=(
-            "Requiere la configuración/condición descrita en el RN; el caso es aplicable aunque no sea ejecutable aún."
-            if needs_config
-            else None
+            (f"{summary}. " if summary else "")
+            + "Validación básica: el RN no describe un paso de usuario ni un resultado UI específico."
         ),
         requires_condition=needs_config,
         steps=[
             CandidateStep(
                 step_number=1,
-                action="El usuario recorre el flujo de la funcionalidad descrita en el RN.",
-                expected_result="Se observa el comportamiento de usuario final declarado en el RN, sin condiciones no evidenciadas.",
+                action=STABLE_GENERIC_STEP,
+                expected_result=(
+                    f"Se observa el comportamiento definido para la funcionalidad descrita en el RN "
+                    f"({summary[:180]}). Validación básica: el RN no describe un paso de usuario ni un resultado UI específico."
+                    if summary
+                    else "Validación básica: el RN no describe un paso de usuario ni un resultado UI específico."
+                ),
             )
         ],
         related_functionality=ticket_id,
@@ -659,6 +677,9 @@ def _from_llm(
         "product_brief_field_note": "customfield_19094 es resumen; no es fuente única de casos.",
         "instruction": (
             "Traduce coverage_inventory a casos ejecutables de usuario final. "
+            "Usa test_intent, condition, precondition y observable_then de cada unidad. "
+            "QC debe entender qué condición prueba, qué hace y qué observa, y por qué "
+            "el caso es distinto de otro Scenario parecido. "
             "Cada candidato debe incluir covers con coverage_id. "
             "Agrupa unidades solo si el usuario observa el mismo resultado y la misma validación. "
             "No resumas una Funcionalidad en un solo caso si hay varias unidades independientes. "
@@ -939,6 +960,7 @@ def generate_release_app_candidates(
 
     candidates = _keep_scoped_candidates(candidates, allowed or None)
     candidates = apply_qc_rules(candidates, release_context=release_context, stats=stats)
+    candidates = apply_executability_gate(candidates, inventory)
     stamp_source_types(candidates)
     covered = sorted(_covered_ids(candidates))
     required = [unit.coverage_id for unit in inventory]

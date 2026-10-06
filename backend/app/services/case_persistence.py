@@ -37,6 +37,8 @@ def next_test_case_id(existing_ids: list[str]) -> str:
 
 def _join_test_data(candidate: GeneratedCaseCandidate) -> str | None:
     parts: list[str] = []
+    if candidate.precondition:
+        parts.append(f"Precondición: {candidate.precondition}")
     if candidate.mdp:
         parts.append(f"MDP: {candidate.mdp}")
     if candidate.test_data:

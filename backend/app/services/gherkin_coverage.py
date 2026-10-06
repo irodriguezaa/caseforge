@@ -16,6 +16,12 @@ from app.schemas.case_generation import (
     GeneratedCaseCandidate,
     GenerationStats,
 )
+from app.services.executability import (
+    STABLE_GENERIC_STEP,
+    apply_executability_gate,
+    build_test_intent,
+    parse_scenario_clauses,
+)
 from app.services.qc_candidate_rules import (
     apply_qc_rules,
     classify_confidence,
@@ -40,7 +46,7 @@ _QUALITY_APPENDIX = re.compile(
     re.IGNORECASE,
 )
 _HTTP_CODE = re.compile(r"^\d{3}$")
-_GIVEN = re.compile(r"^\s*(Given|Dado que|Dado|And|Y|Pero|But)\s+", re.IGNORECASE)
+_GIVEN = re.compile(r"^\s*(Given|Dado que|Dado)\s+", re.IGNORECASE)
 _WHEN = re.compile(r"^\s*(When|Cuando)\s+", re.IGNORECASE)
 _THEN = re.compile(r"^\s*(Then|Entonces)\s+", re.IGNORECASE)
 _TECHNICAL = re.compile(
@@ -185,40 +191,26 @@ def _examples_are_http_same_behavior(examples: list[dict[str, str]]) -> bool:
 
 
 def _steps_from_body(body: str) -> tuple[str | None, list[CandidateStep], str | None]:
-    precondition_parts: list[str] = []
-    actions: list[str] = []
-    expected: list[str] = []
-    technical: list[str] = []
-    for raw_line in body.splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#") or line.startswith("|"):
-            continue
-        tech = extract_technical(line)
-        if tech:
-            technical.append(tech)
-        if _WHEN.match(line):
-            text = sanitize_user_text(_WHEN.sub("", line))
-            if text:
-                actions.append(text)
-        elif _THEN.match(line):
-            text = sanitize_user_text(_THEN.sub("", line))
-            if text:
-                expected.append(text)
-        elif _GIVEN.match(line):
-            text = sanitize_user_text(_GIVEN.sub("", line))
-            if text:
-                precondition_parts.append(text)
+    parsed = parse_scenario_clauses(body)
+    precondition_parts = [sanitize_user_text(part) or part for part in parsed["given"]]
+    actions = [sanitize_user_text(part) or part for part in parsed["actions"]]
+    expected = [sanitize_user_text(part) or part for part in parsed["expected"]]
+    technical = [extract_technical(part) or part for part in parsed["technical"]]
+    technical = [part for part in technical if part]
+    if not actions:
+        actions = [STABLE_GENERIC_STEP]
     steps: list[CandidateStep] = []
-    if not actions and not expected:
+    if not expected:
         return (
-            "; ".join(precondition_parts) or None,
+            "; ".join(dict.fromkeys(p for p in precondition_parts if p)) or None,
             steps,
             "; ".join(dict.fromkeys(technical)) or None,
         )
-    count = max(len(actions), len(expected), 1)
+    count = max(len(expected), 1)
+    user_action = actions[0] if actions else STABLE_GENERIC_STEP
     for index in range(count):
-        action = actions[index] if index < len(actions) else actions[-1] if actions else "El usuario continúa el flujo."
-        result = expected[index] if index < len(expected) else expected[-1] if expected else ""
+        action = actions[index] if index < len(actions) else user_action
+        result = expected[index] if index < len(expected) else expected[-1]
         steps.append(
             CandidateStep(
                 step_number=index + 1,
@@ -227,7 +219,7 @@ def _steps_from_body(body: str) -> tuple[str | None, list[CandidateStep], str | 
             )
         )
     return (
-        "; ".join(precondition_parts) or None,
+        "; ".join(dict.fromkeys(p for p in precondition_parts if p)) or None,
         steps,
         "; ".join(dict.fromkeys(technical)) or None,
     )
@@ -240,7 +232,7 @@ def _steps_from_observable(
 ) -> list[CandidateStep]:
     if not observable:
         return []
-    action_default = actions[0] if actions else "El usuario recorre el flujo descrito en el escenario."
+    action_default = actions[0] if actions else STABLE_GENERIC_STEP
     steps: list[CandidateStep] = []
     for index, result in enumerate(observable):
         action = actions[index] if index < len(actions) else action_default
@@ -291,20 +283,11 @@ def _candidate(
             if note:
                 test_data_parts.append(note)
     special = classification.special_condition if classification else None
-    normal = classification.normal_precondition if classification else None
-    needs_config = requires_condition or bool(special)
-    if not needs_config:
-        needs_config = bool(
-            re.search(r"llave|configuraci[oó]n|flag|habilit", f"{name} {body}", re.IGNORECASE)
-        )
-        if needs_config:
-            special = special or (
-                "Condición especial descrita en Jira (flag, configuración u operación)."
-            )
-    pre_parts = [part for part in (normal, precondition) if part]
-    if special:
-        pre_parts.append(f"Condición especial: {special}")
-    elif needs_config and not pre_parts:
+    needs_config = bool(requires_condition) or bool(special) or bool(
+        re.search(r"llave|configuraci[oó]n|flag|habilit", f"{precondition or ''} {body}", re.IGNORECASE)
+    )
+    pre_parts = [part for part in (precondition, special) if part]
+    if needs_config and not pre_parts:
         pre_parts.append(
             "Requiere la configuración/condición descrita en Jira/RN; "
             "el caso es aplicable aunque no sea ejecutable aún."
@@ -370,6 +353,7 @@ def _coverage_unit(
     trace: str,
 ) -> CoverageUnit:
     behavior = functional_title(title, clf.observable_then or [title])
+    intent = build_test_intent(title)
     return CoverageUnit(
         coverage_id=coverage_id,
         role=clf.role if clf.role in {"A", "G"} else "A",
@@ -394,6 +378,7 @@ def _coverage_unit(
         technical_notes=list(clf.technical_notes or []),
         special_condition=clf.special_condition,
         normal_precondition=clf.normal_precondition,
+        test_intent=intent,
     )
 
 
@@ -441,8 +426,6 @@ def _units_from_story_blocks(
         body = block["body"]
         evidence = f"{story_key}: {title}\n{body[:1500]}"
         needs_story_condition = bool(support_conditions)
-        if needs_story_condition and not clf.special_condition:
-            clf.special_condition = condition_b
         examples = block["examples"] if block["outline"] else []
         strategy = example_strategy(examples) if examples else "single"
         trace = f"RN={epic_key}; Story={story_key}; Scenario={title}"
@@ -461,7 +444,7 @@ def _units_from_story_blocks(
                     "Códigos HTTP explícitos en Examples (mismo comportamiento): "
                     + ", ".join(dict.fromkeys(codes))
                 )
-            extra = "; ".join(part for part in (extra, extra_support) if part)
+            extra = format_examples(examples)
             units.append(
                 _coverage_unit(
                     coverage_id=_next_id(),
@@ -473,7 +456,7 @@ def _units_from_story_blocks(
                     story_key=story_key,
                     rn_filename=rn_filename,
                     vocab=vocab,
-                    extra_test_data=extra,
+                    extra_test_data="; ".join(part for part in (extra, extra_support) if part) or None,
                     requires_condition=needs_story_condition,
                     strategy=strategy,
                     technical_group=tech_group,
@@ -485,9 +468,7 @@ def _units_from_story_blocks(
 
         if strategy == "group_by_outcome" and examples:
             for outcome, group in group_examples_by_outcome(examples).items():
-                extra = "; ".join(
-                    part for part in (format_examples(group), extra_support) if part
-                )
+                extra = format_examples(group)
                 units.append(
                     _coverage_unit(
                         coverage_id=_next_id(),
@@ -499,7 +480,7 @@ def _units_from_story_blocks(
                         story_key=story_key,
                         rn_filename=rn_filename,
                         vocab=vocab,
-                        extra_test_data=extra,
+                        extra_test_data="; ".join(part for part in (extra, extra_support) if part) or None,
                         requires_condition=needs_story_condition,
                         strategy=strategy,
                         technical_group=f"outcome:{outcome}",
@@ -512,11 +493,7 @@ def _units_from_story_blocks(
         if strategy == "split_functional" and examples:
             for example in examples:
                 label = ", ".join(f"{k}={v}" for k, v in example.items() if v)
-                extra = "; ".join(
-                    part
-                    for part in ("Example funcional explícito: " + label, extra_support)
-                    if part
-                )
+                extra = "Example funcional explícito: " + label
                 units.append(
                     _coverage_unit(
                         coverage_id=_next_id(),
@@ -528,7 +505,7 @@ def _units_from_story_blocks(
                         story_key=story_key,
                         rn_filename=rn_filename,
                         vocab=vocab,
-                        extra_test_data=extra,
+                        extra_test_data="; ".join(part for part in (extra, extra_support) if part) or None,
                         requires_condition=needs_story_condition,
                         strategy=strategy,
                         technical_group=None,
@@ -660,4 +637,5 @@ def candidates_from_jira_artifacts(
     stats = stats or GenerationStats()
     units = build_coverage_inventory(artifacts, rn_filename, stats=stats)
     out = materialize_coverage_units(units, existing, duplicate_of, stats=stats)
-    return apply_qc_rules(out, stats=stats)
+    out = apply_qc_rules(out, stats=stats)
+    return apply_executability_gate(out, units)

@@ -41,6 +41,7 @@ class CoverageUnit(BaseModel):
     technical_notes: list[str] = Field(default_factory=list)
     special_condition: str | None = None
     normal_precondition: str | None = None
+    test_intent: str = ""
 
     def for_llm(self) -> dict:
         return {
@@ -48,6 +49,10 @@ class CoverageUnit(BaseModel):
             "role": self.role,
             "behavior": self.behavior,
             "scenario": self.scenario,
+            "test_intent": self.test_intent,
+            "condition": self.special_condition or self.condition_b,
+            "precondition": self.normal_precondition,
+            "observable_then": list(self.observable_then or [])[:8],
             "evidence": (self.evidence or "")[:1200],
             "jira_key": self.jira_key,
             "rn_key": self.rn_key,
@@ -56,6 +61,7 @@ class CoverageUnit(BaseModel):
             "outline_strategy": self.outline_strategy,
             "technical_group": self.technical_group,
             "traceability": self.traceability,
+            "requires_condition": self.requires_condition,
         }
 
 

@@ -11,6 +11,8 @@ from typing import Literal
 
 from app.schemas.case_generation import CandidateStep, GeneratedCaseCandidate, GenerationStats
 
+from app.services.executability import STABLE_GENERIC_STEP, bound_expected, condition_clause
+
 Priority = Literal["BLOCKER", "CRITICAL"]
 Confidence = Literal["high", "medium", "low"]
 
@@ -421,15 +423,16 @@ def rewrite_step_language(step: CandidateStep, name: str = "") -> CandidateStep:
         if re.search(r"pago|paypal|no bloquea", name, re.I):
             action = "El usuario completa el flujo de pago."
         else:
-            action = "El usuario ingresa al flujo correspondiente en la experiencia."
+            action = STABLE_GENERIC_STEP
     elif _TECHNICAL_ACTION.search(action_bare) or re.search(r"\b(GET|POST|HTTP|/services/)\b", action_bare, re.I):
         tech = action_bare
         extra_parts.append(tech)
-        action = "El usuario ingresa al flujo correspondiente en la experiencia."
+        action = STABLE_GENERIC_STEP
     else:
         action = action_bare
 
     expected, expected_tech = rewrite_internal_to_observable(step.expected_result, name)
+    expected = bound_expected(name, expected)
     if expected_tech:
         extra_parts.append(expected_tech)
 
@@ -437,7 +440,7 @@ def rewrite_step_language(step: CandidateStep, name: str = "") -> CandidateStep:
         for token in _FIELD_TOKEN.findall(blob or ""):
             extra_parts.append(token)
     action = _FIELD_TOKEN.sub(" ", action or "")
-    action = re.sub(r"\s+", " ", action).strip() or "El usuario recorre el flujo descrito en el escenario."
+    action = re.sub(r"\s+", " ", action).strip() or STABLE_GENERIC_STEP
     expected = _FIELD_TOKEN.sub(" ", expected or "")
     expected = re.sub(r"\s+", " ", expected).strip()
 
@@ -544,15 +547,28 @@ def _ux_normalize(text: str) -> str:
     return cleaned
 
 
+_DIFFERENTIAL_CONDITION = re.compile(
+    r"vac[ií]a|no se logra|no disponible|deshabilit|expirad|sin permiso|"
+    r"inv[aá]lid|incorrecta|no se encuentra|sesi[oó]n|sin (cuenta|contenido)|"
+    r"no (es )?posible",
+    re.IGNORECASE,
+)
+
+
 def observable_fingerprint(
     steps: list[CandidateStep], name: str = "", test_data: str | None = None
 ) -> str:
     """Same observable PASS/FAIL, ignoring Story/HTTP/flag/origin labels.
 
     Functional variants (plan, add-on, visibilidad) stay in the fingerprint.
+    Distinct Given/condition titles are not collapsed just because steps were rewritten.
     """
     expected = " ".join(step.expected_result for step in steps)
-    return normalize(f"{_ux_normalize(expected)}|{variant_token(name, test_data)}")
+    variant = variant_token(name, test_data)
+    clause = condition_clause(name)
+    if clause and _DIFFERENTIAL_CONDITION.search(f"{name} {clause}"):
+        variant = f"{variant}|{clause}"
+    return normalize(f"{_ux_normalize(expected)}|{variant}")
 
 
 def candidate_lacks_observable_qc(candidate: GeneratedCaseCandidate) -> bool:
