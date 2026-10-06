@@ -326,6 +326,7 @@ export default function ReleaseDetailPage(): React.ReactElement {
     }
     return testCases.filter((row) => (row.device || "").trim() === deviceFilter);
   }, [testCases, deviceFilter]);
+  const epicHours = useMemo(() => hoursByTechnicalEpic(visibleCases), [visibleCases]);
 
   if (loadError) {
     return (
@@ -370,7 +371,6 @@ export default function ReleaseDetailPage(): React.ReactElement {
       ? calculateBusinessDays(planningForm.startDate, planningForm.endDate)
       : release.execution_days;
   const estimatedDurationDays = isApp ? durationDays(estimationDays, qcResources) : estimationDays;
-  const epicHours = useMemo(() => hoursByTechnicalEpic(visibleCases), [visibleCases]);
   const statusCounts = visibleCases.reduce<Record<string, number>>((counts, row) => {
     counts[row.status] = (counts[row.status] || 0) + 1;
     return counts;
