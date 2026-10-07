@@ -359,6 +359,8 @@ button.epic-hours-toggle:hover:not(:disabled) { background: var(--surface-2); }
 .epic-hours-chevron.open { transform: rotate(180deg); }
 .epic-hours-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
 .epic-hours-toolbar button { display: inline-flex; align-items: center; gap: 6px; }
+.epic-progress-table { margin-top: 0; }
+.epic-progress-table td.num, .epic-progress-table th.num { font-variant-numeric: tabular-nums; }
 .bar-track { background: var(--border); border-radius: 4px; height: 8px; overflow: hidden; }
 .bar-fill { height: 100%; border-radius: 4px; min-width: 2px; }
 .bar-row .bar-value { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }

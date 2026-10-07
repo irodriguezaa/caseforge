@@ -6,6 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { EditTestCaseModal } from "@/app/components/EditTestCaseModal";
 import { EpicHoursPanel } from "@/app/components/EpicHoursPanel";
+import { EpicProgressPanel } from "@/app/components/EpicProgressPanel";
 import { ImportTestCasesPanel } from "@/app/components/ImportTestCasesPanel";
 import { InfoTooltip } from "@/app/components/InfoTooltip";
 import { OperativaCoverageMatrix } from "@/app/components/OperativaCoverageMatrix";
@@ -17,7 +18,7 @@ import { useAuth } from "@/lib/auth";
 import { BE_REGRESIVO_SCOPE_LABEL, OPERATIVA_DEVICE_OPTIONS, SHOW_QCO_ZEPHYR_PUBLISH, VALIDATION_TYPE_OPTIONS } from "@/lib/constants";
 import { calculateBusinessDays } from "@/lib/dateUtils";
 import { nextTestCaseId } from "@/lib/testCaseId";
-import { QC_ESTIMATION_TOOLTIP, QC_OPERATIVA_ESTIMATION_TOOLTIP, durationDays, estimateOperativaEffort, estimateReleaseEffortFromCases, estimateReleaseEffortLegacyCount, hoursByTechnicalEpic, stripDeviceFromCaseName } from "@/lib/qcEffort";
+import { QC_ESTIMATION_TOOLTIP, QC_OPERATIVA_ESTIMATION_TOOLTIP, durationDays, estimateOperativaEffort, estimateReleaseEffortFromCases, estimateReleaseEffortLegacyCount, hoursByTechnicalEpic, progressByTechnicalEpic, stripDeviceFromCaseName } from "@/lib/qcEffort";
 import type { CoverageMatrixResponse, EpcRead, GenerateCasesResponse, PublishCasesResponse, Release, ReleaseAnalysis, ReleaseStatus, TestCase } from "@/lib/types";
 import { formatRnSourceType } from "@/lib/types";
 
@@ -328,6 +329,7 @@ export default function ReleaseDetailPage(): React.ReactElement {
     return testCases.filter((row) => (row.device || "").trim() === deviceFilter);
   }, [testCases, deviceFilter]);
   const epicHours = useMemo(() => hoursByTechnicalEpic(visibleCases), [visibleCases]);
+  const epicProgress = useMemo(() => progressByTechnicalEpic(visibleCases), [visibleCases]);
 
   if (loadError) {
     return (
@@ -848,6 +850,7 @@ export default function ReleaseDetailPage(): React.ReactElement {
           ))}
         </div>
         {isApp && <EpicHoursPanel items={epicHours} fileName={release.name} />}
+        {isApp && <EpicProgressPanel rows={epicProgress} />}
         </>
       )}
 

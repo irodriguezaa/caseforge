@@ -58,13 +58,65 @@ export function durationDays(personDays: number, resources: number): number {
   return Math.round((personDays / testers) * 10) / 10;
 }
 
-function primaryEpicKey(row: {
+export function primaryEpicKey(row: {
   component?: string | null;
   hn_source?: string | null;
   technical_epic?: string | null;
 }): string {
   const raw = (row.component || row.technical_epic || row.hn_source || "Sin EPC").trim() || "Sin EPC";
   return raw.split("|")[0]?.trim() || "Sin EPC";
+}
+
+export type EpicProgressRow = {
+  key: string;
+  total: number;
+  executed: number;
+  percent: number;
+  hours: number;
+};
+
+function caseHours(row: {
+  priority?: string | null;
+  complexity?: string | null;
+  estimation_hours?: number | null;
+}): number {
+  if (row.estimation_hours != null && Number.isFinite(Number(row.estimation_hours))) {
+    return Number(row.estimation_hours);
+  }
+  return estimateCaseMinutes(row.priority, row.complexity) / 60;
+}
+
+export function progressByTechnicalEpic(
+  cases: Array<{
+    component?: string | null;
+    hn_source?: string | null;
+    technical_epic?: string | null;
+    status?: string | null;
+    priority?: string | null;
+    complexity?: string | null;
+    estimation_hours?: number | null;
+  }>,
+): EpicProgressRow[] {
+  const grouped = new Map<string, { total: number; executed: number; hours: number }>();
+  for (const row of cases) {
+    const key = primaryEpicKey(row);
+    const current = grouped.get(key) || { total: 0, executed: 0, hours: 0 };
+    current.total += 1;
+    if (String(row.status || "").toUpperCase() !== "UNEXECUTED") {
+      current.executed += 1;
+    }
+    current.hours += caseHours(row);
+    grouped.set(key, current);
+  }
+  return [...grouped.entries()]
+    .map(([key, stats]) => ({
+      key,
+      total: stats.total,
+      executed: stats.executed,
+      percent: stats.total === 0 ? 0 : Math.round((stats.executed * 1000) / stats.total) / 10,
+      hours: Math.round(stats.hours * 10) / 10,
+    }))
+    .sort((a, b) => b.hours - a.hours || a.key.localeCompare(b.key, "es"));
 }
 
 export function hoursByTechnicalEpic(
@@ -80,11 +132,7 @@ export function hoursByTechnicalEpic(
   const grouped = new Map<string, number>();
   for (const row of cases) {
     const key = primaryEpicKey(row);
-    const hours =
-      row.estimation_hours != null && Number.isFinite(Number(row.estimation_hours))
-        ? Number(row.estimation_hours)
-        : estimateCaseMinutes(row.priority, row.complexity) / 60;
-    grouped.set(key, (grouped.get(key) || 0) + hours);
+    grouped.set(key, (grouped.get(key) || 0) + caseHours(row));
   }
   return [...grouped.entries()]
     .map(([key, hours]) => ({

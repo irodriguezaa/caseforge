@@ -96,6 +96,50 @@ def split_stored_test_data(raw: str | None) -> tuple[str, str, str]:
     return precondition, compact, "\n".join(notes)
 
 
+def primary_epic_key(case: TestCase) -> str:
+    raw = ((case.component or case.technical_epic or case.hn_source or "Sin EPC").strip() or "Sin EPC")
+    return (raw.split("|")[0] or "").strip() or "Sin EPC"
+
+
+def _case_hours(case: TestCase) -> float:
+    if case.estimation_hours is not None:
+        return float(case.estimation_hours)
+    return 0.0
+
+
+def _is_executed(case: TestCase) -> bool:
+    return _enum_value(case.status) != "UNEXECUTED"
+
+
+def epic_progress_rows(cases: list[TestCase]) -> list[dict[str, object]]:
+    grouped: dict[str, dict[str, float]] = {}
+    for case in cases:
+        key = primary_epic_key(case)
+        row = grouped.setdefault(key, {"total": 0, "executed": 0, "hours": 0.0})
+        row["total"] += 1
+        if _is_executed(case):
+            row["executed"] += 1
+        row["hours"] += _case_hours(case)
+    out: list[dict[str, object]] = []
+    for key, stats in grouped.items():
+        total = int(stats["total"])
+        executed = int(stats["executed"])
+        percent = 0.0 if total == 0 else round(executed * 1000 / total) / 10
+        out.append(
+            {
+                "key": key,
+                "total": total,
+                "executed": executed,
+                "percent": percent,
+                "hours": round(stats["hours"] * 10) / 10,
+            }
+        )
+    out.sort(key=lambda item: (-float(item["hours"]), str(item["key"])))
+    return out
+
+
+AVANCE_HEADERS = ["EPC", "Casos", "Ejecutados", "%", "Horas"]
+
 QC_HEADERS = [
     "ID",
     "Nombre",
@@ -202,14 +246,38 @@ def load_release_cases(db: Session, release_id: int) -> list[TestCase]:
 
 def build_test_cases_workbook(cases: list[TestCase]) -> bytes:
     workbook = Workbook()
-    qc = workbook.active
-    qc.title = "Test Cases"
+    ordered = sorted(cases, key=lambda case: (primary_epic_key(case).lower(), case.test_case_id or ""))
+    avance = workbook.active
+    avance.title = "Avance"
+    _style_header(avance, AVANCE_HEADERS, [18, 12, 14, 10, 12])
+    progress = epic_progress_rows(ordered)
+    total_cases = 0
+    total_executed = 0
+    total_hours = 0.0
+    for row_index, row in enumerate(progress, start=2):
+        total_cases += int(row["total"])
+        total_executed += int(row["executed"])
+        total_hours += float(row["hours"])
+        values = [row["key"], row["total"], row["executed"], f"{row['percent']}%", row["hours"]]
+        for col, value in enumerate(values, start=1):
+            cell = avance.cell(row_index, col, _excel_value(value))
+            _style_cell(cell, wrap=False)
+    if progress:
+        total_percent = 0.0 if total_cases == 0 else round(total_executed * 1000 / total_cases) / 10
+        footer = ["Total", total_cases, total_executed, f"{total_percent}%", round(total_hours * 10) / 10]
+        footer_row = len(progress) + 2
+        for col, value in enumerate(footer, start=1):
+            cell = avance.cell(footer_row, col, _excel_value(value))
+            _style_cell(cell, wrap=False)
+            cell.font = Font(name="Calibri", size=11, bold=True)
+
+    qc = workbook.create_sheet("Test Cases")
     _style_header(
         qc,
         QC_HEADERS,
         [10, 42, 16, 12, 16, 14, 40, 40, 28, 22, 28, 32, 16, 18, 28, 12, 14, 14],
     )
-    for row_index, case in enumerate(cases, start=2):
+    for row_index, case in enumerate(ordered, start=2):
         precondition, compact_data, _notes = split_stored_test_data(case.test_data)
         values = [
             case.test_case_id,
@@ -242,7 +310,7 @@ def build_test_cases_workbook(cases: list[TestCase]) -> bytes:
         [14, 18, 42, 28, 16, 8, 40, 40, 12, 14, 14],
     )
     zephyr_row = 2
-    for case in cases:
+    for case in ordered:
         steps = sorted(case.steps, key=lambda item: item.step_number)
         if not steps:
             steps = [None]
