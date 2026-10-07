@@ -413,6 +413,17 @@ button.danger:hover:not(:disabled) { background: #d94f4c; }
 .modal-panel { width: min(760px, 100%); background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 1.25rem 1.35rem 1.4rem; box-shadow: 0 16px 48px rgba(0, 0, 0, .35); }
 
 .card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 1.25rem; margin-bottom: 1.25rem; }
+.test-data-stack { display: flex; flex-direction: column; gap: 0; margin-top: 12px; }
+.test-data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.test-data-table th { text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-dim); font-weight: 600; padding: 0 0 8px; border-bottom: 1px solid var(--border); }
+.test-data-table td { padding: 8px 12px 0 0; vertical-align: top; }
+.test-data-table code { font-size: 12.5px; }
+details.test-data-notes { padding: 0; }
+details.test-data-notes summary { cursor: pointer; list-style: none; padding: 1.25rem; font-size: 15px; font-weight: 600; }
+details.test-data-notes summary::-webkit-details-marker { display: none; }
+details.test-data-notes summary::after { content: " (click para ver)"; font-size: 12px; font-weight: 500; color: var(--text-dim); }
+details.test-data-notes[open] summary::after { content: " (ocultar)"; }
+.test-data-notes-body { margin: 0; padding: 0 1.25rem 1.25rem; white-space: pre-wrap; color: var(--text-muted); font-size: 12.5px; line-height: 1.45; }
 .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; }
 .form-field { display: flex; flex-direction: column; gap: .35rem; }
 .form-field label { color: var(--text-muted); font-size: .8rem; }

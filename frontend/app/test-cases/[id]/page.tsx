@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { StatusBadge } from "@/app/components/StatusBadge";
+import { TestDataSections } from "@/app/components/TestDataSections";
 import { api, ApiRequestError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import type { TestCase, TestCaseWithSteps, TestStep } from "@/lib/types";
@@ -124,12 +125,7 @@ export default function TestCaseDetailPage(): React.ReactElement {
         ) : null}
       </div>
       {testCase.requires_condition ? <p className="muted">Requiere condición especial.</p> : null}
-      {testCase.test_data ? (
-        <div className="card" style={{ marginTop: "12px" }}>
-          <h2>Datos de Prueba</h2>
-          <p style={{ whiteSpace: "pre-wrap", margin: 0 }}>{testCase.test_data}</p>
-        </div>
-      ) : null}
+      {testCase.test_data ? <TestDataSections raw={testCase.test_data} /> : null}
       {(testCase.technical_epic || testCase.technical_story || testCase.scenario_origin) && (
         <div className="card" style={{ marginTop: "12px" }}>
           <h2>Trazabilidad</h2>
