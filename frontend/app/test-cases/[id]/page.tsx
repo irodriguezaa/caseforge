@@ -105,6 +105,11 @@ export default function TestCaseDetailPage(): React.ReactElement {
 
   return (
     <div className="page">
+      <p style={{ marginBottom: "1rem" }}>
+        <Link href={`/releases/${testCase.release_id}`} className="back-link">
+          ← Volver a la Release
+        </Link>
+      </p>
       <p className="eyebrow">Test Case</p>
       <h1>{testCase.test_case_id}</h1>
       <p className="subtitle">
