@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import io
+import json
+import re
 
 from openpyxl import Workbook
 from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
@@ -24,6 +26,76 @@ def _display_case_name(case: TestCase) -> str:
             return name[: -len(sep)].rstrip()
     return name
 
+
+_PRE_PREFIX = re.compile(r"^Precondición:\s*", re.IGNORECASE)
+_MDP_PREFIX = re.compile(r"^MDP:\s*", re.IGNORECASE)
+_JSON_OBJECT = re.compile(r"\{[^{}]+\}")
+_SOURCE_LABEL = {
+    "functionality": "Funcionalidad",
+    "nco": "NCO",
+    "tri": "TRI",
+    "qa_bug": "QA Bug",
+    "qc_bug": "QC Bug",
+    "qa_qc": "QA/QC Bug",
+}
+
+
+def _source_label(value: str | None) -> str:
+    text = (value or "").strip()
+    if not text:
+        return ""
+    return _SOURCE_LABEL.get(text, text)
+
+
+def split_stored_test_data(raw: str | None) -> tuple[str, str, str]:
+    """Split the persisted test_data blob the same way the case page does."""
+    text = (raw or "").strip()
+    if not text:
+        return "", "", ""
+    precondition = ""
+    rows: list[tuple[str, str]] = []
+    notes: list[str] = []
+    seen: set[str] = set()
+
+    def add_row(label: str, value: str) -> None:
+        key = f"{label}\0{value}"
+        if not label or key in seen:
+            return
+        seen.add(key)
+        rows.append((label, value))
+
+    def rows_from_json(blob: str) -> None:
+        try:
+            parsed = json.loads(blob)
+        except json.JSONDecodeError:
+            parsed = None
+        if isinstance(parsed, dict):
+            for label, value in parsed.items():
+                add_row(str(label), "" if value is None else json.dumps(value) if not isinstance(value, str) else value)
+            return
+        for match in re.finditer(
+            r"""["']([A-Za-z_][\w]*)["']\s*:\s*("[^"]*"|'[^']*'|true|false|null|-?\d+(?:\.\d+)?)""",
+            blob,
+        ):
+            add_row(match.group(1), match.group(2).strip("\"'"))
+
+    for block in (part.strip() for part in text.splitlines() if part.strip()):
+        if not precondition and _PRE_PREFIX.match(block):
+            precondition = _PRE_PREFIX.sub("", block).strip()
+            continue
+        if _MDP_PREFIX.match(block):
+            value = _MDP_PREFIX.sub("", block).strip()
+            if value:
+                add_row("MDP", value)
+            continue
+        notes.append(block)
+        for blob in _JSON_OBJECT.findall(block):
+            rows_from_json(blob)
+
+    compact = "\n".join(f"{label} = {value}" for label, value in rows)
+    return precondition, compact, "\n".join(notes)
+
+
 QC_HEADERS = [
     "ID",
     "Nombre",
@@ -32,12 +104,14 @@ QC_HEADERS = [
     "Dispositivo",
     "Fuente dispositivo",
     "Prioridad",
-    "Tipo",
+    "Origen",
     "Tipo de Usuario",
     "Estado",
     "Test Steps",
     "Resultado Esperado",
-    "Datos de Prueba",
+    "Precondición",
+    "Datos de prueba",
+    "Notas técnicas",
     "Requiere Condición",
     "Evidencia",
     "Justificación",
@@ -139,9 +213,10 @@ def build_test_cases_workbook(cases: list[TestCase]) -> bytes:
     _style_header(
         qc,
         QC_HEADERS,
-        [10, 42, 16, 12, 18, 24, 12, 14, 16, 14, 40, 40, 28, 16, 28, 32, 16, 18, 28, 12, 14, 14],
+        [10, 42, 16, 12, 18, 24, 12, 16, 16, 14, 40, 40, 28, 22, 36, 16, 28, 32, 16, 18, 28, 12, 14, 14],
     )
     for row_index, case in enumerate(cases, start=2):
+        precondition, compact_data, notes = split_stored_test_data(case.test_data)
         values = [
             case.test_case_id,
             _display_case_name(case),
@@ -150,12 +225,14 @@ def build_test_cases_workbook(cases: list[TestCase]) -> bytes:
             case.device or "",
             case.device_source or "",
             _enum_value(case.priority),
-            _enum_value(case.test_type),
+            _source_label(case.source_type),
             case.user_type or "",
             _enum_value(case.status),
             _steps_text(case, expected=False),
             _steps_text(case, expected=True),
-            case.test_data or "",
+            precondition,
+            compact_data,
+            notes,
             "Sí" if case.requires_condition else "No",
             case.evidence or "",
             case.justification or "",
