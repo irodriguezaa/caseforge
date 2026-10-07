@@ -1097,10 +1097,10 @@ def test_export_excel_has_qc_and_zephyr_sheets(client, monkeypatch, tmp_path) ->
     qc = workbook["Test Cases"]
     zephyr = workbook["Zephyr"]
     assert qc["A1"].value == "ID"
-    assert qc["H1"].value == "Origen"
-    assert qc["M1"].value == "Precondición"
-    assert qc["N1"].value == "Datos de prueba"
-    assert qc["O1"].value == "Notas técnicas"
+    assert qc["E1"].value == "Origen"
+    assert qc["I1"].value == "Precondición"
+    assert qc["J1"].value == "Datos de prueba"
+    assert "Notas técnicas" not in [qc.cell(1, col).value for col in range(1, qc.max_column + 1)]
     assert zephyr["A1"].value == "Test Case ID"
     assert zephyr["F1"].value == "Step"
     assert zephyr["G1"].value == "Test Step"
