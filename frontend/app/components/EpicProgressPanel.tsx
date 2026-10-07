@@ -58,7 +58,17 @@ export function EpicProgressPanel({ rows }: { rows: EpicProgressRow[] }): React.
                       </td>
                       <td className="num">{row.total}</td>
                       <td className="num">{row.executed}</td>
-                      <td className="num">{row.percent.toFixed(1)}%</td>
+                      <td>
+                        <div className="epic-progress-pct">
+                          <div className="bar-track">
+                            <div
+                              className="bar-fill epic-progress-fill"
+                              style={{ width: `${Math.min(100, Math.max(0, row.percent))}%` }}
+                            />
+                          </div>
+                          <span className="num">{row.percent.toFixed(1)}%</span>
+                        </div>
+                      </td>
                       <td className="num">{row.hours.toFixed(1)}</td>
                     </tr>
                   );
@@ -67,7 +77,17 @@ export function EpicProgressPanel({ rows }: { rows: EpicProgressRow[] }): React.
                   <td><strong>Total</strong></td>
                   <td className="num"><strong>{totals.total}</strong></td>
                   <td className="num"><strong>{totals.executed}</strong></td>
-                  <td className="num"><strong>{totalPercent.toFixed(1)}%</strong></td>
+                  <td>
+                    <div className="epic-progress-pct">
+                      <div className="bar-track">
+                        <div
+                          className="bar-fill epic-progress-fill"
+                          style={{ width: `${Math.min(100, Math.max(0, totalPercent))}%` }}
+                        />
+                      </div>
+                      <span className="num"><strong>{totalPercent.toFixed(1)}%</strong></span>
+                    </div>
+                  </td>
                   <td className="num"><strong>{Math.round(totals.hours * 10) / 10}</strong></td>
                 </tr>
               </tbody>

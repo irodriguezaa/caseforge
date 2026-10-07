@@ -8,6 +8,7 @@ import re
 
 from openpyxl import Workbook
 from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
+from openpyxl.formatting.rule import DataBarRule
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from sqlalchemy.orm import Session, selectinload
@@ -249,27 +250,43 @@ def build_test_cases_workbook(cases: list[TestCase]) -> bytes:
     ordered = sorted(cases, key=lambda case: (primary_epic_key(case).lower(), case.test_case_id or ""))
     avance = workbook.active
     avance.title = "Avance"
-    _style_header(avance, AVANCE_HEADERS, [18, 12, 14, 10, 12])
+    _style_header(avance, AVANCE_HEADERS, [18, 12, 14, 22, 12])
     progress = epic_progress_rows(ordered)
     total_cases = 0
     total_executed = 0
     total_hours = 0.0
+    percent_format = '0.0"%"'
     for row_index, row in enumerate(progress, start=2):
         total_cases += int(row["total"])
         total_executed += int(row["executed"])
         total_hours += float(row["hours"])
-        values = [row["key"], row["total"], row["executed"], f"{row['percent']}%", row["hours"]]
+        values = [row["key"], row["total"], row["executed"], float(row["percent"]), row["hours"]]
         for col, value in enumerate(values, start=1):
             cell = avance.cell(row_index, col, _excel_value(value))
             _style_cell(cell, wrap=False)
+            if col == 4:
+                cell.number_format = percent_format
     if progress:
         total_percent = 0.0 if total_cases == 0 else round(total_executed * 1000 / total_cases) / 10
-        footer = ["Total", total_cases, total_executed, f"{total_percent}%", round(total_hours * 10) / 10]
+        footer = ["Total", total_cases, total_executed, total_percent, round(total_hours * 10) / 10]
         footer_row = len(progress) + 2
         for col, value in enumerate(footer, start=1):
             cell = avance.cell(footer_row, col, _excel_value(value))
             _style_cell(cell, wrap=False)
             cell.font = Font(name="Calibri", size=11, bold=True)
+            if col == 4:
+                cell.number_format = percent_format
+        avance.conditional_formatting.add(
+            f"D2:D{footer_row}",
+            DataBarRule(
+                start_type="num",
+                start_value=0,
+                end_type="num",
+                end_value=100,
+                color="0D8B7D",
+                showValue=True,
+            ),
+        )
 
     qc = workbook.create_sheet("Test Cases")
     _style_header(

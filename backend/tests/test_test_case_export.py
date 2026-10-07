@@ -24,6 +24,21 @@ def _case(**kwargs):
         "status": "UNEXECUTED",
         "estimation_hours": 0.2,
         "test_case_id": "QC-001",
+        "test_case_name": "Caso",
+        "device": None,
+        "priority": "CRITICAL",
+        "test_type": "FUNCTIONAL",
+        "source_type": "functionality",
+        "user_type": None,
+        "test_data": None,
+        "evidence": None,
+        "justification": None,
+        "technical_story": None,
+        "scenario_origin": None,
+        "confidence": None,
+        "complexity": None,
+        "description": None,
+        "steps": [],
     }
     defaults.update(kwargs)
     return SimpleNamespace(**defaults)
@@ -44,3 +59,21 @@ def test_epic_progress_counts_anything_but_unexecuted() -> None:
     assert by_key["ADTCL-1"]["percent"] == 66.7
     assert by_key["ADTCL-2"]["executed"] == 1
     assert by_key["ADTCL-2"]["total"] == 1
+
+
+def test_avance_percent_column_has_data_bars() -> None:
+    import io
+
+    from openpyxl import load_workbook
+
+    from app.services.test_case_export import build_test_cases_workbook
+
+    workbook_bytes = build_test_cases_workbook(
+        [
+            _case(status="PASS", test_case_id="QC-001"),
+            _case(status="UNEXECUTED", test_case_id="QC-002"),
+        ]
+    )
+    avance = load_workbook(io.BytesIO(workbook_bytes))["Avance"]
+    assert avance["D2"].value == 50.0
+    assert avance.conditional_formatting._cf_rules

@@ -361,6 +361,8 @@ button.epic-hours-toggle:hover:not(:disabled) { background: var(--surface-2); }
 .epic-hours-toolbar button { display: inline-flex; align-items: center; gap: 6px; }
 .epic-progress-table { margin-top: 0; }
 .epic-progress-table td.num, .epic-progress-table th.num { font-variant-numeric: tabular-nums; }
+.epic-progress-pct { display: grid; grid-template-columns: 1fr 52px; align-items: center; gap: 8px; min-width: 140px; }
+.epic-progress-fill { background: var(--kpi-teal, var(--accent)); min-width: 0; }
 .bar-track { background: var(--border); border-radius: 4px; height: 8px; overflow: hidden; }
 .bar-fill { height: 100%; border-radius: 4px; min-width: 2px; }
 .bar-row .bar-value { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }

@@ -1100,6 +1100,8 @@ def test_export_excel_has_qc_and_zephyr_sheets(client, monkeypatch, tmp_path) ->
     assert avance["A1"].value == "EPC"
     assert avance["B1"].value == "Casos"
     assert avance["C1"].value == "Ejecutados"
+    assert avance["D1"].value == "%"
+    assert avance.conditional_formatting._cf_rules
     assert qc["A1"].value == "ID"
     assert qc["E1"].value == "Origen"
     assert qc["I1"].value == "Precondición"
