@@ -1,6 +1,6 @@
-"""QC effort from persisted Test Cases: priority minutes × complexity factor.
+"""QC effort from persisted Test Cases: minutes by priority × complexity.
 
-minutes = base(BLOCKER 20 / CRITICAL 12) × factor(BAJA 1.0 / MEDIA 1.5 / ALTA 2.0)
+CRITICAL: BAJA 15 / MEDIA 20 / ALTA 25. BLOCKER: BAJA 20 / MEDIA 30 / ALTA 40.
 
 Complexity is classified from steps, condition and confidence only.
 """
@@ -16,14 +16,10 @@ Complexity = Literal["BAJA", "MEDIA", "ALTA"]
 
 QC_HOURS_PER_DAY = 6.0
 BLOCKER_MINUTES = 20
-CRITICAL_MINUTES = 12
-COMPLEXITY_FACTOR = {
-    "BAJA": 1.0,
-    "LOW": 1.0,
-    "MEDIA": 1.5,
-    "MEDIUM": 1.5,
-    "ALTA": 2.0,
-    "HIGH": 2.0,
+CRITICAL_MINUTES = 15
+QC_CASE_MINUTES = {
+    "CRITICAL": {"BAJA": 15, "LOW": 15, "MEDIA": 20, "MEDIUM": 20, "ALTA": 25, "HIGH": 25},
+    "BLOCKER": {"BAJA": 20, "LOW": 20, "MEDIA": 30, "MEDIUM": 30, "ALTA": 40, "HIGH": 40},
 }
 
 # Retired count formula, kept only so reports can compare old vs new.
@@ -41,7 +37,7 @@ def classify_complexity(candidate: GeneratedCaseCandidate) -> Complexity:
     BAJA: validación básica de 1 paso, o 1 paso con confianza alta.
     MEDIA: condición especial, 2–3 pasos, o confianza media.
     ALTA: 4+ pasos o confianza baja.
-    BLOCKER/CRITICAL no entran aquí; solo fijan la base de minutos (20 vs 12).
+    BLOCKER/CRITICAL no entran aquí; solo eligen la fila de minutos (20 vs 15 en BAJA).
     """
     steps = len(candidate.steps)
     if candidate.basic_validation and steps <= 1 and not candidate.requires_condition:
@@ -63,13 +59,16 @@ def priority_base_minutes(priority: Any) -> int:
     return BLOCKER_MINUTES if _priority_value(priority) == "BLOCKER" else CRITICAL_MINUTES
 
 
-def complexity_factor(complexity: str | None) -> float:
+def _complexity_key(complexity: str | None) -> str:
     key = (complexity or "MEDIA").strip().upper()
-    return COMPLEXITY_FACTOR.get(key, COMPLEXITY_FACTOR["MEDIA"])
+    if key in {"BAJA", "LOW", "MEDIA", "MEDIUM", "ALTA", "HIGH"}:
+        return key
+    return "MEDIA"
 
 
 def estimate_case_minutes(priority: Any, complexity: str | None) -> float:
-    return round(priority_base_minutes(priority) * complexity_factor(complexity), 1)
+    band = QC_CASE_MINUTES["BLOCKER" if _priority_value(priority) == "BLOCKER" else "CRITICAL"]
+    return float(band[_complexity_key(complexity)])
 
 
 def estimate_case_hours(priority: Any, complexity: str | None) -> float:

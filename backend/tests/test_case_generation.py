@@ -1031,9 +1031,9 @@ def test_qc_effort_uses_priority_times_complexity() -> None:
     assert estimate_case_minutes("BLOCKER", "BAJA") == 20.0
     assert estimate_case_minutes("BLOCKER", "MEDIA") == 30.0
     assert estimate_case_minutes("BLOCKER", "ALTA") == 40.0
-    assert estimate_case_minutes("CRITICAL", "BAJA") == 12.0
-    assert estimate_case_minutes("CRITICAL", "MEDIA") == 18.0
-    assert estimate_case_minutes("CRITICAL", "ALTA") == 24.0
+    assert estimate_case_minutes("CRITICAL", "BAJA") == 15.0
+    assert estimate_case_minutes("CRITICAL", "MEDIA") == 20.0
+    assert estimate_case_minutes("CRITICAL", "ALTA") == 25.0
 
     hours, days = estimate_release_from_cases(
         [
@@ -1041,7 +1041,7 @@ def test_qc_effort_uses_priority_times_complexity() -> None:
             {"priority": "BLOCKER", "complexity": "BAJA"},
         ]
     )
-    assert hours == 0.5
+    assert hours == 0.6
     assert days == 0.1
     assert duration_days(2.4, 2) == 1.2
     assert estimate_release_from_cases([]) == (0.0, 0.0)

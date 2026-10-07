@@ -2,14 +2,10 @@
 
 export const QC_HOURS_PER_DAY = 6;
 export const BLOCKER_MINUTES = 20;
-export const CRITICAL_MINUTES = 12;
-export const COMPLEXITY_FACTOR: Record<string, number> = {
-  BAJA: 1.0,
-  LOW: 1.0,
-  MEDIA: 1.5,
-  MEDIUM: 1.5,
-  ALTA: 2.0,
-  HIGH: 2.0,
+export const CRITICAL_MINUTES = 15;
+export const QC_CASE_MINUTES: Record<string, Record<string, number>> = {
+  CRITICAL: { BAJA: 15, LOW: 15, MEDIA: 20, MEDIUM: 20, ALTA: 25, HIGH: 25 },
+  BLOCKER: { BAJA: 20, LOW: 20, MEDIA: 30, MEDIUM: 30, ALTA: 40, HIGH: 40 },
 };
 
 /** Retired count formula, comparison only: (TC / 46) × 3 days. */
@@ -19,7 +15,7 @@ export const QC_RELEASE_EFFORT_FACTOR_LEGACY = 3.0;
 export const QC_OPERATIVA_CASES_PER_DAY = 6;
 
 export const QC_ESTIMATION_TOOLTIP =
-  "Esfuerzo QC = minutos base (BLOCKER 20 / CRITICAL 12) × factor (BAJA 1.0 / MEDIA 1.5 / ALTA 2.0). La complejidad sale de pasos/condición/confianza, no de la prioridad. Días-persona = horas / 6. Duración = días-persona / recursos. La ventana de ejecución es calendario y no entra en esta fórmula.";
+  "Esfuerzo QC en minutos: CRITICAL 15/20/25 y BLOCKER 20/30/40 (BAJA/MEDIA/ALTA). La complejidad sale de pasos/condición/confianza, no de la prioridad. Días-persona = horas / 6. Duración = días-persona / recursos. La ventana de ejecución es calendario y no entra en esta fórmula.";
 
 export const QC_OPERATIVA_ESTIMATION_TOOLTIP =
   "Operativa: 1 tester por dispositivo. Horas = N × (6 h/día ÷ 6 TC/día) = N × 1 h. Días QC = max(casos del dispositivo más cargado) ÷ 6 TC/día (trabajo en paralelo). Filtra un dispositivo para ver tu slice.";
@@ -28,13 +24,17 @@ export function priorityBaseMinutes(priority?: string | null): number {
   return String(priority || "").toUpperCase() === "BLOCKER" ? BLOCKER_MINUTES : CRITICAL_MINUTES;
 }
 
-export function complexityFactor(complexity?: string | null): number {
+function complexityKey(complexity?: string | null): string {
   const key = String(complexity || "MEDIA").trim().toUpperCase();
-  return COMPLEXITY_FACTOR[key] ?? COMPLEXITY_FACTOR.MEDIA;
+  if (key in (QC_CASE_MINUTES.CRITICAL || {})) {
+    return key;
+  }
+  return "MEDIA";
 }
 
 export function estimateCaseMinutes(priority?: string | null, complexity?: string | null): number {
-  return Math.round(priorityBaseMinutes(priority) * complexityFactor(complexity) * 10) / 10;
+  const band = String(priority || "").toUpperCase() === "BLOCKER" ? "BLOCKER" : "CRITICAL";
+  return QC_CASE_MINUTES[band][complexityKey(complexity)];
 }
 
 export function estimateReleaseEffortFromCases(
