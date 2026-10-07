@@ -6,10 +6,10 @@ export const CRITICAL_MINUTES = 12;
 export const COMPLEXITY_FACTOR: Record<string, number> = {
   BAJA: 1.0,
   LOW: 1.0,
-  MEDIA: 1.3,
-  MEDIUM: 1.3,
-  ALTA: 1.6,
-  HIGH: 1.6,
+  MEDIA: 1.5,
+  MEDIUM: 1.5,
+  ALTA: 2.0,
+  HIGH: 2.0,
 };
 
 /** Retired count formula, comparison only: (TC / 46) × 3 days. */
@@ -19,7 +19,7 @@ export const QC_RELEASE_EFFORT_FACTOR_LEGACY = 3.0;
 export const QC_OPERATIVA_CASES_PER_DAY = 6;
 
 export const QC_ESTIMATION_TOOLTIP =
-  "Esfuerzo QC = minutos base (BLOCKER 20 / CRITICAL 12) × factor (BAJA 1.0 / MEDIA 1.3 / ALTA 1.6). La complejidad sale de pasos/condición/confianza, no de la prioridad. Días-persona = horas / 6. Duración = días-persona / recursos. La ventana de ejecución es calendario y no entra en esta fórmula.";
+  "Esfuerzo QC = minutos base (BLOCKER 20 / CRITICAL 12) × factor (BAJA 1.0 / MEDIA 1.5 / ALTA 2.0). La complejidad sale de pasos/condición/confianza, no de la prioridad. Días-persona = horas / 6. Duración = días-persona / recursos. La ventana de ejecución es calendario y no entra en esta fórmula.";
 
 export const QC_OPERATIVA_ESTIMATION_TOOLTIP =
   "Operativa: 1 tester por dispositivo. Horas = N × (6 h/día ÷ 6 TC/día) = N × 1 h. Días QC = max(casos del dispositivo más cargado) ÷ 6 TC/día (trabajo en paralelo). Filtra un dispositivo para ver tu slice.";

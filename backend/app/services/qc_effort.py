@@ -1,8 +1,7 @@
 """QC effort from persisted Test Cases: priority minutes × complexity factor.
 
-minutes = base(BLOCKER 20 / CRITICAL 12) × factor(BAJA 1.0 / MEDIA 1.3 / ALTA 1.6)
+minutes = base(BLOCKER 20 / CRITICAL 12) × factor(BAJA 1.0 / MEDIA 1.5 / ALTA 2.0)
 
-Calibrated to Coship 52: QC executed in ~2–2.5 days vs 4.7 with the previous 25×1.5 floor.
 Complexity is classified from steps, condition and confidence only.
 """
 
@@ -21,10 +20,10 @@ CRITICAL_MINUTES = 12
 COMPLEXITY_FACTOR = {
     "BAJA": 1.0,
     "LOW": 1.0,
-    "MEDIA": 1.3,
-    "MEDIUM": 1.3,
-    "ALTA": 1.6,
-    "HIGH": 1.6,
+    "MEDIA": 1.5,
+    "MEDIUM": 1.5,
+    "ALTA": 2.0,
+    "HIGH": 2.0,
 }
 
 # Retired count formula, kept only so reports can compare old vs new.

@@ -1029,11 +1029,11 @@ def test_qc_effort_uses_priority_times_complexity() -> None:
     )
 
     assert estimate_case_minutes("BLOCKER", "BAJA") == 20.0
-    assert estimate_case_minutes("BLOCKER", "MEDIA") == 26.0
-    assert estimate_case_minutes("BLOCKER", "ALTA") == 32.0
+    assert estimate_case_minutes("BLOCKER", "MEDIA") == 30.0
+    assert estimate_case_minutes("BLOCKER", "ALTA") == 40.0
     assert estimate_case_minutes("CRITICAL", "BAJA") == 12.0
-    assert estimate_case_minutes("CRITICAL", "MEDIA") == 15.6
-    assert estimate_case_minutes("CRITICAL", "ALTA") == 19.2
+    assert estimate_case_minutes("CRITICAL", "MEDIA") == 18.0
+    assert estimate_case_minutes("CRITICAL", "ALTA") == 24.0
 
     hours, days = estimate_release_from_cases(
         [
