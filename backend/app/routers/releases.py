@@ -39,6 +39,7 @@ from app.schemas.release import (
     RnScopeExportRequest,
 )
 from app.services.ai_case_engine import _tickets_by_section, generate_release_app_candidates
+from app.services.generation_jobs import get_job, job_to_response, start_generation
 
 logger = logging.getLogger(__name__)
 from app.services.rn_scope_export import build_rn_scope_workbook
@@ -754,9 +755,13 @@ def generate_cases_from_rn(
     regenerate: bool = Query(default=False),
     chunked: bool = Query(default=False),
     functionality_key: str | None = Query(default=None),
+    background: bool = Query(default=False),
     db: Session = Depends(get_db),
 ) -> GenerateCasesResponse:
     """Generate functional Test Cases: Apps from RN/Jira, Operativas from QC-selected BRFs."""
+    if background and not (functionality_key or "").strip():
+        get_release_or_404(release_id, db)
+        return job_to_response(release_id, start_generation(release_id, regenerate))
     try:
         return _generate_cases_from_rn(
             release_id, regenerate, db, chunked=chunked, functionality_key=functionality_key
@@ -806,7 +811,8 @@ def _generate_cases_from_rn(
         )
 
     existing_engine = engine_cases_for_release(db, release.id)
-    if existing_engine and not regenerate:
+    scoped_chunk = chunked and bool((functionality_key or "").strip())
+    if existing_engine and not regenerate and not scoped_chunk:
         sync_release_rn_epc_identity(db, release.id, analysis)
         db.commit()
         summary = summarize_cases(existing_engine)
@@ -1081,6 +1087,22 @@ def _generate_cases_from_rn(
     proposal.estimation_hours = summary["estimation_hours"]
     proposal.estimation_days = summary["estimation_days"]
     return proposal
+
+
+@router.get("/{release_id}/generate-cases/status", response_model=GenerateCasesResponse)
+def generate_cases_status(release_id: int, db: Session = Depends(get_db)) -> GenerateCasesResponse:
+    get_release_or_404(release_id, db)
+    job = get_job(release_id)
+    if job is None:
+        return GenerateCasesResponse(
+            status="IDLE",
+            message="No hay generación en curso.",
+            release_id=release_id,
+            release_name="",
+            has_analysis=True,
+            engine="background",
+        )
+    return job_to_response(release_id, job)
 
 
 @router.get("/{release_id}/rn-scope/export")

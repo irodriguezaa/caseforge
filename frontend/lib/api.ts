@@ -286,55 +286,35 @@ export const api = {
   },
   createReleaseFromBe: (beReleaseId: number) =>
     request<Release>(`/api/releases-be/${beReleaseId}/create-release`, { method: "POST" }),
-  generateCasesFromRN: async (releaseId: number, regenerate = false) => {
-    const post = (query: string) =>
-      request<GenerateCasesResponse>(`/api/releases/${releaseId}/generate-cases${query}`, {
-        method: "POST",
-      });
+  generateCasesFromRN: async (
+    releaseId: number,
+    regenerate = false,
+    onProgress?: (status: GenerateCasesResponse) => void,
+  ) => {
+    const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
     try {
-      const plan = await post(`?chunked=true${regenerate ? "&regenerate=true" : ""}`);
-      if (plan.status !== "CHUNK_PLAN") {
-        return plan;
+      const started = await request<GenerateCasesResponse>(
+        `/api/releases/${releaseId}/generate-cases?background=true${regenerate ? "&regenerate=true" : ""}`,
+        { method: "POST" },
+      );
+      if (started.status !== "RUNNING") {
+        return started;
       }
-      const keys = plan.functionality_keys ?? [];
-      if (keys.length === 0) {
-        return plan;
-      }
-      let last = plan;
-      const failed: string[] = [];
-      const empty: string[] = [];
-      let persisted = 0;
-      for (const key of keys) {
-        try {
-          last = await post(
-            `?chunked=true&functionality_key=${encodeURIComponent(key)}`,
-          );
-          const n = last.test_case_count ?? 0;
-          persisted += n;
-          if (!last.persisted || n === 0) {
-            empty.push(key);
-          }
-        } catch {
-          failed.push(key);
+      onProgress?.(started);
+      for (let i = 0; i < 240; i += 1) {
+        await sleep(2500);
+        const status = await request<GenerateCasesResponse>(
+          `/api/releases/${releaseId}/generate-cases/status`,
+        );
+        onProgress?.(status);
+        if (status.status === "DONE") {
+          return status;
+        }
+        if (status.status === "ERROR") {
+          throw new ApiRequestError(503, status.message || "Regenerar casos falló en segundo plano.");
         }
       }
-      const ok = keys.length - failed.length;
-      last.test_case_count = persisted;
-      last.message = [
-        `Procesadas ${ok}/${keys.length} funcionalidades del RN.`,
-        `Test Cases persistidos: ${persisted}.`,
-        empty.length ? `Sin casos: ${empty.join(", ")}.` : "",
-        failed.length ? `Error HTTP: ${failed.join(", ")}.` : "",
-      ]
-        .filter(Boolean)
-        .join(" ");
-      if (ok === 0 && failed.length > 0) {
-        throw new ApiRequestError(
-          503,
-          `Ninguna funcionalidad se generó (${failed.join(", ")}). Revisa que el backend esté Healthy.`,
-        );
-      }
-      return last;
+      throw new ApiRequestError(504, "La generación sigue en curso. Recarga la Release en unos minutos.");
     } catch (err) {
       if (err instanceof ApiRequestError && err.status === 504) {
         throw new ApiRequestError(

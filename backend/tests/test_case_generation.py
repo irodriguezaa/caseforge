@@ -1,6 +1,7 @@
 """Release Apps AI candidate generation. Preview only — does not persist TestCase rows."""
 
 import json
+import time
 from dataclasses import replace
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -1164,6 +1165,28 @@ def test_chunked_generate_plans_keys_then_one_functionality(client, monkeypatch,
     assert chunk.json()["persisted"] is True
     after = client.get(f"/api/v1/releases/{release_id}/test-cases").json()
     assert after
+    second = client.post(
+        f"/api/v1/releases/{release_id}/generate-cases?chunked=true&functionality_key=WEBCL-3153"
+    )
+    assert second.status_code == 200
+    assert second.json()["status"] != "ALREADY_GENERATED"
+    assert second.json()["chunk_key"] == "WEBCL-3153"
+
+
+def test_background_generate_reports_done(client, monkeypatch, tmp_path) -> None:
+    release_id, _analysis = _create_app_release_with_rn(client, monkeypatch, tmp_path)
+    started = client.post(f"/api/v1/releases/{release_id}/generate-cases?background=true")
+    assert started.status_code == 200
+    assert started.json()["status"] == "RUNNING"
+    status = started.json()
+    for _ in range(60):
+        time.sleep(0.2)
+        status = client.get(f"/api/v1/releases/{release_id}/generate-cases/status").json()
+        if status["status"] in {"DONE", "ERROR"}:
+            break
+    assert status["status"] == "DONE"
+    listed = client.get(f"/api/v1/releases/{release_id}/test-cases").json()
+    assert listed
 
 
 

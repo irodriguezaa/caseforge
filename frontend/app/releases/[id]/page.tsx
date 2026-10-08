@@ -220,7 +220,9 @@ export default function ReleaseDetailPage(): React.ReactElement {
     }
     setGenerating(true);
     try {
-      const res = await api.generateCasesFromRN(releaseId, regenerate);
+      const res = await api.generateCasesFromRN(releaseId, regenerate, (progress) => {
+        setGenerateResult(progress);
+      });
       setGenerateResult(res);
       load();
     } catch (err) {
