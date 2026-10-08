@@ -37,6 +37,41 @@ nginx_conf_readable() {
   docker exec -u root "$PROXY" chown "${uid}:${gid}" "$NGINX_CONF"
 }
 
+# Recupera default.conf desde el compose host o la imagen. No recreate Django.
+restore_nginx() {
+  if ! docker inspect "$PROXY" >/dev/null 2>&1; then
+    die "No está $PROXY. No se toca Django si el proxy no existe."
+  fi
+  local image wd src tmp
+  image="$(docker inspect -f '{{.Config.Image}}' "$PROXY")"
+  wd="$(docker inspect -f '{{index .Config.Labels "com.docker.compose.project.working_dir"}}' "$PROXY")"
+  tmp="$(mktemp)"
+  echo "proxy image=$image"
+  echo "compose dir=$wd"
+  src=""
+  if [[ -n "$wd" && -d "$wd" ]]; then
+    src="$(find "$wd" -name 'default.conf' -size +0c 2>/dev/null | head -1 || true)"
+  fi
+  if [[ -n "$src" ]]; then
+    echo "Restaurando $NGINX_CONF desde $src"
+    cat "$src" > "$tmp"
+  else
+    echo "Restaurando $NGINX_CONF desde la imagen (sin recreate)"
+    docker run --rm --entrypoint cat "$image" "$NGINX_CONF" > "$tmp"
+  fi
+  if [[ ! -s "$tmp" ]]; then
+    rm -f "$tmp"
+    die "No hay default.conf en el host ni en la imagen. No se tocó Django."
+  fi
+  wc -c "$tmp"
+  docker exec -u root -i "$PROXY" sh -c "cat > '$NGINX_CONF'" < "$tmp"
+  rm -f "$tmp"
+  nginx_conf_readable
+  docker restart "$PROXY"
+  nginx_conf_readable
+  echo "default.conf restaurado. Django compose no se recreó."
+}
+
 reconnect_frontend() {
   if ! docker inspect "$FRONTEND" >/dev/null 2>&1; then
     echo "Aún no existe $FRONTEND; nada que conectar."
@@ -75,13 +110,6 @@ fix_nginx() {
       '/location \^~ \/qcpulse\/ {/a\        client_max_body_size 25m;' \
       "$NGINX_CONF"
   fi
-  # Extraer alcance RN: default nginx 60s → 504. Solo sed; no docker cp / python / pid / HUP 1.
-  docker exec -u root "$PROXY" sed -i \
-    '/^[[:space:]]*proxy_read_timeout 600s;$/d;/^[[:space:]]*proxy_send_timeout 600s;$/d' \
-    "$NGINX_CONF"
-  docker exec -u root "$PROXY" sed -i \
-    's/proxy_read_timeout 300s;\\n[[:space:]]*proxy_send_timeout 300s;/proxy_read_timeout 300s; proxy_send_timeout 300s;/' \
-    "$NGINX_CONF"
   if ! docker exec -u root "$PROXY" grep -q 'proxy_read_timeout 300s' "$NGINX_CONF"; then
     docker exec -u root "$PROXY" sed -i \
       '/location = \/qcpulse {/a\        proxy_read_timeout 300s;' \
@@ -97,15 +125,9 @@ fix_nginx() {
       "$NGINX_CONF"
   fi
   nginx_conf_readable
-  if ! docker exec "$PROXY" nginx -t; then
-    docker exec "$PROXY" nginx -t || true
-    die "nginx -t falló. No se reinicia el proxy. Pasa el conf y docker logs."
-  fi
-  docker exec "$PROXY" nginx -s reload || {
-    docker restart "$PROXY"
-    nginx_conf_readable
-  }
-  echo "nginx: /qcpulse/ → $FRONTEND, proxy timeout 300s. Django no se recreó."
+  docker exec "$PROXY" nginx -t
+  docker exec "$PROXY" nginx -s reload
+  echo "nginx: /qcpulse/ → $FRONTEND. Django no se recreó."
 }
 
 diagnose() {
@@ -143,8 +165,9 @@ usage() {
 Uso: ./scripts/qc4.sh <comando>
 
   up          Build + arranque QCPulse, une la red y corrige nginx /qcpulse/
-  fix-nginx   Reconecta el frontend y arregla Connection/proxy_pass (sin recreate Django)
-  diagnose    SHA, nginx, curls GET/PATCH (solo lectura)
+  fix-nginx     Reconecta el frontend y sed de /qcpulse (sin recreate Django)
+  restore-nginx Restaura default.conf desde compose/imagen y reinicia solo el proxy
+  diagnose      SHA, nginx, curls GET/PATCH (solo lectura)
   stop        Para frontend y backend (Postgres QCPulse sigue arriba)
   start       Arranca frontend y backend y reconecta la red
   restart     Reinicia frontend y backend y reconecta la red
@@ -177,6 +200,10 @@ case "$cmd" in
     ;;
   fix-nginx)
     fix_nginx
+    ;;
+  restore-nginx)
+    restore_nginx
+    reconnect_frontend
     ;;
   diagnose)
     diagnose
