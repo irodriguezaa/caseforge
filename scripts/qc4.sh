@@ -12,6 +12,7 @@ COMPOSE_FILE="docker-compose.qc4.yml"
 ENV_FILE=".env"
 DJANGO_NET="django-nginx-docker-deployment_qc_network"
 FRONTEND="qcpulse-frontend-1"
+BACKEND="qcpulse-backend-1"
 PROXY="django-nginx-docker-deployment_proxy_1"
 NGINX_CONF="/etc/nginx/conf.d/default.conf"
 
@@ -159,22 +160,34 @@ PY
   nginx_conf_readable
 }
 
+connect_to_net() {
+  local container="$1" net="$2" err
+  if err="$(docker network connect "$net" "$container" 2>&1)"; then
+    echo "Red: $container unido a $net"
+    return 0
+  fi
+  if echo "$err" | grep -qiE 'already (exists|attached)|already connected'; then
+    echo "Red: $container ya estaba en $net"
+    return 0
+  fi
+  echo "$err" >&2
+  return 1
+}
+
 reconnect_frontend() {
   if ! docker inspect "$FRONTEND" >/dev/null 2>&1; then
     echo "Aún no existe $FRONTEND; nada que conectar."
     return 0
   fi
-  local err
-  if err="$(docker network connect "$DJANGO_NET" "$FRONTEND" 2>&1)"; then
-    echo "Red: $FRONTEND unido a $DJANGO_NET"
+  connect_to_net "$FRONTEND" "$DJANGO_NET" || return 1
+  if ! docker inspect "$BACKEND" >/dev/null 2>&1; then
     return 0
   fi
-  if echo "$err" | grep -qiE 'already (exists|attached)|already connected'; then
-    echo "Red: $FRONTEND ya estaba en $DJANGO_NET"
-    return 0
-  fi
-  echo "$err" >&2
-  return 1
+  local net
+  while read -r net; do
+    [[ -z "$net" ]] && continue
+    connect_to_net "$FRONTEND" "$net" || true
+  done < <(docker inspect "$BACKEND" --format '{{range $k, $v := .NetworkSettings.Networks}}{{println $k}}{{end}}')
 }
 
 fix_nginx() {
@@ -232,6 +245,10 @@ diagnose() {
   git log -1 --oneline
   echo "==== red frontend ===="
   docker inspect "$FRONTEND" --format '{{json .NetworkSettings.Networks}}' 2>/dev/null || echo "no $FRONTEND"
+  echo "==== red backend ===="
+  docker inspect "$BACKEND" --format '{{json .NetworkSettings.Networks}}' 2>/dev/null || echo "no $BACKEND"
+  echo "==== frontend → backend /health ===="
+  docker exec "$FRONTEND" wget -qO- --timeout=5 http://backend:8000/health 2>&1 || echo "frontend no alcanza backend:8000"
   echo "==== proxy ps/logs ===="
   docker ps -a --filter "name=$PROXY" --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'
   docker logs --tail 20 "$PROXY" 2>&1 || true
