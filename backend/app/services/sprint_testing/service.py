@@ -19,7 +19,12 @@ from app.schemas.sprint_testing import (
 )
 from app.services.jira_client import fetch_raw_issues_by_filter
 from app.services.sprint_testing.catalog import SWFS, SPRINTS, SprintDef, SwfDef, get_sprint, get_swf
-from app.services.sprint_testing.classify import classify_status, is_blocker_priority, is_technical_epic
+from app.services.sprint_testing.classify import (
+    classify_status,
+    is_blocker_priority,
+    is_closed_status,
+    is_technical_epic,
+)
 from app.services.sprint_testing.export import build_executive_pptx, build_issues_workbook
 
 _ISSUE_FIELDS = ["summary", "issuetype", "status", "project"]
@@ -114,6 +119,13 @@ def _status_name(issue: dict[str, Any]) -> str:
     return str((fields.get("status") or {}).get("name") or "")
 
 
+def _status_category_key(issue: dict[str, Any]) -> str | None:
+    fields = issue.get("fields") or {}
+    category = (fields.get("status") or {}).get("statusCategory") or {}
+    key = category.get("key")
+    return str(key) if key else None
+
+
 def _summary(issue: dict[str, Any]) -> str:
     fields = issue.get("fields") or {}
     return str(fields.get("summary") or "").strip()
@@ -192,6 +204,8 @@ def aggregate_execution_issues(
         blocker = 0
         for issue in rows:
             if not is_blocker_priority(_priority_name(issue)):
+                continue
+            if is_closed_status(_status_name(issue), _status_category_key(issue)):
                 continue
             blocker += 1
             blockers.append(

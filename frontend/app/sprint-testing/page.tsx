@@ -224,7 +224,10 @@ export default function SprintTestingPage(): React.ReactElement {
             ) : (
               <>
                 <ExecutionPriorityBars programs={data.execution.programs} />
-                <h3 style={{ margin: "18px 0 8px", fontSize: "13px" }}>Blockers</h3>
+                <h3 style={{ margin: "18px 0 4px", fontSize: "13px" }}>Blockers</h3>
+                <p className="muted" style={{ margin: "0 0 8px", fontSize: "11px" }}>
+                  Solo issues abiertos. No se incluyen Done, Roll Out ni Cancelados.
+                </p>
                 {data.execution.blockers.length === 0 ? (
                   <p className="muted">No hay Blockers para este SWF.</p>
                 ) : (

@@ -2,7 +2,12 @@
 
 from tests.conftest import login_as
 from app.services.sprint_testing.catalog import get_swf
-from app.services.sprint_testing.classify import classify_status, is_blocker_priority, is_technical_epic
+from app.services.sprint_testing.classify import (
+    classify_status,
+    is_blocker_priority,
+    is_closed_status,
+    is_technical_epic,
+)
 from app.services.sprint_testing.service import aggregate_execution_issues, aggregate_issues, build_sprint_testing
 
 
@@ -49,6 +54,17 @@ def test_blocker_priority_aliases() -> None:
     assert is_blocker_priority("Impedimento") is True
     assert is_blocker_priority("Critical") is False
     assert is_blocker_priority("Major") is False
+
+
+def test_closed_status_excludes_done_rollout_canceled() -> None:
+    assert is_closed_status("Done") is True
+    assert is_closed_status("Roll Out") is True
+    assert is_closed_status("Cancelled") is True
+    assert is_closed_status("Canceled") is True
+    assert is_closed_status("Cancelado") is True
+    assert is_closed_status("QA Validation") is False
+    assert is_closed_status("Pending Resolution") is False
+    assert is_closed_status("Released", "done") is True
 
 
 def test_adt_example_graph1_and_graph2() -> None:
@@ -212,6 +228,44 @@ def test_execution_blockers_grouped_by_program_match_bar_counts() -> None:
         "QA Bug",
         "QC Bug",
     ]
+
+
+def test_execution_blockers_omit_done_rollout_and_canceled() -> None:
+    hitss = get_swf("hitss")
+    assert hitss is not None
+
+    def _exec(key: str, status: str, category: str | None = None) -> dict:
+        status_field: dict = {"name": status}
+        if category:
+            status_field["statusCategory"] = {"key": category}
+        return {
+            "key": key,
+            "fields": {
+                "issuetype": {"name": "QC Bug"},
+                "status": status_field,
+                "project": {"key": "ADTCL"},
+                "priority": {"name": "Blocker"},
+                "summary": key,
+            },
+        }
+
+    payload = aggregate_execution_issues(
+        "117704",
+        hitss,
+        [
+            _exec("ADTCL-1", "QA Validation"),
+            _exec("ADTCL-2", "Done"),
+            _exec("ADTCL-3", "Roll Out"),
+            _exec("ADTCL-4", "Cancelled"),
+            _exec("ADTCL-5", "Released", "done"),
+            _exec("ADTCL-6", "Pending Resolution"),
+        ],
+    )
+    adt = next(row for row in payload.programs if row.program_key == "ADTCL")
+    assert adt.total == 6
+    assert adt.blocker == 2
+    assert adt.non_blocker == 4
+    assert [row.key for row in payload.blockers] == ["ADTCL-1", "ADTCL-6"]
 
 
 def test_sprint_46_is_not_actionable(client) -> None:

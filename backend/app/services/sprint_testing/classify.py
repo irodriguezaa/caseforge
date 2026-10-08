@@ -48,6 +48,11 @@ def is_blocker_priority(priority: str | None) -> bool:
     return "blocker" in key or "impedimento" in key or "bloqueador" in key
 
 
+def is_closed_status(status: str | None, category_key: str | None = None) -> bool:
+    bucket, _ = classify_status(status, category_key)
+    return bucket == "closed"
+
+
 def classify_status(status: str | None, category_key: str | None = None) -> tuple[Bucket, str]:
     """Return (bucket, display label). Jira Done category counts as closed."""
     raw = (status or "").strip() or "Sin estado"
