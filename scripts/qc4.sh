@@ -92,6 +92,73 @@ restore_nginx() {
   echo "default.conf restaurado. Django compose no se recreó."
 }
 
+ensure_qcpulse_locations() {
+  if docker exec -u root "$PROXY" grep -q 'qcpulse-frontend-1:3000' "$NGINX_CONF"; then
+    return 0
+  fi
+  local conf_tmp has_map
+  conf_tmp="$(mktemp)"
+  docker exec -u root "$PROXY" cat "$NGINX_CONF" > "$conf_tmp"
+  has_map=0
+  if docker exec -u root "$PROXY" grep -q 'map \$http_upgrade \$connection_upgrade' /etc/nginx/nginx.conf "$NGINX_CONF" 2>/dev/null; then
+    has_map=1
+  fi
+  python3 - "$conf_tmp" "$has_map" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+has_map = sys.argv[2] == "1"
+text = path.read_text()
+if "qcpulse-frontend-1:3000" in text:
+    raise SystemExit(0)
+block = """
+    location = /qcpulse {
+        client_max_body_size 25m;
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_pass http://qcpulse-frontend-1:3000;
+    }
+    location ^~ /qcpulse/ {
+        client_max_body_size 25m;
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_pass http://qcpulse-frontend-1:3000;
+    }
+"""
+idx = text.rfind("}")
+if idx < 0:
+    raise SystemExit("nginx default.conf sin bloque server")
+text = text[:idx] + block + text[idx:]
+if not has_map and "map $http_upgrade $connection_upgrade" not in text:
+    text = (
+        "map $http_upgrade $connection_upgrade {\n"
+        "    default upgrade;\n"
+        "    ''      close;\n"
+        "}\n\n"
+        + text
+    )
+path.write_text(text)
+PY
+  docker exec -u root -i "$PROXY" sh -c "cat > '$NGINX_CONF'" < "$conf_tmp"
+  rm -f "$conf_tmp"
+  nginx_conf_readable
+}
+
 reconnect_frontend() {
   if ! docker inspect "$FRONTEND" >/dev/null 2>&1; then
     echo "Aún no existe $FRONTEND; nada que conectar."
@@ -120,6 +187,7 @@ fix_nginx() {
     restore_nginx
   fi
   nginx_conf_readable
+  ensure_qcpulse_locations
   docker exec -u root "$PROXY" sed -i \
     's|http://caseforge-frontend-1:3000|http://qcpulse-frontend-1:3000|g' \
     "$NGINX_CONF"
