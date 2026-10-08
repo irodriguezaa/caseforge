@@ -52,28 +52,31 @@ fix_nginx() {
     die "No está $PROXY. No se toca Django si el proxy no existe."
   fi
   reconnect_frontend
-  docker exec "$PROXY" sed -i \
+  docker exec -u root "$PROXY" chmod 644 "$NGINX_CONF"
+  docker exec -u root "$PROXY" sed -i \
     's|http://caseforge-frontend-1:3000|http://qcpulse-frontend-1:3000|g' \
     "$NGINX_CONF"
-  docker exec "$PROXY" sed -i \
+  docker exec -u root "$PROXY" sed -i \
     's/proxy_set_header Connection "upgrade";/proxy_set_header Connection $connection_upgrade;/' \
     "$NGINX_CONF"
-  if ! docker exec "$PROXY" grep -q 'client_max_body_size 25m' "$NGINX_CONF"; then
-    docker exec "$PROXY" sed -i \
+  if ! docker exec -u root "$PROXY" grep -q 'client_max_body_size 25m' "$NGINX_CONF"; then
+    docker exec -u root "$PROXY" sed -i \
       '/location = \/qcpulse {/a\        client_max_body_size 25m;' \
       "$NGINX_CONF"
-    docker exec "$PROXY" sed -i \
+    docker exec -u root "$PROXY" sed -i \
       '/location \^~ \/qcpulse\/ {/a\        client_max_body_size 25m;' \
       "$NGINX_CONF"
   fi
   # Extraer alcance RN / generate-cases: el default de nginx (60s) devuelve 504.
   # Quitar inserts 600s duplicados y dejar un solo timeout 300s en /qcpulse.
-  docker exec "$PROXY" sed -i \
+  docker exec -u root "$PROXY" sed -i \
     '/^[[:space:]]*proxy_read_timeout 600s;$/d;/^[[:space:]]*proxy_send_timeout 600s;$/d' \
     "$NGINX_CONF"
+  # docker cp deja default.conf root:root 600; nginx -t corre como nginx y falla (13).
+  docker exec -u root "$PROXY" chmod 644 "$NGINX_CONF"
   local conf_tmp
   conf_tmp="$(mktemp)"
-  docker exec "$PROXY" cat "$NGINX_CONF" > "$conf_tmp"
+  docker exec -u root "$PROXY" cat "$NGINX_CONF" > "$conf_tmp"
   python3 - "$conf_tmp" <<'PY'
 from pathlib import Path
 import re
@@ -97,10 +100,10 @@ patched, n = pattern.subn(patch_block, text)
 if n:
     path.write_text(patched)
 PY
-  docker cp "$conf_tmp" "$PROXY:$NGINX_CONF"
+  docker exec -u root -i "$PROXY" sh -c "cat > '$NGINX_CONF' && chmod 644 '$NGINX_CONF'" < "$conf_tmp"
   rm -f "$conf_tmp"
-  docker exec "$PROXY" nginx -t
-  docker exec "$PROXY" nginx -s reload
+  docker exec -u root "$PROXY" nginx -t
+  docker exec -u root "$PROXY" nginx -s reload
   echo "nginx: /qcpulse/ → $FRONTEND, proxy timeout 300s, reload OK. Django no se recreó."
 }
 
