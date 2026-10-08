@@ -35,6 +35,12 @@ from app.services.executability import apply_executability_gate, STABLE_GENERIC_
 from app.services.jira_generation import fetch_artifacts_for_keys
 from app.services.qc_candidate_rules import apply_qc_rules
 from app.services.release_note_analyzer import iter_rn_ticket_rows
+from app.services.rn_epc_scope import (
+    build_rn_scope_coverage,
+    rn_keys_from_tickets,
+    stamp_candidates,
+    story_to_rn_map,
+)
 from app.services.rn_source_type import stamp_source_types
 
 ENGINE_VERSION = "ai-v4"
@@ -183,8 +189,9 @@ No colapses unidades independientes en un solo caso porque compartan Funcionalid
 No inventes un resultado observable genérico.
 Cada candidato debe conservar test_intent/condition de las unidades en covers:
 precondition, test_data o action deben permitir a QC distinguir ese escenario de
-otro parecido. related_functionality y related_jira DEBEN ser keys de Jira (ej. PROJ-123),
-nunca el summary del Epic/Story.
+otro parecido. related_functionality DEBE ser la key de Funcionalidad del RN (Technical Epic),
+nunca una Technical Story hija. related_jira puede ser la Story usada como evidencia.
+Nunca el summary del Epic/Story.
 """
 
 _METRICS_RE = re.compile(r"\bm[eé]tric|\banalytics\b|\bga4\b|\bfirebase\b|\bmdp\b", re.IGNORECASE)
@@ -418,11 +425,26 @@ def _llm_functionality_keys(
     inventory: list[CoverageUnit],
     artifacts: list[dict[str, Any]] | None = None,
 ) -> set[str]:
-    keys = {tid.strip().upper() for tid, _text in tickets.get("functionality", []) if tid}
+    """RN Funcionalidad keys only. Technical Stories are not EPC identity."""
+    del artifacts
+    keys = set(rn_keys_from_tickets(tickets))
     for unit in inventory:
-        for raw in (unit.jira_key, unit.rn_key):
-            if raw:
-                keys.add(raw.strip().upper())
+        if unit.rn_key:
+            keys.add(unit.rn_key.strip().upper())
+    return keys
+
+
+def _llm_jira_trace_keys(
+    tickets: dict[str, list[tuple[str, str]]],
+    inventory: list[CoverageUnit],
+    artifacts: list[dict[str, Any]] | None = None,
+) -> set[str]:
+    keys = set(_llm_functionality_keys(tickets, inventory, artifacts))
+    for unit in inventory:
+        if unit.jira_key:
+            keys.add(unit.jira_key.strip().upper())
+        if unit.story_key:
+            keys.add(str(unit.story_key).strip().upper())
     for art in artifacts or []:
         if art.get("key"):
             keys.add(str(art["key"]).strip().upper())
@@ -545,6 +567,12 @@ def _keep_llm_functionality_candidates(
     inventory = inventory or []
     artifacts = artifacts or []
     tickets = tickets or {}
+    rn_keys = rn_keys_from_tickets(tickets) or [
+        key for key in allowed_keys if story_to_rn_map(artifacts, list(allowed_keys)).get(key) in {None, key}
+    ]
+    story_map = story_to_rn_map(artifacts, rn_keys)
+    jira_keys = set(allowed_keys) | _llm_jira_trace_keys(tickets, inventory, artifacts)
+    func_keys = set(rn_keys) or {key for key in allowed_keys if story_map.get(key, key) == key}
     summaries = _summary_index(tickets, artifacts, inventory)
     kept: list[GeneratedCaseCandidate] = []
     received = len(candidates)
@@ -563,9 +591,14 @@ def _keep_llm_functionality_candidates(
                 candidate.covers,
             )
             continue
-        func_key, func_how = _resolve_issue_ref(original_func, allowed_keys, summaries)
-        jira_key, jira_how = _resolve_issue_ref(original_jira, allowed_keys, summaries)
+        func_key, func_how = _resolve_issue_ref(original_func, func_keys | set(story_map), summaries)
+        if func_key and func_key in story_map:
+            func_key = story_map[func_key]
+            func_how = "story-remapped-to-rn"
+        jira_key, jira_how = _resolve_issue_ref(original_jira, jira_keys, summaries)
         inferred_rn, inferred_jira = _infer_keys_from_covers(valid_covers, inventory)
+        if inferred_rn is None and inferred_jira and inferred_jira in story_map:
+            inferred_rn = story_map[inferred_jira]
         if original_func and func_how == "unknown-key":
             rejected += 1
             logger.info(
@@ -574,7 +607,7 @@ def _keep_llm_functionality_candidates(
                 original_func[:80],
             )
             continue
-        if original_jira and jira_how == "unknown-key":
+        if original_jira and jira_how == "unknown-key" and inferred_jira is None and inferred_rn is None:
             rejected += 1
             logger.info(
                 "LLM candidate rejected: name=%s reason=unknown-jira-key value=%s",
@@ -582,7 +615,7 @@ def _keep_llm_functionality_candidates(
                 original_jira[:80],
             )
             continue
-        if original_func and func_key is None and inferred_rn is None and inferred_jira is None:
+        if original_func and func_key is None and inferred_rn is None:
             rejected += 1
             logger.info(
                 "LLM candidate rejected: name=%s reason=unresolved-functionality value=%s",
@@ -598,13 +631,17 @@ def _keep_llm_functionality_candidates(
                 (original_jira or "")[:80],
             )
             continue
-        resolved_func = func_key or inferred_rn or inferred_jira
-        resolved_jira = jira_key or inferred_jira or inferred_rn
+        resolved_func = func_key if func_key in func_keys else inferred_rn
+        if resolved_func and resolved_func in story_map:
+            resolved_func = story_map[resolved_func]
+        if resolved_func and resolved_func not in func_keys:
+            resolved_func = inferred_rn if inferred_rn in func_keys else None
+        resolved_jira = jira_key or inferred_jira
         if resolved_func is None and resolved_jira is None:
             rejected += 1
             logger.info("LLM candidate rejected: name=%s reason=no-traceable-key", candidate.name[:120])
             continue
-        if resolved_func and resolved_func not in allowed_keys:
+        if resolved_func and resolved_func not in func_keys:
             rejected += 1
             logger.info(
                 "LLM candidate rejected: name=%s reason=functionality-not-in-release key=%s",
@@ -612,7 +649,7 @@ def _keep_llm_functionality_candidates(
                 resolved_func,
             )
             continue
-        if resolved_jira and resolved_jira not in allowed_keys:
+        if resolved_jira and resolved_jira not in jira_keys:
             rejected += 1
             logger.info(
                 "LLM candidate rejected: name=%s reason=jira-not-in-release key=%s",
@@ -683,8 +720,8 @@ def _from_llm(
             "Cada candidato debe incluir covers con coverage_id. "
             "Agrupa unidades solo si el usuario observa el mismo resultado y la misma validación. "
             "No resumas una Funcionalidad en un solo caso si hay varias unidades independientes. "
-            "related_functionality y related_jira deben ser keys Jira del inventory/tickets, "
-            "no el summary. "
+            "related_functionality debe ser la key de Funcionalidad del RN (Technical Epic), "
+            "nunca una Technical Story hija. related_jira puede ser la Story. "
             "Las únicas fuentes permitidas para generar casos mediante LLM son "
             "coverage_inventory y la evidencia/tickets de FUNCIONALIDAD. "
             "Ignora NCO, TRI, QA Bugs y QC Bugs. "
@@ -748,14 +785,10 @@ def _covered_rn_keys(
         if unit.rn_key:
             covered.add(unit.rn_key.strip().upper())
     for candidate in already:
-        for raw in (
-            candidate.related_functionality or "",
-            candidate.related_jira or "",
-        ):
-            for part in raw.split("|"):
-                key = part.strip().upper()
-                if key:
-                    covered.add(key)
+        for part in (candidate.related_functionality or "").split("|"):
+            key = part.strip().upper()
+            if key:
+                covered.add(key)
     return covered
 
 
@@ -852,7 +885,7 @@ def generate_release_app_candidates(
                 if tid.upper() in allowed
             ],
         }
-    functionality_keys = [tid for tid, _text in parsed_tickets.get("functionality", [])]
+    functionality_keys = rn_keys_from_tickets(parsed_tickets)
     jira_artifacts = fetch_artifacts_for_keys(functionality_keys) if functionality_keys else []
     stats = GenerationStats()
     inventory = build_coverage_inventory(jira_artifacts, rn_filename or "", stats=stats)
@@ -946,6 +979,7 @@ def generate_release_app_candidates(
     else:
         candidates = []
 
+    candidates = stamp_candidates(candidates, functionality_keys, jira_artifacts)
     candidates = _merge_last_resort(
         pdf_bytes,
         rn_filename or "",
@@ -962,7 +996,15 @@ def generate_release_app_candidates(
     candidates = apply_qc_rules(candidates, release_context=release_context, stats=stats)
     candidates = apply_executability_gate(candidates, inventory)
     stamp_source_types(candidates)
+    candidates = stamp_candidates(candidates, functionality_keys, jira_artifacts)
     covered = sorted(_covered_ids(candidates))
+    coverage = build_rn_scope_coverage(
+        rn_keys=functionality_keys,
+        artifacts=jira_artifacts,
+        inventory=inventory,
+        covered_ids=covered,
+        candidates=candidates,
+    )
     required = [unit.coverage_id for unit in inventory]
     uncovered = [cid for cid in required if cid not in set(covered)]
     message = (
@@ -991,4 +1033,5 @@ def generate_release_app_candidates(
         coverage_unit_count=len(inventory),
         covered_coverage_ids=covered,
         uncovered_coverage_ids=uncovered,
+        rn_scope_coverage=coverage,
     )

@@ -67,12 +67,110 @@ export function primaryEpicKey(row: {
   return raw.split("|")[0]?.trim() || "Sin EPC";
 }
 
+export type EpicCoverageStatus = "sin_casos" | "sin_gherkin" | "parcial" | "cubierta";
+
+export type RnScopeCoverage = {
+  epics?: Array<{
+    rn_key?: string;
+    stories?: string[];
+    coverage_units?: string[];
+    covered_units?: string[];
+    pending_units?: string[];
+    test_cases?: number;
+    estado?: string;
+  }>;
+  story_to_epic?: Record<string, string>;
+};
+
+export function rnScopeEpicKeys(analysis?: { raw_analysis?: Record<string, unknown> | null } | null): string[] {
+  const raw = analysis?.raw_analysis;
+  const normalized = raw && typeof raw === "object" ? (raw as { normalized?: { technical_epics?: Array<{ id?: string }> } }).normalized : undefined;
+  const epics = normalized?.technical_epics;
+  if (!Array.isArray(epics)) {
+    return [];
+  }
+  const keys: string[] = [];
+  for (const item of epics) {
+    const id = String(item?.id || "").trim().toUpperCase();
+    if (id && !keys.includes(id)) {
+      keys.push(id);
+    }
+  }
+  return keys;
+}
+
+export function rnScopeCoverage(analysis?: { raw_analysis?: Record<string, unknown> | null } | null): RnScopeCoverage | null {
+  const raw = analysis?.raw_analysis;
+  const coverage = raw && typeof raw === "object" ? (raw as { rn_scope_coverage?: RnScopeCoverage }).rn_scope_coverage : undefined;
+  return coverage && typeof coverage === "object" ? coverage : null;
+}
+
+function splitKeys(raw?: string | null): string[] {
+  return String(raw || "")
+    .split("|")
+    .map((part) => part.trim().toUpperCase())
+    .filter(Boolean);
+}
+
+function resolveRnEpic(
+  raw: string | null | undefined,
+  scopeKeys: string[],
+  storyToEpic: Record<string, string>,
+): string | null {
+  const allowed = new Set(scopeKeys);
+  for (const part of splitKeys(raw)) {
+    if (allowed.has(part)) {
+      return part;
+    }
+    const parent = (storyToEpic[part] || "").toUpperCase();
+    if (parent && allowed.has(parent)) {
+      return parent;
+    }
+  }
+  return null;
+}
+
+function assignCaseToScope(
+  row: {
+    component?: string | null;
+    hn_source?: string | null;
+    technical_epic?: string | null;
+    technical_story?: string | null;
+  },
+  scopeKeys: string[],
+  storyToEpic: Record<string, string>,
+): string | null {
+  return (
+    resolveRnEpic(row.technical_epic, scopeKeys, storyToEpic) ||
+    resolveRnEpic(row.component, scopeKeys, storyToEpic) ||
+    resolveRnEpic(row.hn_source, scopeKeys, storyToEpic) ||
+    resolveRnEpic(row.technical_story, scopeKeys, storyToEpic)
+  );
+}
+
+export function coverageStatus(agTotal: number, agCovered: number, tcCount: number): EpicCoverageStatus {
+  const pending = Math.max(0, agTotal - agCovered);
+  if (tcCount <= 0 && agTotal <= 0) {
+    return "sin_gherkin";
+  }
+  if (tcCount <= 0) {
+    return "sin_casos";
+  }
+  if (pending > 0) {
+    return "parcial";
+  }
+  return "cubierta";
+}
+
 export type EpicProgressRow = {
   key: string;
   total: number;
   executed: number;
   percent: number;
   hours: number;
+  estado?: EpicCoverageStatus;
+  stories?: string[];
+  orphan?: boolean;
 };
 
 function caseHours(row: {
@@ -86,17 +184,87 @@ function caseHours(row: {
   return estimateCaseMinutes(row.priority, row.complexity) / 60;
 }
 
+type EffortCase = {
+  component?: string | null;
+  hn_source?: string | null;
+  technical_epic?: string | null;
+  technical_story?: string | null;
+  status?: string | null;
+  priority?: string | null;
+  complexity?: string | null;
+  estimation_hours?: number | null;
+};
+
 export function progressByTechnicalEpic(
-  cases: Array<{
-    component?: string | null;
-    hn_source?: string | null;
-    technical_epic?: string | null;
-    status?: string | null;
-    priority?: string | null;
-    complexity?: string | null;
-    estimation_hours?: number | null;
-  }>,
+  cases: EffortCase[],
+  scopeKeys: string[] = [],
+  coverage: RnScopeCoverage | null = null,
 ): EpicProgressRow[] {
+  if (scopeKeys.length) {
+    const storyToEpic: Record<string, string> = {};
+    for (const [story, epic] of Object.entries(coverage?.story_to_epic || {})) {
+      storyToEpic[story.toUpperCase()] = epic.toUpperCase();
+    }
+    const snap = new Map<string, NonNullable<RnScopeCoverage["epics"]>[number]>();
+    for (const row of coverage?.epics || []) {
+      if (row.rn_key) {
+        snap.set(row.rn_key.toUpperCase(), row);
+      }
+    }
+    const grouped = new Map<string, { total: number; executed: number; hours: number }>();
+    for (const key of scopeKeys) {
+      grouped.set(key, { total: 0, executed: 0, hours: 0 });
+    }
+    let orphans = { total: 0, executed: 0, hours: 0 };
+    for (const row of cases) {
+      const key = assignCaseToScope(row, scopeKeys, storyToEpic);
+      const hours = caseHours(row);
+      const executed = String(row.status || "").toUpperCase() !== "UNEXECUTED";
+      if (!key) {
+        orphans = {
+          total: orphans.total + 1,
+          executed: orphans.executed + (executed ? 1 : 0),
+          hours: orphans.hours + hours,
+        };
+        continue;
+      }
+      const current = grouped.get(key) || { total: 0, executed: 0, hours: 0 };
+      current.total += 1;
+      if (executed) {
+        current.executed += 1;
+      }
+      current.hours += hours;
+      grouped.set(key, current);
+    }
+    const rows: EpicProgressRow[] = scopeKeys.map((key) => {
+      const stats = grouped.get(key) || { total: 0, executed: 0, hours: 0 };
+      const meta = snap.get(key);
+      const agTotal = (meta?.coverage_units || []).length;
+      const agCovered = (meta?.covered_units || []).length;
+      return {
+        key,
+        total: stats.total,
+        executed: stats.executed,
+        percent: stats.total === 0 ? 0 : Math.round((stats.executed * 1000) / stats.total) / 10,
+        hours: Math.round(stats.hours * 10) / 10,
+        stories: meta?.stories || [],
+        estado: coverageStatus(agTotal, agCovered, stats.total),
+        orphan: false,
+      };
+    });
+    if (orphans.total) {
+      rows.push({
+        key: "Sin EPC",
+        total: orphans.total,
+        executed: orphans.executed,
+        percent: orphans.total === 0 ? 0 : Math.round((orphans.executed * 1000) / orphans.total) / 10,
+        hours: Math.round(orphans.hours * 10) / 10,
+        estado: "parcial",
+        orphan: true,
+      });
+    }
+    return rows;
+  }
   const grouped = new Map<string, { total: number; executed: number; hours: number }>();
   for (const row of cases) {
     const key = primaryEpicKey(row);
@@ -120,26 +288,13 @@ export function progressByTechnicalEpic(
 }
 
 export function hoursByTechnicalEpic(
-  cases: Array<{
-    component?: string | null;
-    hn_source?: string | null;
-    technical_epic?: string | null;
-    priority?: string | null;
-    complexity?: string | null;
-    estimation_hours?: number | null;
-  }>,
+  cases: EffortCase[],
+  scopeKeys: string[] = [],
+  coverage: RnScopeCoverage | null = null,
 ): { label: string; value: number }[] {
-  const grouped = new Map<string, number>();
-  for (const row of cases) {
-    const key = primaryEpicKey(row);
-    grouped.set(key, (grouped.get(key) || 0) + caseHours(row));
-  }
-  return [...grouped.entries()]
-    .map(([key, hours]) => ({
-      label: key,
-      value: Math.round(hours * 10) / 10,
-    }))
-    .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label, "es"));
+  return progressByTechnicalEpic(cases, scopeKeys, coverage)
+    .filter((row) => !row.orphan)
+    .map((row) => ({ label: row.key, value: row.hours }));
 }
 
 export function estimateReleaseEffortLegacyCount(testCaseCount: number): { hours: number; days: number } {

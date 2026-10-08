@@ -10,11 +10,18 @@ from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.models.test_case import TestCase, TestCasePriority, TestCaseStatus, TestCaseType
 from app.models.test_step import TestStep
 from app.schemas.case_generation import GeneratedCaseCandidate
 from app.services.qc_effort import classify_complexity, estimate_case_hours, estimate_release_from_cases
+from app.services.rn_epc_scope import (
+    merge_coverage_into_raw_analysis,
+    remap_case_fields,
+    rn_keys_from_normalized,
+    story_to_rn_map,
+)
 
 _ID_NUMBER = re.compile(r"^(?:QC|TC)-(\d+)$", re.IGNORECASE)
 
@@ -184,3 +191,76 @@ def persist_candidates(
         created.append(test_case)
     db.flush()
     return created
+
+
+def remap_persisted_epics(
+    cases: list[TestCase],
+    rn_keys: list[str],
+    story_map: dict[str, str],
+) -> int:
+    """Move Story-as-EPC rows onto the RN parent. No-op when parent is not in RN scope."""
+    changed = 0
+    for row in cases:
+        update = remap_case_fields(
+            technical_epic=row.technical_epic,
+            technical_story=row.technical_story,
+            component=row.component,
+            rn_keys=rn_keys,
+            story_map=story_map,
+            justification=row.justification,
+        )
+        if not update:
+            continue
+        row.technical_epic = update["technical_epic"]
+        row.technical_story = update["technical_story"]
+        if update.get("component"):
+            row.component = update["component"]
+        row.justification = update.get("justification")
+        changed += 1
+    return changed
+
+
+def sync_release_rn_epc_identity(
+    db: Session,
+    release_id: int,
+    analysis: Any,
+    coverage: dict[str, Any] | None = None,
+    *,
+    fetch_missing_map: bool = True,
+) -> int:
+    """Persist RN coverage snapshot and remap Story-as-EPC rows. Does not drop RN keys."""
+    from app.services.jira_generation import fetch_artifacts_for_keys
+
+    raw = analysis.raw_analysis if analysis is not None else None
+    rn_keys = rn_keys_from_normalized(raw)
+    stored = None
+    if isinstance(raw, dict) and isinstance(raw.get("rn_scope_coverage"), dict):
+        stored = raw["rn_scope_coverage"]
+    payload = coverage or stored
+    story_map: dict[str, str] = {}
+    if isinstance(payload, dict):
+        story_map = {
+            str(key).strip().upper(): str(value).strip().upper()
+            for key, value in (payload.get("story_to_epic") or {}).items()
+            if key and value
+        }
+    if analysis is not None and coverage:
+        analysis.raw_analysis = merge_coverage_into_raw_analysis(raw, coverage)
+        flag_modified(analysis, "raw_analysis")
+        story_map = {
+            str(key).strip().upper(): str(value).strip().upper()
+            for key, value in (coverage.get("story_to_epic") or {}).items()
+            if key and value
+        }
+        if coverage.get("epics"):
+            rn_keys = rn_keys or [str(row.get("rn_key") or "").strip().upper() for row in coverage["epics"] if row.get("rn_key")]
+    if rn_keys and not story_map and fetch_missing_map:
+        artifacts = fetch_artifacts_for_keys(rn_keys)
+        story_map = story_to_rn_map(artifacts, rn_keys)
+        if analysis is not None:
+            existing = dict(payload) if isinstance(payload, dict) else {}
+            existing["story_to_epic"] = story_map
+            analysis.raw_analysis = merge_coverage_into_raw_analysis(raw, existing)
+            flag_modified(analysis, "raw_analysis")
+    cases = list(db.execute(select(TestCase).where(TestCase.release_id == release_id)).scalars().all())
+    return remap_persisted_epics(cases, rn_keys, story_map)

@@ -49,7 +49,9 @@ from app.services.case_persistence import (
     engine_cases_for_release,
     persist_candidates,
     summarize_cases,
+    sync_release_rn_epc_identity,
 )
+from app.services.rn_epc_scope import rn_keys_from_normalized
 from app.services.operativa_engine import ENGINE_VERSION as OPERATIVA_ENGINE, generate_operativa_from_matrix
 from app.services.operativa_engine.coverage_matrix import build_coverage_matrix
 from app.services.operativa_engine.matrix_expand import expand_matrix_preview
@@ -753,6 +755,8 @@ def generate_cases_from_rn(
 
     existing_engine = engine_cases_for_release(db, release.id)
     if existing_engine and not regenerate:
+        sync_release_rn_epc_identity(db, release.id, analysis)
+        db.commit()
         summary = summarize_cases(existing_engine)
         return GenerateCasesResponse(
             status="ALREADY_GENERATED",
@@ -934,6 +938,7 @@ def generate_cases_from_rn(
         persisted_rows = persist_candidates(
             db, release.id, release.platform or "General", proposal.candidates
         )
+    sync_release_rn_epc_identity(db, release.id, analysis, proposal.rn_scope_coverage)
     db.commit()
     for row in persisted_rows:
         db.refresh(row)
@@ -984,8 +989,17 @@ def export_release_test_cases(release_id: int, db: Session = Depends(get_db)) ->
     """Excel with QC sheet + Zephyr-flat sheet from persisted Test Cases."""
     release = get_release_or_404(release_id, db)
     cases = load_release_cases(db, release.id)
+    analysis = _latest_analysis(db, release.id)
+    if analysis is not None:
+        sync_release_rn_epc_identity(db, release.id, analysis, fetch_missing_map=False)
+        db.commit()
+        cases = load_release_cases(db, release.id)
+    scope_keys = rn_keys_from_normalized(analysis.raw_analysis if analysis is not None else None)
+    coverage = None
+    if analysis is not None and isinstance(analysis.raw_analysis, dict):
+        coverage = analysis.raw_analysis.get("rn_scope_coverage")
     try:
-        payload = build_test_cases_workbook(cases)
+        payload = build_test_cases_workbook(cases, scope_keys=scope_keys, coverage=coverage)
     except Exception as exc:
         raise HTTPException(
             status.HTTP_500_INTERNAL_SERVER_ERROR,

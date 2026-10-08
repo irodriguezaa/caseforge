@@ -18,7 +18,7 @@ import { useAuth } from "@/lib/auth";
 import { BE_REGRESIVO_SCOPE_LABEL, OPERATIVA_DEVICE_OPTIONS, SHOW_QCO_ZEPHYR_PUBLISH, VALIDATION_TYPE_OPTIONS } from "@/lib/constants";
 import { calculateBusinessDays } from "@/lib/dateUtils";
 import { nextTestCaseId } from "@/lib/testCaseId";
-import { QC_ESTIMATION_TOOLTIP, QC_OPERATIVA_ESTIMATION_TOOLTIP, durationDays, estimateOperativaEffort, estimateReleaseEffortFromCases, estimateReleaseEffortLegacyCount, hoursByTechnicalEpic, progressByTechnicalEpic, stripDeviceFromCaseName } from "@/lib/qcEffort";
+import { QC_ESTIMATION_TOOLTIP, QC_OPERATIVA_ESTIMATION_TOOLTIP, durationDays, estimateOperativaEffort, estimateReleaseEffortFromCases, estimateReleaseEffortLegacyCount, hoursByTechnicalEpic, progressByTechnicalEpic, rnScopeCoverage, rnScopeEpicKeys, stripDeviceFromCaseName } from "@/lib/qcEffort";
 import type { CoverageMatrixResponse, EpcRead, GenerateCasesResponse, PublishCasesResponse, Release, ReleaseAnalysis, ReleaseStatus, TestCase } from "@/lib/types";
 import { formatRnSourceType } from "@/lib/types";
 
@@ -328,8 +328,16 @@ export default function ReleaseDetailPage(): React.ReactElement {
     }
     return testCases.filter((row) => (row.device || "").trim() === deviceFilter);
   }, [testCases, deviceFilter]);
-  const epicHours = useMemo(() => hoursByTechnicalEpic(visibleCases), [visibleCases]);
-  const epicProgress = useMemo(() => progressByTechnicalEpic(visibleCases), [visibleCases]);
+  const rnEpicKeys = useMemo(() => rnScopeEpicKeys(analysis), [analysis]);
+  const rnCoverage = useMemo(() => rnScopeCoverage(analysis), [analysis]);
+  const epicHours = useMemo(
+    () => hoursByTechnicalEpic(visibleCases, rnEpicKeys, rnCoverage),
+    [visibleCases, rnEpicKeys, rnCoverage],
+  );
+  const epicProgress = useMemo(
+    () => progressByTechnicalEpic(visibleCases, rnEpicKeys, rnCoverage),
+    [visibleCases, rnEpicKeys, rnCoverage],
+  );
 
   if (loadError) {
     return (

@@ -14,7 +14,9 @@ from sqlalchemy.orm import Session, selectinload
 from app.db import get_db
 from app.models.test_case import TestCase, TestCasePriority, TestCaseStatus
 from app.models.test_step import TestStep
+from app.models.release_analysis import ReleaseAnalysis
 from app.routers.common import get_release_or_404, get_test_case_or_404
+from app.services.case_persistence import sync_release_rn_epc_identity
 from app.services.operativa_engine.devices import ecosystem_of
 from app.schemas.test_case import (
     BulkCreateError,
@@ -46,6 +48,18 @@ def list_test_cases(
     db: Session = Depends(get_db),
 ) -> list[TestCase]:
     get_release_or_404(release_id, db)
+    analysis = (
+        db.execute(
+            select(ReleaseAnalysis)
+            .where(ReleaseAnalysis.release_id == release_id)
+            .order_by(ReleaseAnalysis.created_at.desc())
+        )
+        .scalars()
+        .first()
+    )
+    if analysis is not None:
+        if sync_release_rn_epc_identity(db, release_id, analysis, fetch_missing_map=False):
+            db.commit()
     stmt = select(TestCase).where(TestCase.release_id == release_id)
     if status_filter is not None:
         stmt = stmt.where(TestCase.status == status_filter)

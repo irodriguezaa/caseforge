@@ -3,7 +3,7 @@
 These are preview-only: they are not TestCase/TestStep rows. QC reviews them before any persist.
 """
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -152,6 +152,7 @@ class GenerateCasesResponse(BaseModel):
     coverage_unit_count: int = 0
     covered_coverage_ids: list[str] = Field(default_factory=list)
     uncovered_coverage_ids: list[str] = Field(default_factory=list)
+    rn_scope_coverage: dict[str, Any] | None = None
     brfs_analyzed: int = 0
     device_review_count: int = 0
     possible_duplicate_count: int = 0

@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session, selectinload
 from sqlalchemy import select
 
 from app.models.test_case import TestCase
+from app.services.rn_epc_scope import left_join_epic_progress
 
 
 def _display_case_name(case: TestCase) -> str:
@@ -112,7 +113,23 @@ def _is_executed(case: TestCase) -> bool:
     return _enum_value(case.status) != "UNEXECUTED"
 
 
-def epic_progress_rows(cases: list[TestCase]) -> list[dict[str, object]]:
+def epic_progress_rows(
+    cases: list[TestCase],
+    scope_keys: list[str] | None = None,
+    coverage: dict | None = None,
+) -> list[dict[str, object]]:
+    if scope_keys:
+        story_map = {}
+        if isinstance(coverage, dict):
+            story_map = dict(coverage.get("story_to_epic") or {})
+        return left_join_epic_progress(
+            rn_keys=scope_keys,
+            cases=cases,
+            story_map=story_map,
+            coverage=coverage,
+            hours_of=_case_hours,
+            is_executed=_is_executed,
+        )
     grouped: dict[str, dict[str, float]] = {}
     for case in cases:
         key = primary_epic_key(case)
@@ -139,7 +156,7 @@ def epic_progress_rows(cases: list[TestCase]) -> list[dict[str, object]]:
     return out
 
 
-AVANCE_HEADERS = ["EPC", "Casos", "Ejecutados", "%", "Horas"]
+AVANCE_HEADERS = ["EPC", "Casos", "Ejecutados", "%", "Horas", "Estado"]
 
 QC_HEADERS = [
     "ID",
@@ -245,13 +262,17 @@ def load_release_cases(db: Session, release_id: int) -> list[TestCase]:
     return list(db.execute(stmt).scalars().all())
 
 
-def build_test_cases_workbook(cases: list[TestCase]) -> bytes:
+def build_test_cases_workbook(
+    cases: list[TestCase],
+    scope_keys: list[str] | None = None,
+    coverage: dict | None = None,
+) -> bytes:
     workbook = Workbook()
     ordered = sorted(cases, key=lambda case: (primary_epic_key(case).lower(), case.test_case_id or ""))
     avance = workbook.active
     avance.title = "Avance"
-    _style_header(avance, AVANCE_HEADERS, [18, 12, 14, 22, 12])
-    progress = epic_progress_rows(ordered)
+    _style_header(avance, AVANCE_HEADERS, [18, 12, 14, 22, 12, 16])
+    progress = epic_progress_rows(ordered, scope_keys=scope_keys, coverage=coverage)
     total_cases = 0
     total_executed = 0
     total_hours = 0.0
@@ -260,7 +281,14 @@ def build_test_cases_workbook(cases: list[TestCase]) -> bytes:
         total_cases += int(row["total"])
         total_executed += int(row["executed"])
         total_hours += float(row["hours"])
-        values = [row["key"], row["total"], row["executed"], float(row["percent"]), row["hours"]]
+        values = [
+            row["key"],
+            row["total"],
+            row["executed"],
+            float(row["percent"]),
+            row["hours"],
+            row.get("estado") or "",
+        ]
         for col, value in enumerate(values, start=1):
             cell = avance.cell(row_index, col, _excel_value(value))
             _style_cell(cell, wrap=False)
@@ -268,7 +296,7 @@ def build_test_cases_workbook(cases: list[TestCase]) -> bytes:
                 cell.number_format = percent_format
     if progress:
         total_percent = 0.0 if total_cases == 0 else round(total_executed * 1000 / total_cases) / 10
-        footer = ["Total", total_cases, total_executed, total_percent, round(total_hours * 10) / 10]
+        footer = ["Total", total_cases, total_executed, total_percent, round(total_hours * 10) / 10, ""]
         footer_row = len(progress) + 2
         for col, value in enumerate(footer, start=1):
             cell = avance.cell(footer_row, col, _excel_value(value))

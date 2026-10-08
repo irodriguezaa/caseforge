@@ -40,6 +40,7 @@ export function EpicProgressPanel({ rows }: { rows: EpicProgressRow[] }): React.
                   <th className="num">Ejecutados</th>
                   <th className="num">%</th>
                   <th className="num">Horas</th>
+                  <th>Estado</th>
                 </tr>
               </thead>
               <tbody>
@@ -70,6 +71,7 @@ export function EpicProgressPanel({ rows }: { rows: EpicProgressRow[] }): React.
                         </div>
                       </td>
                       <td className="num">{row.hours.toFixed(1)}</td>
+                      <td>{row.orphan ? "huérfano" : row.estado || "—"}</td>
                     </tr>
                   );
                 })}
@@ -89,6 +91,7 @@ export function EpicProgressPanel({ rows }: { rows: EpicProgressRow[] }): React.
                     </div>
                   </td>
                   <td className="num"><strong>{Math.round(totals.hours * 10) / 10}</strong></td>
+                  <td />
                 </tr>
               </tbody>
             </table>
