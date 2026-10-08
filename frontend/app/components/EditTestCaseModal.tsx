@@ -207,7 +207,7 @@ export function EditTestCaseModal({
                     />
                   </div>
                   <div className="form-field">
-                    <label>Ticket</label>
+                    <label>Ticket (Ingresar el QCO o QC Bug asociado)</label>
                     <input
                       placeholder="KEY-123"
                       value={step.jira_ticket}

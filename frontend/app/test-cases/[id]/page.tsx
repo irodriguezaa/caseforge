@@ -261,7 +261,7 @@ export default function TestCaseDetailPage(): React.ReactElement {
               />
             </div>
             <div className="form-field">
-              <label htmlFor="jira_ticket">Ticket</label>
+              <label htmlFor="jira_ticket">Ticket (Ingresar el QCO o QC Bug asociado)</label>
               <input
                 id="jira_ticket"
                 placeholder="WEBCL-123"
@@ -306,7 +306,7 @@ function StepTicketField({
   return (
     <div style={{ marginTop: "8px" }}>
       <label htmlFor={`step-ticket-${step.id}`} style={{ display: "block", fontSize: "11px", marginBottom: "4px" }}>
-        Ticket
+        Ticket (Ingresar el QCO o QC Bug asociado)
       </label>
       {canEdit ? (
         <input
