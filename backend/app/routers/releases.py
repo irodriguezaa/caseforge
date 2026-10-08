@@ -28,6 +28,7 @@ from app.schemas.coverage_matrix import CoverageMatrixResponse
 from app.schemas.matrix_preview import MatrixPreviewResponse
 from app.schemas.publication import PublicationRecordRead, PublishCasesResponse
 from app.schemas.release import (
+    AnalyzeEpcsRequest,
     ReleaseAnalysisRead,
     ReleaseCreate,
     ReleaseNoteAnalyzeResponse,
@@ -50,6 +51,11 @@ from app.services.case_persistence import (
     persist_candidates,
     summarize_cases,
     sync_release_rn_epc_identity,
+)
+from app.services.epc_paste import (
+    analyze_pasted_epcs,
+    is_pasted_epcs_analysis,
+    tickets_from_normalized_technical_epics,
 )
 from app.services.rn_epc_scope import rn_keys_from_normalized
 from app.services.operativa_engine import ENGINE_VERSION as OPERATIVA_ENGINE, generate_operativa_from_matrix
@@ -219,6 +225,22 @@ async def analyze_release_note(
     if stored:
         extracted = extracted.model_copy(update={"pdf_file_path": stored})
 
+    return ReleaseNoteAnalyzeResponse(
+        analysis=extracted,
+        calculated_business_days=0,
+    )
+
+
+@router.post("/analyze-epcs", response_model=ReleaseNoteAnalyzeResponse)
+def analyze_pasted_technical_epics(body: AnalyzeEpcsRequest) -> ReleaseNoteAnalyzeResponse:
+    """Second Paso 1 input: pasted Technical Epic keys. Same analysis shape as analyze-rn."""
+    text = (body.text or "").strip()
+    if not text:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail="Pega al menos una Technical Epic key.",
+        )
+    extracted = analyze_pasted_epcs(text)
     return ReleaseNoteAnalyzeResponse(
         analysis=extracted,
         calculated_business_days=0,
@@ -777,7 +799,13 @@ def generate_cases_from_rn(
             estimation_days=summary["estimation_days"],
         )
 
-    pdf_bytes = read_release_note_pdf(analysis.pdf_file_path)
+    pasted = is_pasted_epcs_analysis(analysis.raw_analysis)
+    pdf_bytes = None if pasted else read_release_note_pdf(analysis.pdf_file_path)
+    tickets_override = (
+        tickets_from_normalized_technical_epics(analysis.raw_analysis)
+        if pasted or not pdf_bytes
+        else None
+    )
     parent = release.parent
     declared_origin_id = release.parent_release_id
     declared_origin_name = f"{parent.name} v{parent.version}" if parent else None
@@ -817,6 +845,7 @@ def generate_cases_from_rn(
             validation_type=release.validation_type,
             rn_filename=analysis.pdf_filename,
             pdf_bytes=pdf_bytes,
+            tickets=tickets_override,
             origin_release_id=release.parent_release_id,
             origin_release_name=(
                 f"{origin.name} v{origin.version}" if origin else f"Release {release.parent_release_id}"
@@ -848,9 +877,14 @@ def generate_cases_from_rn(
                 pdf_bytes=pdf_bytes,
                 release_context=context,
                 existing_cases=existing_reference,
+                tickets=tickets_override,
             )
         else:
-            tickets = _tickets_by_section(pdf_bytes) if pdf_bytes else {}
+            tickets = (
+                tickets_override
+                if tickets_override is not None
+                else (_tickets_by_section(pdf_bytes) if pdf_bytes else {})
+            )
             plan = plan_incremental_generation(
                 tickets,
                 baseline_cases,

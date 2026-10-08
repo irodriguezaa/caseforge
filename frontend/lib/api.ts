@@ -217,6 +217,22 @@ export const api = {
     }
     return body;
   },
+  analyzeEpcs: async (text: string): Promise<ReleaseNoteAnalyzeResponse> => {
+    const response = await fetch(apiUrl("/api/releases/analyze-epcs"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+      cache: "no-store",
+    });
+    const body = (await response.json().catch(() => ({}))) as ReleaseNoteAnalyzeResponse & ApiError;
+    if (!response.ok) {
+      throw new ApiRequestError(
+        response.status,
+        body?.detail ?? body?.message ?? "No se pudo analizar el listado de Technical Epics.",
+      );
+    }
+    return body;
+  },
   getReleaseAnalysis: (releaseId: number) =>
     request<ReleaseAnalysis>(`/api/releases/${releaseId}/analysis`),
   analyzeOperativaRn: async (file: File): Promise<OperativaAnalysisResult> => {

@@ -8,6 +8,10 @@ function isTataAnalysis(analysis: ReleaseAnalysis): boolean {
   return (analysis.raw_analysis as { vendor?: string } | undefined)?.vendor === "tata";
 }
 
+function isPastedEpcsAnalysis(analysis: ReleaseAnalysis): boolean {
+  return (analysis.raw_analysis as { source?: string } | undefined)?.source === "pasted_epcs";
+}
+
 interface ReleaseAnalysisCardProps {
   analysis: ReleaseAnalysis;
   qcResources?: number | null;
@@ -32,8 +36,9 @@ export function ReleaseAnalysisCard({
   const testers = qcResources ?? 1;
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
+  const pasted = isPastedEpcsAnalysis(analysis);
   const canExtract =
-    (releaseId != null && releaseId > 0) || Boolean(analysis.pdf_file_path);
+    !pasted && ((releaseId != null && releaseId > 0) || Boolean(analysis.pdf_file_path));
   const tata = isTataAnalysis(analysis);
   const metricTiles = [
     { label: "Funcionalidades", value: analysis.features_count },
@@ -67,7 +72,7 @@ export function ReleaseAnalysisCard({
   return (
     <div className="card" style={{ borderLeft: "3px solid var(--accent)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
-          <h2>Análisis de Release</h2>
+          <h2>{pasted ? "Análisis de listado de Technical Epics" : "Análisis de Release"}</h2>
           <span className="badge badge-info" style={{ fontSize: "11px" }}>
             QC Engine: {analysis.qc_engine_version}
           </span>
@@ -142,7 +147,7 @@ export function ReleaseAnalysisCard({
             ))}
           </div>
         )}
-        {tata && analysis.observations.length > 0 ? (
+        {(tata || pasted) && analysis.observations.length > 0 ? (
           <ul className="muted" style={{ fontSize: "12.5px", margin: "10px 0 0", paddingLeft: "18px" }}>
             {analysis.observations.map((row) => (
               <li key={row}>{row}</li>
@@ -158,6 +163,11 @@ export function ReleaseAnalysisCard({
           <button type="button" onClick={() => void handleExtractScope()} disabled={!canExtract || exporting}>
             {exporting ? "Extrayendo…" : "Extraer alcance RN"}
           </button>
+          {pasted ? (
+            <p className="muted" style={{ fontSize: "12px", margin: "8px 0 0" }}>
+              Fuente: listado de Technical Epics (sin Release Note PDF).
+            </p>
+          ) : null}
           {exportError ? <p className="error-text" style={{ margin: "8px 0 0" }}>{exportError}</p> : null}
         </div>
       </div>

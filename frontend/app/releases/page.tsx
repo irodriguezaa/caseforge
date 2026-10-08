@@ -66,7 +66,9 @@ export default function ReleasesPage(): React.ReactElement {
   const [formError, setFormError] = useState<string | null>(null);
 
   // PDF Upload & Analysis State
+  const [rnSource, setRnSource] = useState<"with_rn" | "without_rn">("with_rn");
   const [pdfFile, setPdfFile] = useState<File | null>(null);
+  const [epcText, setEpcText] = useState("");
   const [analyzing, setAnalyzing] = useState(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [analysisResult, setAnalysisResult] = useState<ReleaseAnalysis | null>(null);
@@ -139,6 +141,30 @@ export default function ReleasesPage(): React.ReactElement {
     setForm((prev) => ({ ...prev, name: "", version: "", platform: "", description: "", deliverableName: "" }));
   };
 
+  const applyAnalysisToForm = (analysis: ReleaseAnalysis): void => {
+    setForm((prev) => ({
+      ...prev,
+      name: analysis.detected_name ?? "",
+      version: analysis.detected_version ?? "",
+      platform: analysis.detected_platform ?? "",
+      description: analysis.detected_description ?? "",
+      deliverableName: analysis.detected_name ?? "",
+    }));
+  };
+
+  const handleRnSourceChange = (next: "with_rn" | "without_rn"): void => {
+    setRnSource(next);
+    setAnalysisError(null);
+    setAnalysisResult(null);
+    setGenerateMessage(null);
+    if (next === "with_rn") {
+      setEpcText("");
+    } else {
+      setPdfFile(null);
+      setForm((prev) => ({ ...prev, name: "", version: "", platform: "", description: "", deliverableName: "" }));
+    }
+  };
+
   const handleAnalyzePdf = async (): Promise<void> => {
     if (!pdfFile) return;
     setAnalyzing(true);
@@ -148,20 +174,28 @@ export default function ReleasesPage(): React.ReactElement {
       const response = await api.analyzeReleaseNote(pdfFile);
       const analysis = response.analysis;
       setAnalysisResult(analysis);
-
-      // Populate extracted metadata -- ALWAYS replaces, never falls back to the previous
-      // analysis' value. If the backend couldn't determine a field with confidence, it comes
-      // back null/empty, and that field must show empty here too (never the prior PDF's data).
-      setForm((prev) => ({
-        ...prev,
-        name: analysis.detected_name ?? "",
-        version: analysis.detected_version ?? "",
-        platform: analysis.detected_platform ?? "",
-        description: analysis.detected_description ?? "",
-        deliverableName: analysis.detected_name ?? "",
-      }));
+      applyAnalysisToForm(analysis);
     } catch (err) {
       setAnalysisError(err instanceof ApiRequestError ? err.message : "No se pudo analizar el archivo PDF.");
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
+  const handleAnalyzeEpcs = async (): Promise<void> => {
+    if (!epcText.trim()) return;
+    setAnalyzing(true);
+    setAnalysisError(null);
+    setGenerateMessage(null);
+    try {
+      const response = await api.analyzeEpcs(epcText);
+      const analysis = response.analysis;
+      setAnalysisResult(analysis);
+      applyAnalysisToForm(analysis);
+    } catch (err) {
+      setAnalysisError(
+        err instanceof ApiRequestError ? err.message : "No se pudo analizar el listado de Technical Epics.",
+      );
     } finally {
       setAnalyzing(false);
     }
@@ -215,6 +249,8 @@ export default function ReleasesPage(): React.ReactElement {
 
       setForm(emptyForm);
       setPdfFile(null);
+      setEpcText("");
+      setRnSource("with_rn");
       setAnalysisResult(null);
       router.push(`/releases/${created.id}`);
     } catch (err) {
@@ -240,13 +276,36 @@ export default function ReleasesPage(): React.ReactElement {
             <h2>
               Paso 1. Release Note
             </h2>
-            {pdfFile && (
+            {pdfFile && rnSource === "with_rn" && (
               <span className="badge badge-info" style={{ fontSize: "11px" }}>
                 {pdfFile.name} ({(pdfFile.size / 1024).toFixed(1)} KB)
               </span>
             )}
           </div>
 
+          <div className="form-grid" style={{ marginBottom: "12px" }}>
+            <label className="form-field" style={{ flexDirection: "row", alignItems: "center", gap: "8px" }}>
+              <input
+                type="radio"
+                name="apps-rn-source"
+                checked={rnSource === "with_rn"}
+                onChange={() => handleRnSourceChange("with_rn")}
+              />
+              Tengo Release Note
+            </label>
+            <label className="form-field" style={{ flexDirection: "row", alignItems: "center", gap: "8px" }}>
+              <input
+                type="radio"
+                name="apps-rn-source"
+                checked={rnSource === "without_rn"}
+                onChange={() => handleRnSourceChange("without_rn")}
+              />
+              No tengo Release Note
+            </label>
+          </div>
+
+          {rnSource === "with_rn" && (
+            <>
           <div
             className="dropzone"
             style={{ padding: "1.5rem 1rem", cursor: "pointer" }}
@@ -294,6 +353,35 @@ export default function ReleasesPage(): React.ReactElement {
               {analyzing ? "Analizando Release Note…" : "Analizar Release Note"}
             </button>
           </div>
+            </>
+          )}
+
+          {rnSource === "without_rn" && (
+            <>
+              <p className="muted" style={{ fontSize: "12px", margin: "0 0 8px" }}>
+                Pega el listado de Technical Epics. Conserva los encabezados «Dispositivo X» si los tienes.
+              </p>
+              <textarea
+                value={epcText}
+                onChange={(e) => setEpcText(e.target.value)}
+                placeholder={"Dispositivo ADT\nADTCL-2394\nADTCL-2323\n\nDispositivo WIN\nWINCL-219"}
+                rows={10}
+                style={{ width: "100%", fontFamily: "monospace", fontSize: "13px" }}
+              />
+              {analysisError && <p className="error-text">{analysisError}</p>}
+              <div className="form-actions" style={{ marginTop: "12px" }}>
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={mounted ? !epcText.trim() || analyzing : false}
+                  onClick={handleAnalyzeEpcs}
+                >
+                  <FileText size={14} style={{ verticalAlign: "-2px", marginRight: "6px" }} />
+                  {analyzing ? "Analizando EPCs…" : "Analizar EPCs"}
+                </button>
+              </div>
+            </>
+          )}
         </div>
 
         {/* BLOQUE 2: Información de la Release */}

@@ -114,3 +114,7 @@ class ReleaseWithCounts(ReleaseRead):
 class RnScopeExportRequest(BaseModel):
     pdf_file_path: str
     filename: str | None = None
+
+
+class AnalyzeEpcsRequest(BaseModel):
+    text: str = Field(min_length=1)
