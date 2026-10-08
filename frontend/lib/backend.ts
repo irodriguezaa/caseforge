@@ -20,7 +20,7 @@ export function backendUnavailableResponse(err: unknown): Response {
       status: "error",
       message: timedOut
         ? "El análisis o la generación tardó demasiado. El Release Note es grande; reintenta."
-        : "Backend no disponible",
+        : "El backend se saturó o se reinició durante Regenerar casos. Espera a que qcpulse-backend-1 esté Healthy y reintenta.",
     }),
     { status: 503, headers: { "Content-Type": "application/json" } },
   );

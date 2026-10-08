@@ -58,9 +58,10 @@ services:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://127.0.0.1:8000/health', timeout=3)"]
-      interval: 5s
+      interval: 15s
       timeout: 5s
-      retries: 10
+      retries: 8
+      start_period: 40s
 
   frontend:
     build:
