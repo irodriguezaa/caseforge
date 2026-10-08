@@ -163,7 +163,7 @@ QC_HEADERS = [
     "Nombre",
     "Componente",
     "Prioridad",
-    "Origen",
+    "Issue Type",
     "Estado",
     "Test Steps",
     "Resultado Esperado",
@@ -192,6 +192,7 @@ ZEPHYR_HEADERS = [
     "Priority",
     "Test Type",
     "Status",
+    "Ticket",
 ]
 
 _HEADER_FILL = PatternFill("solid", fgColor="1F4E78")
@@ -352,7 +353,7 @@ def build_test_cases_workbook(
     _style_header(
         zephyr,
         ZEPHYR_HEADERS,
-        [14, 18, 42, 28, 16, 8, 40, 40, 12, 14, 14],
+        [14, 18, 42, 28, 16, 8, 40, 40, 12, 14, 14, 16],
     )
     zephyr_row = 2
     for case in ordered:
@@ -374,6 +375,7 @@ def build_test_cases_workbook(
                 _enum_value(case.priority),
                 _enum_value(case.test_type),
                 _enum_value(case.status),
+                getattr(step, "jira_ticket", "") if step is not None else "",
             ]
             for col, value in enumerate(values, start=1):
                 cell = zephyr.cell(zephyr_row, col, _excel_value(value))

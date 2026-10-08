@@ -228,35 +228,52 @@ export default function SprintTestingPage(): React.ReactElement {
                 {data.execution.blockers.length === 0 ? (
                   <p className="muted">No hay Blockers para este SWF.</p>
                 ) : (
-                  <table className="activity">
-                    <thead>
-                      <tr>
-                        <th>Key</th>
-                        <th>Summary</th>
-                        <th>Estado</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {data.execution.blockers.map((row) => {
-                        const href = jiraIssueUrl(row.key);
-                        return (
-                          <tr key={row.key}>
-                            <td>
-                              {href ? (
-                                <a href={href} target="_blank" rel="noopener noreferrer" title={`Abrir ${row.key} en Jira`}>
-                                  {row.key}
-                                </a>
-                              ) : (
-                                row.key
-                              )}
-                            </td>
-                            <td>{row.summary}</td>
-                            <td>{row.status}</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                  data.execution.programs
+                    .filter((program) => program.blocker > 0)
+                    .map((program) => {
+                      const rows = data.execution!.blockers.filter(
+                        (row) => row.program_key === program.program_key,
+                      );
+                      return (
+                        <div key={program.program_key} style={{ marginBottom: "16px" }}>
+                          <p style={{ margin: "0 0 8px", fontSize: "12.5px", fontWeight: 600 }}>
+                            {program.display_name}{" "}
+                            <span className="muted">({program.blocker})</span>
+                          </p>
+                          <table className="activity">
+                            <thead>
+                              <tr>
+                                <th>Key</th>
+                                <th>Summary</th>
+                                <th>Issue Type</th>
+                                <th>Estado</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {rows.map((row) => {
+                                const href = jiraIssueUrl(row.key);
+                                return (
+                                  <tr key={`${program.program_key}-${row.key}`}>
+                                    <td>
+                                      {href ? (
+                                        <a href={href} target="_blank" rel="noopener noreferrer" title={`Abrir ${row.key} en Jira`}>
+                                          {row.key}
+                                        </a>
+                                      ) : (
+                                        row.key
+                                      )}
+                                    </td>
+                                    <td>{row.summary}</td>
+                                    <td>{row.issue_type || "—"}</td>
+                                    <td>{row.status}</td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      );
+                    })
                 )}
               </>
             )}

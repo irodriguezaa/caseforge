@@ -187,6 +187,7 @@ def _replace_steps(db: Session, test_case: TestCase, steps: list[dict]) -> None:
                 step_number=row["step_number"],
                 test_step=row["test_step"],
                 expected_result=row["expected_result"],
+                jira_ticket=row.get("jira_ticket"),
             )
         )
 

@@ -20,6 +20,7 @@ import { calculateBusinessDays } from "@/lib/dateUtils";
 import { nextTestCaseId } from "@/lib/testCaseId";
 import { QC_ESTIMATION_TOOLTIP, QC_OPERATIVA_ESTIMATION_TOOLTIP, durationDays, estimateOperativaEffort, estimateReleaseEffortFromCases, estimateReleaseEffortLegacyCount, hoursByTechnicalEpic, progressByTechnicalEpic, rnScopeCoverage, rnScopeEpicKeys, stripDeviceFromCaseName } from "@/lib/qcEffort";
 import type { CoverageMatrixResponse, EpcRead, GenerateCasesResponse, PublishCasesResponse, Release, ReleaseAnalysis, ReleaseStatus, TestCase } from "@/lib/types";
+import { jiraIssueUrl, parseJiraTicketKeys } from "@/lib/jira";
 import { formatRnSourceType } from "@/lib/types";
 
 const emptyForm = {
@@ -361,7 +362,7 @@ export default function ReleaseDetailPage(): React.ReactElement {
   const isBe = Boolean(release.be_release_id);
   const isOperativa = Boolean(release.operativa_release_id);
   const isApp = !isBe && !isOperativa;
-  const caseTableCols = isApp ? 9 : 8;
+  const caseTableCols = 8;
   const backHref = isBe ? "/releases-be" : isOperativa ? "/operativas/release-notes" : "/releases";
   const backLabel = isBe
     ? "← Volver a Release BE"
@@ -967,10 +968,14 @@ export default function ReleaseDetailPage(): React.ReactElement {
           <tr>
             <th>ID</th>
             <th>Nombre</th>
-            {isApp ? <th>Type</th> : null}
+            {isApp ? <th>Issue Type</th> : null}
             <th>Componente</th>
-            <th>Ecosistema</th>
-            <th>Dispositivo</th>
+            {isApp ? <th>Technical Story</th> : (
+              <>
+                <th>Ecosistema</th>
+                <th>Dispositivo</th>
+              </>
+            )}
             <th>Prioridad</th>
             <th>Estado</th>
             <th>Acciones</th>
@@ -987,8 +992,16 @@ export default function ReleaseDetailPage(): React.ReactElement {
               <td>{isOperativa ? stripDeviceFromCaseName(testCase.test_case_name, testCase.device) : testCase.test_case_name}</td>
               {isApp ? <td>{formatRnSourceType(testCase.source_type)}</td> : null}
               <td>{testCase.component}</td>
-              <td>{testCase.ecosystem ?? "—"}</td>
-              <td>{testCase.device ?? "—"}</td>
+              {isApp ? (
+                <td onClick={(e) => e.stopPropagation()}>
+                  <TechnicalStoryCell value={testCase.technical_story} />
+                </td>
+              ) : (
+                <>
+                  <td>{testCase.ecosystem ?? "—"}</td>
+                  <td>{testCase.device ?? "—"}</td>
+                </>
+              )}
               <td>{testCase.priority}</td>
               <td onClick={(e) => e.stopPropagation()}>
                 {canExecuteCases ? (
@@ -1061,5 +1074,35 @@ export default function ReleaseDetailPage(): React.ReactElement {
         />
       )}
     </div>
+  );
+}
+
+function TechnicalStoryCell({ value }: { value?: string | null }): React.ReactElement {
+  const raw = (value ?? "").trim();
+  if (!raw) {
+    return <span className="muted">—</span>;
+  }
+  const keys = parseJiraTicketKeys(raw);
+  if (keys.length === 0) {
+    return <>{raw}</>;
+  }
+  return (
+    <>
+      {keys.map((key, index) => {
+        const href = jiraIssueUrl(key);
+        return (
+          <span key={key}>
+            {index > 0 ? " · " : null}
+            {href ? (
+              <a href={href} target="_blank" rel="noopener noreferrer" title={`Abrir ${key} en Jira`}>
+                {key}
+              </a>
+            ) : (
+              key
+            )}
+          </span>
+        );
+      })}
+    </>
   );
 }

@@ -8,9 +8,10 @@ import { TestDataSections } from "@/app/components/TestDataSections";
 import { api, ApiRequestError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import type { TestCase, TestCaseWithSteps, TestStep } from "@/lib/types";
+import { jiraIssueUrl, parseJiraTicketKeys } from "@/lib/jira";
 import { formatRnSourceType } from "@/lib/types";
 
-const emptyStepForm = { step_number: 1, test_step: "", expected_result: "" };
+const emptyStepForm = { step_number: 1, test_step: "", expected_result: "", jira_ticket: "" };
 
 export default function TestCaseDetailPage(): React.ReactElement {
   const params = useParams<{ id: string }>();
@@ -67,6 +68,19 @@ export default function TestCaseDetailPage(): React.ReactElement {
       load();
     } catch (err) {
       setActionError(err instanceof ApiRequestError ? err.message : "No se pudo eliminar el step.");
+    }
+  };
+
+  const handleTicketBlur = async (step: TestStep, value: string): Promise<void> => {
+    const next = value.trim();
+    const prev = (step.jira_ticket ?? "").trim();
+    if (next === prev) return;
+    setActionError(null);
+    try {
+      await api.updateStep(step.id, { jira_ticket: next || null });
+      load();
+    } catch (err) {
+      setActionError(err instanceof ApiRequestError ? err.message : "No se pudo guardar el ticket.");
     }
   };
 
@@ -176,6 +190,11 @@ export default function TestCaseDetailPage(): React.ReactElement {
               <p className="muted" style={{ margin: ".35rem 0 0" }}>
                 Esperado: {step.expected_result}
               </p>
+              <StepTicketField
+                step={step}
+                canEdit={canExecuteCases}
+                onSave={(value) => void handleTicketBlur(step, value)}
+              />
             </div>
             <div className="step-actions">
               {canExecuteCases && (
@@ -241,6 +260,15 @@ export default function TestCaseDetailPage(): React.ReactElement {
                 onChange={(e) => setStepForm({ ...stepForm, expected_result: e.target.value })}
               />
             </div>
+            <div className="form-field">
+              <label htmlFor="jira_ticket">Ticket</label>
+              <input
+                id="jira_ticket"
+                placeholder="WEBCL-123"
+                value={stepForm.jira_ticket}
+                onChange={(e) => setStepForm({ ...stepForm, jira_ticket: e.target.value })}
+              />
+            </div>
           </div>
           <div className="form-actions">
             <button type="submit" disabled={submittingStep}>
@@ -256,6 +284,60 @@ export default function TestCaseDetailPage(): React.ReactElement {
           ← Volver a la Release
         </Link>
       </p>
+    </div>
+  );
+}
+
+function StepTicketField({
+  step,
+  canEdit,
+  onSave,
+}: {
+  step: TestStep;
+  canEdit: boolean;
+  onSave: (value: string) => void;
+}): React.ReactElement {
+  const [draft, setDraft] = useState(step.jira_ticket ?? "");
+  useEffect(() => {
+    setDraft(step.jira_ticket ?? "");
+  }, [step.id, step.jira_ticket]);
+
+  const keys = parseJiraTicketKeys(step.jira_ticket);
+  return (
+    <div style={{ marginTop: "8px" }}>
+      <label htmlFor={`step-ticket-${step.id}`} style={{ display: "block", fontSize: "11px", marginBottom: "4px" }}>
+        Ticket
+      </label>
+      {canEdit ? (
+        <input
+          id={`step-ticket-${step.id}`}
+          value={draft}
+          placeholder="KEY-123"
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={() => onSave(draft)}
+        />
+      ) : null}
+      {keys.length > 0 ? (
+        <p className="muted" style={{ margin: canEdit ? "6px 0 0" : "0" }}>
+          {keys.map((key, index) => {
+            const href = jiraIssueUrl(key);
+            return (
+              <span key={key}>
+                {index > 0 ? " · " : null}
+                {href ? (
+                  <a href={href} target="_blank" rel="noopener noreferrer" title={`Abrir ${key} en Jira`}>
+                    {key}
+                  </a>
+                ) : (
+                  key
+                )}
+              </span>
+            );
+          })}
+        </p>
+      ) : !canEdit ? (
+        <p className="muted" style={{ margin: 0 }}>—</p>
+      ) : null}
     </div>
   );
 }

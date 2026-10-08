@@ -47,6 +47,21 @@ def test_update_step(client) -> None:
     assert response.json()["test_step"] == "Open the app fresh"
 
 
+def test_update_step_jira_ticket_from_browse_url(client) -> None:
+    test_case = _create_test_case_with_steps(client)
+    step_id = test_case["steps"][0]["id"]
+
+    response = client.patch(
+        f"/api/v1/steps/{step_id}",
+        json={"jira_ticket": "https://dlatvarg.atlassian.net/browse/WEBCL-4142"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["jira_ticket"] == "WEBCL-4142"
+    listed = client.get(f"/api/v1/test-cases/{test_case['id']}/steps").json()
+    assert listed[0]["jira_ticket"] == "WEBCL-4142"
+
+
 def test_delete_step(client) -> None:
     test_case = _create_test_case_with_steps(client)
     step_id = test_case["steps"][0]["id"]

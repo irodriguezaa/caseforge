@@ -60,12 +60,16 @@ class ExecutionIssueRow(BaseModel):
     priority: str
     device: str
     program_key: str
+    issue_type: str = ""
 
 
 class ExecutionBlockerRow(BaseModel):
     key: str
     summary: str
     status: str
+    program_key: str = ""
+    display_name: str = ""
+    issue_type: str = ""
 
 
 class ExecutionMetrics(BaseModel):

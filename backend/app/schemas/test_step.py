@@ -2,13 +2,21 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from app.services.jira_ticket import normalize_jira_tickets
 
 
 class TestStepBase(BaseModel):
     step_number: int = Field(ge=1)
     test_step: str = Field(min_length=1)
     expected_result: str = Field(min_length=1)
+    jira_ticket: str | None = Field(default=None, max_length=250)
+
+    @field_validator("jira_ticket")
+    @classmethod
+    def _normalize_ticket(cls, value: str | None) -> str | None:
+        return normalize_jira_tickets(value)
 
 
 class TestStepCreate(TestStepBase):
@@ -19,6 +27,12 @@ class TestStepUpdate(BaseModel):
     step_number: int | None = Field(default=None, ge=1)
     test_step: str | None = Field(default=None, min_length=1)
     expected_result: str | None = Field(default=None, min_length=1)
+    jira_ticket: str | None = Field(default=None, max_length=250)
+
+    @field_validator("jira_ticket")
+    @classmethod
+    def _normalize_ticket(cls, value: str | None) -> str | None:
+        return normalize_jira_tickets(value)
 
 
 class TestStepRead(TestStepBase):

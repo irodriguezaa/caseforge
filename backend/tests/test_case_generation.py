@@ -1103,7 +1103,7 @@ def test_export_excel_has_qc_and_zephyr_sheets(client, monkeypatch, tmp_path) ->
     assert avance["D1"].value == "%"
     assert avance.conditional_formatting._cf_rules
     assert qc["A1"].value == "ID"
-    assert qc["E1"].value == "Origen"
+    assert qc["E1"].value == "Issue Type"
     assert qc["I1"].value == "Precondición"
     assert qc["J1"].value == "Datos de prueba"
     assert "Notas técnicas" not in [qc.cell(1, col).value for col in range(1, qc.max_column + 1)]
@@ -1111,6 +1111,7 @@ def test_export_excel_has_qc_and_zephyr_sheets(client, monkeypatch, tmp_path) ->
     assert zephyr["F1"].value == "Step"
     assert zephyr["G1"].value == "Test Step"
     assert zephyr["H1"].value == "Expected Result"
+    assert zephyr["L1"].value == "Ticket"
     stored = client.get(f"/api/v1/releases/{release_id}/test-cases").json()
     assert qc.max_row == len(stored) + 1
     assert zephyr.max_row >= len(stored) + 1

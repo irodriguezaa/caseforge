@@ -306,6 +306,7 @@ export interface TestStep {
   step_number: number;
   test_step: string;
   expected_result: string;
+  jira_ticket?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -824,6 +825,9 @@ export interface SprintTestingBlocker {
   key: string;
   summary: string;
   status: string;
+  program_key?: string;
+  display_name?: string;
+  issue_type?: string;
 }
 
 export interface SprintTestingExecutionProgram {

@@ -159,6 +159,7 @@ export interface TestStepInput {
   step_number: number;
   test_step: string;
   expected_result: string;
+  jira_ticket?: string | null;
 }
 
 export interface TestCaseInput {

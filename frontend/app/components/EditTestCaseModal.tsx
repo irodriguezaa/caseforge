@@ -8,6 +8,7 @@ interface DraftStep {
   step_number: number;
   test_step: string;
   expected_result: string;
+  jira_ticket: string;
 }
 
 interface EditTestCaseModalProps {
@@ -49,8 +50,9 @@ export function EditTestCaseModal({
                 step_number: step.step_number,
                 test_step: step.test_step,
                 expected_result: step.expected_result,
+                jira_ticket: step.jira_ticket ?? "",
               }))
-            : [{ step_number: 1, test_step: "", expected_result: "" }],
+            : [{ step_number: 1, test_step: "", expected_result: "", jira_ticket: "" }],
         );
       })
       .catch((err: unknown) => {
@@ -73,7 +75,7 @@ export function EditTestCaseModal({
   const addStep = (): void => {
     setSteps((current) => [
       ...current,
-      { step_number: current.length + 1, test_step: "", expected_result: "" },
+      { step_number: current.length + 1, test_step: "", expected_result: "", jira_ticket: "" },
     ]);
   };
 
@@ -95,6 +97,7 @@ export function EditTestCaseModal({
         step_number: index + 1,
         test_step: step.test_step.trim(),
         expected_result: step.expected_result.trim() || "—",
+        jira_ticket: step.jira_ticket.trim() || null,
       }));
     if (cleaned.some((step) => !step.test_step)) {
       setError("Cada Test Step debe tener una acción.");
@@ -201,6 +204,14 @@ export function EditTestCaseModal({
                       placeholder="Resultado esperado"
                       value={step.expected_result}
                       onChange={(e) => updateStep(index, { expected_result: e.target.value })}
+                    />
+                  </div>
+                  <div className="form-field">
+                    <label>Ticket</label>
+                    <input
+                      placeholder="KEY-123"
+                      value={step.jira_ticket}
+                      onChange={(e) => updateStep(index, { jira_ticket: e.target.value })}
                     />
                   </div>
                   <div className="form-field" style={{ justifyContent: "flex-end" }}>

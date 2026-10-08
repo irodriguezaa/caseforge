@@ -1,14 +1,13 @@
 """TestStep ORM model.
 
-A TestStep carries only three domain fields, as specified: step_number, test_step, and
-expected_result. It intentionally does not duplicate any TestCase concept (no name,
-description, priority, etc. at the step level).
+Domain fields: step_number, test_step, expected_result, and optional jira_ticket
+when a step fails and QC records the Jira issue.
 """
 
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, Integer, Text, UniqueConstraint, func
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -32,6 +31,7 @@ class TestStep(Base):
     step_number: Mapped[int] = mapped_column(Integer, nullable=False)
     test_step: Mapped[str] = mapped_column(Text, nullable=False)
     expected_result: Mapped[str] = mapped_column(Text, nullable=False)
+    jira_ticket: Mapped[str | None] = mapped_column(String(250), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

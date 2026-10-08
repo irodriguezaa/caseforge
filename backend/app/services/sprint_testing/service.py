@@ -23,7 +23,7 @@ from app.services.sprint_testing.classify import classify_status, is_blocker_pri
 from app.services.sprint_testing.export import build_executive_pptx, build_issues_workbook
 
 _ISSUE_FIELDS = ["summary", "issuetype", "status", "project"]
-_EXECUTION_FIELDS = ["summary", "status", "project", "priority"]
+_EXECUTION_FIELDS = ["summary", "status", "project", "priority", "issuetype"]
 
 
 class SprintTestingConfigError(ValueError):
@@ -148,6 +148,7 @@ def list_execution_issue_rows(swf: SwfDef, issues: list[dict[str, Any]]) -> list
                 priority=_priority_name(issue),
                 device=program.display_name,
                 program_key=program.program_key,
+                issue_type=_issuetype_name(issue),
             )
         )
     rows.sort(key=lambda row: (row.device, row.key))
@@ -198,6 +199,9 @@ def aggregate_execution_issues(
                     key=str(issue.get("key") or "").strip().upper(),
                     summary=_summary(issue),
                     status=_status_name(issue),
+                    program_key=program.program_key,
+                    display_name=program.display_name,
+                    issue_type=_issuetype_name(issue),
                 )
             )
         programs.append(
@@ -209,7 +213,7 @@ def aggregate_execution_issues(
                 non_blocker=len(rows) - blocker,
             )
         )
-    blockers.sort(key=lambda row: row.key)
+    blockers.sort(key=lambda row: (row.display_name, row.key))
     return ExecutionMetrics(
         filter_id=filter_id,
         issue_count=sum(row.total for row in programs),

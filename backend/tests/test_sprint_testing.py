@@ -166,7 +166,52 @@ def test_execution_counts_blocker_by_program() -> None:
     assert [row.key for row in payload.blockers] == ["ADTCL-1", "ADTCL-3"]
     assert payload.blockers[0].summary == "ADTCL-1"
     assert payload.blockers[0].status == "In Progress"
+    assert payload.blockers[0].program_key == "ADTCL"
+    assert payload.blockers[0].display_name == "ADT / FireTV"
+    assert payload.blockers[0].issue_type == "Bug"
     assert all(row.program_key not in {"WEBCL", "AAFCL"} for row in payload.programs)
+
+
+def test_execution_blockers_grouped_by_program_match_bar_counts() -> None:
+    hitss = get_swf("hitss")
+    assert hitss is not None
+
+    def _exec(key: str, project: str, priority: str, issuetype: str = "QA Bug") -> dict:
+        return {
+            "key": key,
+            "fields": {
+                "issuetype": {"name": issuetype},
+                "status": {"name": "In Progress"},
+                "project": {"key": project},
+                "priority": {"name": priority},
+                "summary": key,
+            },
+        }
+
+    payload = aggregate_execution_issues(
+        "117704",
+        hitss,
+        [
+            _exec("AAFCL-1", "AAFCL", "Blocker", "QA Bug"),
+            _exec("AAFCL-2", "AAFCL", "Blocker", "QC Bug"),
+            _exec("STVCL-1", "STVCL", "Blocker"),
+            _exec("STVCL-2", "STVCL", "Blocker"),
+            _exec("STVCL-3", "STVCL", "Major"),
+        ],
+    )
+    stale = next(row for row in payload.programs if row.program_key == "AAFCL")
+    evo = next(row for row in payload.programs if row.program_key == "STVCL")
+    assert stale.blocker == 2
+    assert evo.blocker == 2
+    assert evo.non_blocker == 1
+    stale_keys = [row.key for row in payload.blockers if row.program_key == "AAFCL"]
+    evo_keys = [row.key for row in payload.blockers if row.program_key == "STVCL"]
+    assert stale_keys == ["AAFCL-1", "AAFCL-2"]
+    assert evo_keys == ["STVCL-1", "STVCL-2"]
+    assert [row.issue_type for row in payload.blockers if row.program_key == "AAFCL"] == [
+        "QA Bug",
+        "QC Bug",
+    ]
 
 
 def test_sprint_46_is_not_actionable(client) -> None:
@@ -300,7 +345,9 @@ def test_execution_issue_rows_filter_and_truncate() -> None:
     assert rows[0].summary == "Playback VOD"
     assert rows[0].status == "In Progress"
     assert rows[0].priority == "Blocker"
+    assert rows[0].issue_type == "QA Bug"
     assert rows[1].summary == "Layout"
+    assert rows[1].issue_type == "QC Bug"
 
 
 def test_issues_workbook_headers() -> None:
@@ -320,6 +367,7 @@ def test_issues_workbook_headers() -> None:
                 priority="Blocker",
                 device="ADT / FireTV",
                 program_key="ADTCL",
+                issue_type="QA Bug",
             )
         ]
     )
@@ -327,8 +375,9 @@ def test_issues_workbook_headers() -> None:
     sheet = book.active
     assert [cell.value for cell in sheet[1]] == ISSUE_HEADERS
     assert sheet["A2"].value == "ADTCL-1"
-    assert sheet["C2"].value == "In Progress"
-    assert sheet["D2"].value == "Blocker"
+    assert sheet["C2"].value == "QA Bug"
+    assert sheet["D2"].value == "In Progress"
+    assert sheet["E2"].value == "Blocker"
 
 
 def test_executive_pptx_is_one_slide_without_open_column() -> None:
