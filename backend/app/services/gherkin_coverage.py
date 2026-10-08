@@ -41,6 +41,10 @@ _SCENARIO_SPLIT = re.compile(
     r"^\s*(Scenario Outline|Scenario|Escenario esquemático|Escenario)\s*:\s*(.+?)\s*$",
     re.IGNORECASE | re.MULTILINE,
 )
+_EXAMPLES_SPLIT = re.compile(
+    r"^\s*Examples?\s*:\s*$",
+    re.IGNORECASE | re.MULTILINE,
+)
 _QUALITY_APPENDIX = re.compile(
     r"Criterios de calidad(?: y prueba)?",
     re.IGNORECASE,
@@ -131,7 +135,7 @@ def parse_gherkin_blocks(description: str) -> list[dict[str, Any]]:
         body = description[match.end() : end].strip()
         is_outline = "outline" in kind or "esquemático" in kind
         examples = _parse_examples(body) if is_outline else []
-        scenario_body = re.split(r"^\s*Examples\s*:\s*$", body, maxsplit=1, flags=re.IGNORECASE | re.MULTILINE)[0]
+        scenario_body = _EXAMPLES_SPLIT.split(body, maxsplit=1)[0]
         blocks.append(
             {
                 "title": title,
@@ -144,7 +148,7 @@ def parse_gherkin_blocks(description: str) -> list[dict[str, Any]]:
 
 
 def _parse_examples(body: str) -> list[dict[str, str]]:
-    parts = re.split(r"^\s*Examples\s*:\s*$", body, maxsplit=1, flags=re.IGNORECASE | re.MULTILINE)
+    parts = _EXAMPLES_SPLIT.split(body, maxsplit=1)
     if len(parts) < 2:
         return []
     rows: list[list[str]] = []

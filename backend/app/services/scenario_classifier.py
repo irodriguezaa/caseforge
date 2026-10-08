@@ -66,7 +66,7 @@ _USER_OR_UI = re.compile(
     r"live ?feed|marcador|alineaci[oó]n|partido|add-?on|activaci[oó]n|"
     r"pip|cr[eé]ditos|outline|calificaci[oó]n|post reproducci[oó]n|"
     r"fin player|pantalla completa|fullscreen|leyenda|foco|rcu|remote|"
-    r"elemento|posici[oó]n)\b",
+    r"elemento|posici[oó]n|notificaci[oó]n|contador)\b",
     re.IGNORECASE,
 )
 _OBSERVABLE_VERB = re.compile(
@@ -75,7 +75,8 @@ _OBSERVABLE_VERB = re.compile(
     r"no (se )?muestra|no (se )?mostrarse|no presenta|no presentar|"
     r"no abre|no visualiza|no visualizarse|"
     r"ve |ven |retira|permanece|contin[uú]a|completa|ingresa|selecciona|"
-    r"navega|disponible para el usuario|deja de (ver|visualizar)|ya no (ve|visualiza)|"
+    r"navega|disponible para el usuario|deja de (ver|visualizar|visualizarse)|"
+    r"ya no (ve|visualiza)|se debe ocultar|debe ocultarse|"
     r"cambiar( al siguiente)?|no se realiza( ninguna)? acci[oó]n|"
     r"outline|pantalla completa|quedar vac[ií]a|queda vac[ií]a)\b",
     re.IGNORECASE,
@@ -87,7 +88,8 @@ _SHOW_FAMILY = re.compile(
 )
 _USER_VISIBLE_SURFACE = re.compile(
     r"\b(usuario|user|pantalla|ticket|layout|leyenda|texto|mensaje|bot[oó]n|"
-    r"elementos visuales|error visible|visible para el usuario)\b",
+    r"elementos visuales|error visible|visible para el usuario|"
+    r"notificaci[oó]n|contador)\b",
     re.IGNORECASE,
 )
 _NO_USER_ERROR = re.compile(
@@ -136,6 +138,16 @@ _TABLE_HEADER = re.compile(
     re.IGNORECASE,
 )
 _BULLET = re.compile(r"^[\*\-]\s+(.+)")
+_WHEN_UI_RESULT = re.compile(
+    r"\b(se muestra|se visualiza|se presenta|aparece|aparecer|"
+    r"contiene|con los elementos|se oculta|se debe ocultar|debe ocultarse|"
+    r"desaparece|deja de visualizarse|deja de mostrarse)\b",
+    re.IGNORECASE,
+)
+_WHEN_USER_ACT = re.compile(
+    r"\b(selecciona|pulsa|presiona|hace clic|ingresa|navega|abre)\b",
+    re.IGNORECASE,
+)
 _USER_SUBJECT = re.compile(r"^\s*(el )?usuario\b", re.IGNORECASE)
 _IMPL_SUBJECT = re.compile(
     r"\b(el sistema|el backend|el servicio|el frontend|el fe\b|el handler|"
@@ -246,7 +258,7 @@ def split_gherkin_clauses(body: str) -> tuple[list[str], list[str], list[str]]:
         line = raw.strip()
         if not line or line.startswith("#"):
             continue
-        if re.match(r"^\s*Examples\s*:", line, re.I):
+        if re.match(r"^\s*Examples?\s*:", line, re.I):
             break
         table_clause = _table_row_clause(line)
         if table_clause:
@@ -287,14 +299,49 @@ def _is_generic_then(text: str) -> bool:
     return False
 
 
+def _has_ui_surface(text: str) -> bool:
+    return bool(
+        _USER_OR_UI.search(text)
+        or _USER_VISIBLE_SURFACE.search(text)
+        or _PRODUCT_UI.search(text)
+    )
+
+
+def _is_user_action_when(text: str) -> bool:
+    if _WHEN_UI_RESULT.search(text) and _has_ui_surface(text):
+        return False
+    return bool(_USER_SUBJECT.search(text) and _WHEN_USER_ACT.search(text))
+
+
+def _is_when_ui_expected_state(text: str) -> bool:
+    if not text or _is_user_action_when(text):
+        return False
+    return bool(_WHEN_UI_RESULT.search(text) and _has_ui_surface(text))
+
+
+def _is_layout_element_row(text: str) -> bool:
+    if ":" not in (text or "") or _is_user_action_when(text):
+        return False
+    return _has_ui_surface(text)
+
+
 def _observables_from_block(title: str, given: list[str], when: list[str], then: list[str]) -> list[str]:
     observable = _observable_clauses(then)
-    then_generic = bool(then) and all(_is_generic_then(clause) for clause in then)
+    then_generic = (not then) or all(_is_generic_then(clause) for clause in then)
     if not observable or then_generic:
         extra = _observable_clauses(given)
         for item in extra:
             if item not in observable:
                 observable.append(item)
+    if then_generic:
+        ui_when = [clause for clause in when if _is_when_ui_expected_state(clause)]
+        if ui_when:
+            for item in ui_when:
+                if item not in observable:
+                    observable.append(item)
+            for clause in when:
+                if _is_layout_element_row(clause) and clause not in observable:
+                    observable.append(clause)
     if not observable and _has_observable_consequence(title):
         observable = [title.strip()]
     return observable

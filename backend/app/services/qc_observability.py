@@ -37,9 +37,10 @@ _RENDER = re.compile(
     re.IGNORECASE,
 )
 _HIDE_SHOW = re.compile(
-    r"\b(se oculta|permanece oculto|no se presenta|se superpone|"
-    r"transiciona|desaparece|aparece|se muestra|no se muestra|"
-    r"se visualiza|conserva su comportamiento|se mantiene el comportamiento|"
+    r"\b(se oculta|se debe ocultar|debe ocultarse|permanece oculto|"
+    r"no se presenta|se superpone|transiciona|desaparece|aparece|"
+    r"se muestra|no se muestra|se visualiza|deja de visualizarse|"
+    r"deja de mostrarse|conserva su comportamiento|se mantiene el comportamiento|"
     r"no altera la estructura|regresa a su estado|estado inicial|"
     r"estado s[oó]lido)\b",
     re.IGNORECASE,
@@ -48,7 +49,8 @@ _SURFACE = re.compile(
     r"\b(background(?: comercial)?|brandheader|highlight|super destacado|"
     r"gradient(?:o)?(?: din[aá]mico)?|header|home|pantalla|banner|modal|"
     r"bot[oó]n|player|carrusel|men[uú]|ticket|layout|leyenda|fondo comercial|"
-    r"componente|pip|calificaci[oó]n|cr[eé]ditos|outline|vcard|fin player)\b",
+    r"componente|pip|calificaci[oó]n|cr[eé]ditos|outline|vcard|fin player|"
+    r"notificaci[oó]n|contador)\b",
     re.IGNORECASE,
 )
 _CONFIG_THEN = re.compile(
@@ -111,7 +113,14 @@ def translate_then_to_observable(clause: str) -> str | None:
     negated_render = bool(re.search(r"\bno se renderiza\b", lowered))
     enabled_render = bool(re.search(r"habilita el renderizado|se habilita el renderizado", lowered))
     positive_render = bool(re.search(r"\bse renderiza\b", lowered)) and not negated_render
-    hidden = bool(re.search(r"\bse oculta\b|\bno se presenta\b|\bpermanece oculto\b", lowered))
+    hidden = bool(
+        re.search(
+            r"\bse oculta\b|\bse debe ocultar\b|\bdebe ocultarse\b|"
+            r"\bno se presenta\b|\bpermanece oculto\b|\bdesaparece\b|"
+            r"\bdeja de visualizarse\b|\bdeja de mostrarse\b",
+            lowered,
+        )
+    )
     shown = bool(re.search(r"\bse muestra\b|\bse visualiza\b|\baparece\b", lowered))
     overlay = bool(re.search(r"\bse superpone\b|\btransiciona\b", lowered))
     keeps = bool(_REGRESSION.search(text))

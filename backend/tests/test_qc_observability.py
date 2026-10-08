@@ -1,7 +1,11 @@
 """QC observability is a second decision: A–G does not auto-discard functional Then."""
 
 from app.services.executability import STABLE_GENERIC_STEP
-from app.services.gherkin_coverage import build_coverage_inventory, candidates_from_jira_artifacts
+from app.services.gherkin_coverage import (
+    build_coverage_inventory,
+    candidates_from_jira_artifacts,
+    parse_gherkin_blocks,
+)
 from app.services.qc_observability import classify_qc_observability, translate_then_to_observable
 from app.services.scenario_classifier import classify_scenario
 
@@ -378,3 +382,432 @@ def test_stvcl332_recovers_four_functional_behaviors_without_one_to_one_tcs() ->
         assert "STVCL-286" in unit.traceability
         assert "STVCL-332" in unit.traceability
         assert unit.observable_then
+
+
+def test_generic_then_with_when_ui_layout_is_qc_functional() -> None:
+    body = (
+        "Given el usuario se encuentra en Post Reproducción\n"
+        "When se muestra la pantalla de calificacion con los elementos:\n"
+        "| Elementos | Descripción |\n"
+        "| Reproductor con formato visual tipo PIP | Vista reducida |\n"
+        "| Contador del tiempo | Cuenta regresiva |\n"
+        "| Botón Me gusta | Pulgar arriba |\n"
+        "| Botón Me encanta | Dos pulgares |\n"
+        "| Botón No me gusta | Pulgar abajo |\n"
+        "| Botón Cerrar | Icono X |\n"
+        "Then la pantalla debe cumplir con las especificaciones solicitadas en los insumos de diseño.\n"
+    )
+    clf = classify_scenario("Creación de Pantalla PIP", body)
+    assert clf.qc_relevance == "QC_FUNCTIONAL"
+    blob = " ".join(clf.observable_then or []).lower()
+    assert "pip" in blob or "pantalla" in blob or "botón" in blob or "boton" in blob
+    units = build_coverage_inventory(
+        _story("STORY-LAY", f"Scenario: Creación de Pantalla PIP\n{body}"),
+        "rn.pdf",
+    )
+    assert len(units) == 1
+    assert units[0].scenario == "Creación de Pantalla PIP"
+
+
+def test_generic_then_does_not_treat_user_action_when_as_result() -> None:
+    clf = classify_scenario(
+        "El usuario activa",
+        "When el usuario selecciona Activar ahora\n"
+        "Then el comportamiento debe cumplir con las especificaciones\n",
+    )
+    assert clf.qc_relevance != "QC_FUNCTIONAL"
+    assert not any("activar ahora" in (item or "").lower() for item in (clf.observable_then or []))
+
+
+def test_examples_plural_parses_rows() -> None:
+    blocks = parse_gherkin_blocks(
+        "Scenario Outline: Calificación de Contenido\n"
+        "  When el usuario selecciona un botón para calificar\n"
+        "  Then se muestra la botonera de Calificación\n"
+        "  Examples:\n"
+        "    | Calificación | Descripción |\n"
+        "    | -1 | No me gusta |\n"
+        "    | 1 | Me gusta |\n"
+        "    | 2 | Me encanta |\n"
+    )
+    assert len(blocks) == 1
+    assert len(blocks[0]["examples"]) == 3
+
+
+def test_example_singular_parses_rows() -> None:
+    blocks = parse_gherkin_blocks(
+        "Scenario Outline: Calificación de Contenido\n"
+        "  When el usuario selecciona un botón para calificar\n"
+        "  Then se muestra la botonera de Calificación\n"
+        "  Example:\n"
+        "    | <Calificación> | Descripción |\n"
+        "    | -1 | No me gusta |\n"
+        "    | 1 | Me gusta |\n"
+        "    | 2 | Me encanta |\n"
+    )
+    assert len(blocks) == 1
+    assert len(blocks[0]["examples"]) == 3
+    values = {
+        (row.get("<Calificación>") or row.get("Calificación") or "").strip()
+        for row in blocks[0]["examples"]
+    }
+    assert values == {"-1", "1", "2"}
+
+
+def test_rating_outline_is_one_unit_with_three_variants() -> None:
+    description = (
+        "Scenario Outline: Calificación de Contenido\n"
+        "  Given el usuario se encuentra en la pantalla de calificación\n"
+        "  And se muestra la botonera de Calificación\n"
+        "  When el usuario selecciona un botón para calificar\n"
+        "  Then el contenido fue calificado por el usuario correctamente\n"
+        "  And se muestra la botonera de Calificación\n"
+        "  Example:\n"
+        "    | <Calificación> | Descripción |\n"
+        "    | -1 | No me gusta |\n"
+        "    | 1 | Me gusta |\n"
+        "    | 2 | Me encanta |\n"
+    )
+    units = build_coverage_inventory(_story("STVCL-334", description, epic="STVCL-333"), "rn.pdf")
+    assert len(units) == 1
+    extra = (units[0].extra_test_data or "").lower()
+    assert "-1" in extra and "1" in extra and "2" in extra
+    assert "no me gusta" in extra and "me gusta" in extra and "me encanta" in extra
+    cases = candidates_from_jira_artifacts(
+        _story("STVCL-334", description, epic="STVCL-333"),
+        "rn.pdf",
+        [],
+        lambda *_args: None,
+    )
+    assert len(cases) == 1
+
+
+def test_notificacion_se_debe_ocultar_is_qc_functional() -> None:
+    clf = classify_scenario(
+        "Alerta de Notificación de calificación previa",
+        "Given el usuario realiza una nueva calificación del contenido\n"
+        "When la notificación de la calificación anterior aún se muestra en pantalla\n"
+        "Then la notificación se debe ocultar\n",
+    )
+    assert clf.qc_relevance == "QC_FUNCTIONAL"
+    assert clf.observable_then
+
+
+def test_notificacion_debe_ocultarse_is_qc_functional() -> None:
+    clf = classify_scenario(
+        "Alerta de Notificación",
+        "Then la notificación debe ocultarse\n",
+    )
+    assert clf.qc_relevance == "QC_FUNCTIONAL"
+    mapped = translate_then_to_observable("la notificación debe ocultarse")
+    assert mapped
+
+
+def test_notificacion_se_oculta_is_qc_functional() -> None:
+    clf = classify_scenario(
+        "Alerta de Notificación",
+        "Then la notificación se oculta\n",
+    )
+    assert clf.qc_relevance == "QC_FUNCTIONAL"
+
+
+def test_rules_for_timeouts_do_not_create_independent_tc() -> None:
+    description = """Feature: Calificación
+  Rule: El tiempo máximo para cerrar la pantalla es de 60 segundos (max_display_time).
+  Rule: display_time 30 segundos si el usuario no interactúa.
+  Rule: post_vote_display_time 10 segundos tras una calificación.
+
+    [Llave]
+      vod_rating_settings
+      | enable | true |
+      | display_time | 30 |
+      | post_vote_display_time | 10 |
+      | max_display_time | 60 |
+"""
+    units = build_coverage_inventory(_story("STORY-RULE", description), "rn.pdf")
+    assert units == []
+    cases = candidates_from_jira_artifacts(
+        _story("STORY-RULE", description), "rn.pdf", [], lambda *_args: None
+    )
+    assert cases == []
+
+
+WEBCL_4142 = """Feature: Scroll del header
+  Scenario: Transicion al hacer scroll hacia abajo
+    When el usuario hace scroll hacia abajo y supera el umbral
+    Then el gradient transiciona progresivamente de estado inicial a estado solido con blur
+  Scenario: Retorno al hacer scroll hacia arriba
+    When el usuario hace scroll hacia arriba por encima del umbral
+    Then el gradient regresa a su estado inicial
+"""
+
+
+def test_webcl4142_scroll_stays_one_unit() -> None:
+    artifacts = _story("WEBCL-4144", WEBCL_4142, epic="WEBCL-4142")
+    units = build_coverage_inventory(artifacts, "rn.pdf")
+    assert len(units) == 1
+    cases = candidates_from_jira_artifacts(artifacts, "rn.pdf", [], lambda *_args: None)
+    assert len(cases) == 1
+    assert "scroll" in f"{units[0].scenario} {units[0].extra_test_data or ''}".lower()
+
+
+STVCL_333_334 = """Feature: Funcionalidad del Módulo de Calificación
+  Rule: Si rollingcreditstime tiene un valor igual a 0 continuar con FinPlayer.
+  Rule: display_time 30, post_vote_display_time 10, max_display_time 60.
+
+  Scenario: Creación de Pantalla de Calificacíon Post Reproducción con formato visual tipo PIP
+    Given el usuario se encuentra en la pantalla de Post Reproducción con formato visual tipo PIP
+    When se muestra la pantalla de calificacion "Post Reproducción con formato visual tipo PIP" con los elementos:
+      | Elementos | Descripción |
+      | Reproductor con formato visual tipo PIP | Vista reducida |
+      | Contador del tiempo | Cuenta regresiva |
+      | Botón Me gusta | Pulgar arriba |
+      | Botón Cerrar | Icono X |
+    Then la pantalla debe cumplir con las especificaciones solicitadas en los insumos de diseño.
+
+  Scenario Outline: Calificación de Contenido
+    Given el usuario se encuentra en la pantalla de calificación Post Reproducción
+    And se muestra la botonera de Calificación
+    When el usuario selecciona un botón para calificar
+    Then el contenido fue calificado por el usuario correctamente
+    And se muestra la botonera de Calificación
+    Example:
+      | <Calificación> | Descripción |
+      | -1 | No me gusta |
+      | 1 | Me gusta |
+      | 2 | Me encanta |
+
+  Scenario: Alerta de Notificación de calificación previa
+    Given el usuario realiza una nueva calificación del contenido
+    When la notificación de la calificación anterior aún se muestra en pantalla
+    Then la notificación se debe ocultar
+"""
+
+
+def test_stvcl333_recovers_layout_rating_variants_and_notification() -> None:
+    artifacts = _story("STVCL-334", STVCL_333_334, epic="STVCL-333")
+    units = build_coverage_inventory(artifacts, "rn.pdf")
+    scenarios = {unit.scenario for unit in units}
+    assert any("Creación" in title for title in scenarios)
+    assert any("Calificación de Contenido" in title for title in scenarios)
+    assert any("Notificación" in title for title in scenarios)
+    rating = next(unit for unit in units if "Calificación de Contenido" in unit.scenario)
+    extra = (rating.extra_test_data or "").lower()
+    assert extra.count("-1") >= 1 and "no me gusta" in extra and "me encanta" in extra
+    assert not any("30" in unit.scenario and "display" in unit.scenario.lower() for unit in units)
+    cases = candidates_from_jira_artifacts(artifacts, "rn.pdf", [], lambda *_args: None)
+    assert len(cases) == len(units)
+    assert 3 <= len(units) <= 4
+
+
+def test_generic_then_with_when_ui_layout_is_qc_functional() -> None:
+    body = (
+        "Given el usuario se encuentra en Post Reproducción\n"
+        "When se muestra la pantalla de calificacion con los elementos:\n"
+        "| Elementos | Descripción |\n"
+        "| Reproductor con formato visual tipo PIP | Vista reducida |\n"
+        "| Contador del tiempo | Cuenta regresiva |\n"
+        "| Botón Me gusta | Pulgar arriba |\n"
+        "| Botón Me encanta | Dos pulgares |\n"
+        "| Botón No me gusta | Pulgar abajo |\n"
+        "| Botón Cerrar | Icono X |\n"
+        "Then la pantalla debe cumplir con las especificaciones solicitadas en los insumos de diseño.\n"
+    )
+    clf = classify_scenario("Creación de Pantalla PIP", body)
+    assert clf.qc_relevance == "QC_FUNCTIONAL"
+    blob = " ".join(clf.observable_then or []).lower()
+    assert "pip" in blob or "pantalla" in blob or "botón" in blob or "boton" in blob
+    units = build_coverage_inventory(
+        _story("STORY-LAY", f"Scenario: Creación de Pantalla PIP\n{body}"),
+        "rn.pdf",
+    )
+    assert len(units) == 1
+    assert units[0].scenario == "Creación de Pantalla PIP"
+
+
+def test_generic_then_does_not_treat_user_action_when_as_result() -> None:
+    clf = classify_scenario(
+        "El usuario activa",
+        "When el usuario selecciona Activar ahora\n"
+        "Then el comportamiento debe cumplir con las especificaciones\n",
+    )
+    assert clf.qc_relevance != "QC_FUNCTIONAL"
+    assert not any("activar ahora" in (item or "").lower() for item in (clf.observable_then or []))
+
+
+def test_examples_plural_parses_rows() -> None:
+    blocks = parse_gherkin_blocks(
+        "Scenario Outline: Calificación de Contenido\n"
+        "  When el usuario selecciona un botón para calificar\n"
+        "  Then se muestra la botonera de Calificación\n"
+        "  Examples:\n"
+        "    | Calificación | Descripción |\n"
+        "    | -1 | No me gusta |\n"
+        "    | 1 | Me gusta |\n"
+        "    | 2 | Me encanta |\n"
+    )
+    assert len(blocks) == 1
+    assert len(blocks[0]["examples"]) == 3
+
+
+def test_example_singular_parses_rows() -> None:
+    blocks = parse_gherkin_blocks(
+        "Scenario Outline: Calificación de Contenido\n"
+        "  When el usuario selecciona un botón para calificar\n"
+        "  Then se muestra la botonera de Calificación\n"
+        "  Example:\n"
+        "    | <Calificación> | Descripción |\n"
+        "    | -1 | No me gusta |\n"
+        "    | 1 | Me gusta |\n"
+        "    | 2 | Me encanta |\n"
+    )
+    assert len(blocks) == 1
+    assert len(blocks[0]["examples"]) == 3
+    values = {(row.get("<Calificación>") or row.get("Calificación") or "").strip() for row in blocks[0]["examples"]}
+    assert values == {"-1", "1", "2"}
+
+
+def test_rating_outline_is_one_unit_with_three_variants() -> None:
+    description = (
+        "Scenario Outline: Calificación de Contenido\n"
+        "  Given el usuario se encuentra en la pantalla de calificación\n"
+        "  And se muestra la botonera de Calificación\n"
+        "  When el usuario selecciona un botón para calificar\n"
+        "  Then el contenido fue calificado por el usuario correctamente\n"
+        "  And se muestra la botonera de Calificación\n"
+        "  Example:\n"
+        "    | <Calificación> | Descripción |\n"
+        "    | -1 | No me gusta |\n"
+        "    | 1 | Me gusta |\n"
+        "    | 2 | Me encanta |\n"
+    )
+    units = build_coverage_inventory(_story("STVCL-334", description, epic="STVCL-333"), "rn.pdf")
+    assert len(units) == 1
+    extra = (units[0].extra_test_data or "").lower()
+    assert "-1" in extra and "1" in extra and "2" in extra
+    assert "no me gusta" in extra and "me gusta" in extra and "me encanta" in extra
+    cases = candidates_from_jira_artifacts(
+        _story("STVCL-334", description, epic="STVCL-333"),
+        "rn.pdf",
+        [],
+        lambda *_args: None,
+    )
+    assert len(cases) == 1
+
+
+def test_notificacion_se_debe_ocultar_is_qc_functional() -> None:
+    clf = classify_scenario(
+        "Alerta de Notificación de calificación previa",
+        "Given el usuario realiza una nueva calificación del contenido\n"
+        "When la notificación de la calificación anterior aún se muestra en pantalla\n"
+        "Then la notificación se debe ocultar\n",
+    )
+    assert clf.qc_relevance == "QC_FUNCTIONAL"
+    assert clf.observable_then
+
+
+def test_notificacion_debe_ocultarse_is_qc_functional() -> None:
+    clf = classify_scenario(
+        "Alerta de Notificación",
+        "Then la notificación debe ocultarse\n",
+    )
+    assert clf.qc_relevance == "QC_FUNCTIONAL"
+    mapped = translate_then_to_observable("la notificación debe ocultarse")
+    assert mapped
+
+
+def test_notificacion_se_oculta_is_qc_functional() -> None:
+    clf = classify_scenario(
+        "Alerta de Notificación",
+        "Then la notificación se oculta\n",
+    )
+    assert clf.qc_relevance == "QC_FUNCTIONAL"
+
+
+def test_rules_for_timeouts_do_not_create_independent_tc() -> None:
+    description = """Feature: Calificación
+  Rule: El tiempo máximo para cerrar la pantalla es de 60 segundos (max_display_time).
+  Rule: display_time 30 segundos si el usuario no interactúa.
+  Rule: post_vote_display_time 10 segundos tras una calificación.
+
+    [Llave]
+      vod_rating_settings
+      | enable | true |
+      | display_time | 30 |
+      | post_vote_display_time | 10 |
+      | max_display_time | 60 |
+"""
+    units = build_coverage_inventory(_story("STORY-RULE", description), "rn.pdf")
+    assert units == []
+    cases = candidates_from_jira_artifacts(
+        _story("STORY-RULE", description), "rn.pdf", [], lambda *_args: None
+    )
+    assert cases == []
+
+
+WEBCL_4142 = """Feature: Scroll del header
+  Scenario: Transicion al hacer scroll hacia abajo
+    When el usuario hace scroll hacia abajo y supera el umbral
+    Then el gradient transiciona progresivamente de estado inicial a estado solido con blur
+  Scenario: Retorno al hacer scroll hacia arriba
+    When el usuario hace scroll hacia arriba por encima del umbral
+    Then el gradient regresa a su estado inicial
+"""
+
+
+def test_webcl4142_scroll_stays_one_unit() -> None:
+    artifacts = _story("WEBCL-4144", WEBCL_4142, epic="WEBCL-4142")
+    units = build_coverage_inventory(artifacts, "rn.pdf")
+    assert len(units) == 1
+    cases = candidates_from_jira_artifacts(artifacts, "rn.pdf", [], lambda *_args: None)
+    assert len(cases) == 1
+    assert "scroll" in f"{units[0].scenario} {units[0].extra_test_data or ''}".lower()
+
+
+STVCL_333_334 = """Feature: Funcionalidad del Módulo de Calificación
+  Rule: Si rollingcreditstime tiene un valor igual a 0 continuar con FinPlayer.
+  Rule: display_time 30, post_vote_display_time 10, max_display_time 60.
+
+  Scenario: Creación de Pantalla de Calificacíon Post Reproducción con formato visual tipo PIP
+    Given el usuario se encuentra en la pantalla de Post Reproducción con formato visual tipo PIP
+    When se muestra la pantalla de calificacion "Post Reproducción con formato visual tipo PIP" con los elementos:
+      | Elementos | Descripción |
+      | Reproductor con formato visual tipo PIP | Vista reducida |
+      | Contador del tiempo | Cuenta regresiva |
+      | Botón Me gusta | Pulgar arriba |
+      | Botón Cerrar | Icono X |
+    Then la pantalla debe cumplir con las especificaciones solicitadas en los insumos de diseño.
+
+  Scenario Outline: Calificación de Contenido
+    Given el usuario se encuentra en la pantalla de calificación Post Reproducción
+    And se muestra la botonera de Calificación
+    When el usuario selecciona un botón para calificar
+    Then el contenido fue calificado por el usuario correctamente
+    And se muestra la botonera de Calificación
+    Example:
+      | <Calificación> | Descripción |
+      | -1 | No me gusta |
+      | 1 | Me gusta |
+      | 2 | Me encanta |
+
+  Scenario: Alerta de Notificación de calificación previa
+    Given el usuario realiza una nueva calificación del contenido
+    When la notificación de la calificación anterior aún se muestra en pantalla
+    Then la notificación se debe ocultar
+"""
+
+
+def test_stvcl333_recovers_layout_rating_variants_and_notification() -> None:
+    artifacts = _story("STVCL-334", STVCL_333_334, epic="STVCL-333")
+    units = build_coverage_inventory(artifacts, "rn.pdf")
+    scenarios = {unit.scenario for unit in units}
+    assert any("Creación" in title for title in scenarios)
+    assert any("Calificación de Contenido" in title for title in scenarios)
+    assert any("Notificación" in title for title in scenarios)
+    rating = next(unit for unit in units if "Calificación de Contenido" in unit.scenario)
+    extra = (rating.extra_test_data or "").lower()
+    assert extra.count("-1") >= 1 and "no me gusta" in extra and "me encanta" in extra
+    assert not any("30" in unit.scenario and "display" in unit.scenario.lower() for unit in units)
+    cases = candidates_from_jira_artifacts(artifacts, "rn.pdf", [], lambda *_args: None)
+    assert len(cases) == len(units)
+    assert 3 <= len(units) <= 4
