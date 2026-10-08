@@ -1147,4 +1147,23 @@ def test_regenerate_replaces_only_engine_cases(client, monkeypatch, tmp_path) ->
     assert "MAN-001" not in new_engine
 
 
+def test_chunked_generate_plans_keys_then_one_functionality(client, monkeypatch, tmp_path) -> None:
+    release_id, _analysis = _create_app_release_with_rn(client, monkeypatch, tmp_path)
+    plan = client.post(f"/api/v1/releases/{release_id}/generate-cases?chunked=true")
+    assert plan.status_code == 200
+    body = plan.json()
+    assert body["status"] == "CHUNK_PLAN"
+    assert "WEBCL-3721" in body["functionality_keys"]
+    listed = client.get(f"/api/v1/releases/{release_id}/test-cases").json()
+    assert listed == []
+    chunk = client.post(
+        f"/api/v1/releases/{release_id}/generate-cases?chunked=true&functionality_key=WEBCL-3721"
+    )
+    assert chunk.status_code == 200
+    assert chunk.json()["chunk_key"] == "WEBCL-3721"
+    assert chunk.json()["persisted"] is True
+    after = client.get(f"/api/v1/releases/{release_id}/test-cases").json()
+    assert after
+
+
 

@@ -752,11 +752,15 @@ def _deliverable_baseline_coverage(
 def generate_cases_from_rn(
     release_id: int,
     regenerate: bool = Query(default=False),
+    chunked: bool = Query(default=False),
+    functionality_key: str | None = Query(default=None),
     db: Session = Depends(get_db),
 ) -> GenerateCasesResponse:
     """Generate functional Test Cases: Apps from RN/Jira, Operativas from QC-selected BRFs."""
     try:
-        return _generate_cases_from_rn(release_id, regenerate, db)
+        return _generate_cases_from_rn(
+            release_id, regenerate, db, chunked=chunked, functionality_key=functionality_key
+        )
     except HTTPException:
         raise
     except Exception:
@@ -775,6 +779,8 @@ def _generate_cases_from_rn(
     release_id: int,
     regenerate: bool,
     db: Session,
+    chunked: bool = False,
+    functionality_key: str | None = None,
 ) -> GenerateCasesResponse:
     release = get_release_or_404(release_id, db)
     if release.be_release_id is not None:
@@ -854,7 +860,63 @@ def _generate_cases_from_rn(
             "observations": analysis.observations,
         },
     }
-    if release.release_type == ReleaseType.REVALIDACION and release.parent_release_id is not None:
+    tickets_for_keys = (
+        tickets_override
+        if tickets_override is not None
+        else (_tickets_by_section(pdf_bytes, analysis.pdf_filename or "") if pdf_bytes else {})
+    )
+    func_keys: list[str] = []
+    seen_keys: set[str] = set()
+    for tid, _cell in tickets_for_keys.get("functionality") or []:
+        key = (tid or "").strip().upper()
+        if key and key not in seen_keys:
+            seen_keys.add(key)
+            func_keys.append(key)
+    scoped_key = (functionality_key or "").strip().upper() or None
+    if chunked and not scoped_key:
+        if regenerate:
+            delete_engine_cases(db, release.id)
+            db.commit()
+        return GenerateCasesResponse(
+            status="CHUNK_PLAN",
+            message=(
+                f"Se generará por {len(func_keys)} funcionalidad(es), una petición cada una."
+            ),
+            release_id=release.id,
+            release_name=release.name,
+            validation_type=release.validation_type,
+            has_analysis=True,
+            engine="chunk-plan",
+            candidates=[],
+            persisted=False,
+            functionality_keys=func_keys,
+        )
+    proposal = None
+    if chunked and scoped_key:
+        already = engine_cases_for_release(db, release.id)
+        existing_reference = [
+            {
+                "test_case_id": row.test_case_id,
+                "test_case_name": row.test_case_name,
+                "description": row.description or "",
+            }
+            for row in already
+        ]
+        proposal = generate_release_app_candidates(
+            release_id=release.id,
+            release_name=release.name,
+            validation_type=release.validation_type,
+            analysis_present=True,
+            rn_filename=analysis.pdf_filename,
+            pdf_bytes=pdf_bytes,
+            release_context=context,
+            existing_cases=existing_reference,
+            tickets=tickets_override if tickets_override is not None else tickets_for_keys,
+            restrict_to_functionality_keys={scoped_key},
+        )
+        proposal.chunk_key = scoped_key
+        proposal.functionality_keys = func_keys
+    elif release.release_type == ReleaseType.REVALIDACION and release.parent_release_id is not None:
         origin = db.get(Release, release.parent_release_id)
         origin_rows = list(
             db.execute(select(TestCase).where(TestCase.release_id == release.parent_release_id)).scalars().all()

@@ -287,11 +287,45 @@ export const api = {
   createReleaseFromBe: (beReleaseId: number) =>
     request<Release>(`/api/releases-be/${beReleaseId}/create-release`, { method: "POST" }),
   generateCasesFromRN: async (releaseId: number, regenerate = false) => {
+    const post = (query: string) =>
+      request<GenerateCasesResponse>(`/api/releases/${releaseId}/generate-cases${query}`, {
+        method: "POST",
+      });
     try {
-      return await request<GenerateCasesResponse>(
-        `/api/releases/${releaseId}/generate-cases${regenerate ? "?regenerate=true" : ""}`,
-        { method: "POST" },
-      );
+      const plan = await post(`?chunked=true${regenerate ? "&regenerate=true" : ""}`);
+      if (plan.status !== "CHUNK_PLAN") {
+        return plan;
+      }
+      const keys = plan.functionality_keys ?? [];
+      if (keys.length === 0) {
+        return plan;
+      }
+      let last = plan;
+      const failed: string[] = [];
+      for (const key of keys) {
+        try {
+          last = await post(
+            `?chunked=true&functionality_key=${encodeURIComponent(key)}`,
+          );
+        } catch {
+          failed.push(key);
+        }
+      }
+      const ok = keys.length - failed.length;
+      last.message = [
+        `Generación por funcionalidad: ${ok}/${keys.length} completadas.`,
+        failed.length ? `Fallaron: ${failed.join(", ")}.` : "",
+        last.message,
+      ]
+        .filter(Boolean)
+        .join(" ");
+      if (ok === 0 && failed.length > 0) {
+        throw new ApiRequestError(
+          503,
+          `Ninguna funcionalidad se generó (${failed.join(", ")}). Revisa que el backend esté Healthy.`,
+        );
+      }
+      return last;
     } catch (err) {
       if (err instanceof ApiRequestError && err.status === 504) {
         throw new ApiRequestError(

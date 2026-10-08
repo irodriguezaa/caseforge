@@ -168,3 +168,5 @@ class GenerateCasesResponse(BaseModel):
     brfs_analyzed: int = 0
     device_review_count: int = 0
     possible_duplicate_count: int = 0
+    functionality_keys: list[str] = Field(default_factory=list)
+    chunk_key: str | None = None

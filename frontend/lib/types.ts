@@ -170,6 +170,8 @@ export interface GenerateCasesResponse {
   brfs_analyzed?: number;
   device_review_count?: number;
   possible_duplicate_count?: number;
+  functionality_keys?: string[];
+  chunk_key?: string | null;
 }
 
 export interface PublishCasesResponse {
