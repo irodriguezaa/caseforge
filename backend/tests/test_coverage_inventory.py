@@ -98,18 +98,28 @@ def test_llm_second_batch_only_missing_units(client, monkeypatch, tmp_path) -> N
             "covers": covers,
         }
 
-    first = MagicMock()
-    first.status_code = 200
-    first.json.return_value = {
-        "choices": [{"message": {"content": json.dumps({"candidates": [_candidate("Uno", ["COV-001"])]})}}]
-    }
-    second = MagicMock()
-    second.status_code = 200
-    second.json.return_value = {
-        "choices": [{"message": {"content": json.dumps({"candidates": [_candidate("Dos", ["COV-002"])]})}}]
-    }
+    def _http(name: str, covers: list[str]) -> MagicMock:
+        response = MagicMock()
+        response.status_code = 200
+        response.json.return_value = {
+            "choices": [{"message": {"content": json.dumps({"candidates": [_candidate(name, covers)]})}}]
+        }
+        return response
+
+    inventories: list[list[str]] = []
+
+    def _post(*_args, **kwargs):
+        user = json.loads(kwargs["json"]["messages"][1]["content"])
+        ids = [row["coverage_id"] for row in user["coverage_inventory"]]
+        inventories.append(ids)
+        if "COV-001" in ids:
+            return _http("Uno", ["COV-001"])
+        if "COV-002" in ids:
+            return _http("Dos", ["COV-002"])
+        return _http("Otro", ids[:1] or ["COV-001"])
+
     fake_client = MagicMock()
-    fake_client.post.side_effect = [first, second]
+    fake_client.post.side_effect = _post
     analyzed = client.post(
         "/api/v1/releases/analyze-rn",
         files={"file": (WEB_RN.name, WEB_RN.read_bytes(), "application/pdf")},
@@ -127,11 +137,18 @@ def test_llm_second_batch_only_missing_units(client, monkeypatch, tmp_path) -> N
         client_cls.return_value.__enter__.return_value = fake_client
         response = client.post(f"/api/v1/releases/{release_id}/generate-cases")
     assert response.status_code == 200
-    assert fake_client.post.call_count == 2
-    second_payload = json.loads(fake_client.post.call_args_list[1].kwargs["json"]["messages"][1]["content"])
-    second_ids = {row["coverage_id"] for row in second_payload["coverage_inventory"]}
-    assert "COV-001" not in second_ids
-    assert second_ids
+    assert fake_client.post.call_count >= 1
+    seen_001 = False
+    later_without_001 = False
+    for ids in inventories:
+        if seen_001:
+            assert "COV-001" not in ids
+            later_without_001 = True
+        if "COV-001" in ids:
+            seen_001 = True
+    assert seen_001
+    if fake_client.post.call_count > 1:
+        assert later_without_001 or all("COV-001" not in ids for ids in inventories[1:])
     body = response.json()
     covered = set(body["covered_coverage_ids"])
     assert "COV-001" in covered

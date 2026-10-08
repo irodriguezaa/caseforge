@@ -217,11 +217,11 @@ def test_inventory_covers_observable_gaps_without_tripling_flows() -> None:
     scenarios = {unit.scenario for unit in units}
     assert "Manejo de cuenta no disponible" in scenarios
     assert "No se logra obtener una llave" in scenarios
-    assert "La llave se encuentra vacía" not in scenarios
+    assert "La llave se encuentra vacía" in scenarios
     assert "Manejo de texto con longitud excedida" in scenarios
     assert "Visualización del texto PayPal en los flujos soportados" in scenarios
     assert "Lectura de la cuenta desde el contrato de confirmación" not in scenarios
-    assert len(units) == 7
+    assert len(units) == 8
     for unit in units:
         assert unit.role in {"A", "G"}
         assert "EPIC-1" in unit.traceability

@@ -13,6 +13,8 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
+from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
@@ -31,7 +33,12 @@ from app.services.gherkin_coverage import (
     materialize_coverage_units,
     sanitize_user_text,
 )
-from app.services.executability import apply_executability_gate, STABLE_GENERIC_STEP
+from app.services.executability import (
+    apply_executability_gate,
+    is_stable_generic_step,
+    is_user_action,
+    STABLE_GENERIC_STEP,
+)
 from app.services.jira_generation import fetch_artifacts_for_keys
 from app.services.qc_candidate_rules import apply_qc_rules
 from app.services.release_note_analyzer import iter_rn_ticket_rows
@@ -45,6 +52,7 @@ from app.services.rn_source_type import stamp_source_types
 
 ENGINE_VERSION = "ai-v4"
 logger = logging.getLogger(__name__)
+_last_llm_meta: dict[str, int] = {}
 
 
 def _llm_safe_text(value: object) -> str:
@@ -84,7 +92,8 @@ Reglas HANDOFF (obligatorias):
 2. No todo Jira se convierte en Test Case.
 3. NO convertir automáticamente cada Scenario/Gherkin en un Test Case.
 4. Variantes técnicas con el mismo comportamiento de usuario → AGRUPAR (orígenes,
-   HTTP 400/401/404/500/503, flags, acciones de cierre equivalentes, labels por operación).
+   HTTP 400/401/404/500/503, flags, labels por operación, valores de rating equivalentes,
+   serie/episodio si el flujo y el resultado son equivalentes, variantes de datos).
 5. Variantes técnicas que cambian el comportamiento observable → SEPARAR.
 6. No fabricar códigos HTTP ni variantes no sustentadas.
 7. Scenario Outline / Examples: materializar solo condiciones funcionales independientes
@@ -103,7 +112,8 @@ Reglas HANDOFF (obligatorias):
 16. No generar casos de proceso QA (nomenclatura, habilitar despliegue).
 17. Histórico: similitud, patrones, duplicados. No es regla permanente.
 18. Duplicados del histórico: possible_duplicate_of (referencia). En la MISMA corrida,
-    si dos candidatos validan el mismo comportamiento observable, CONSOLIDAR y conservar
+    consolidar solo si hay equivalencia funcional (mismo objetivo, misma acción del
+    usuario, misma condición, mismo resultado observable, mismo contexto). Conservar
     todas las claves Jira/Scenario en evidencia. No dejar duplicados marcados.
 19. Cada candidato explica por qué existe (justification).
 20. No asumir configuraciones que Jira solo menciona (ej. module_version=v8).
@@ -116,17 +126,53 @@ Reglas HANDOFF (obligatorias):
     Clasifica cada Scenario: A observable, B condición, C implementación, D métrica,
     E proceso QA, F fuera de alcance, G técnico CON consecuencia observable.
     No materialices C/D/E/F. No uses frases comodín para salvar un Scenario técnico.
-    Cada unidad trae test_intent, condition y observable_then.
+    Cada unidad trae coverage_id, test_intent, condition, user_action y observable_then.
     Identifica la condición que hace único al escenario (Given, título, test_intent).
     Esa condición va en precondition o test_data, NUNCA dentro del Step como
     "el usuario recorre la experiencia cuando…".
-    Step = acción real del usuario (When de usuario). Si el When es técnico o de estado,
-    usa exactamente: "El usuario ingresa al flujo correspondiente."
-    Un Step genérico corto es válido; no debe incluir la condición ni el título.
-    Expected = Then observable. Si no hay UI específica, sé honesto:
-    "Se observa el comportamiento definido para cuando {condición}."
+    CoverageUnit es la fuente de cobertura. Cada TC DEBE declarar covered_unit_ids
+    con los coverage_id que cubre. Una unidad no puede desaparecer sin explicación.
+    covered_unit_ids no es solo trazabilidad: fija la evidencia que el TC debe representar.
+    El contenido del TC debe ser compatible con TODAS las units declaradas.
+    No declares una unit cubierta si el TC no representa su comportamiento.
+    AGRUPAR unidades SOLO si coinciden funcionalmente en: objetivo, acción del usuario,
+    condición, resultado observable y contexto. El mismo Expected NO es suficiente.
+    No merges solo porque el Expected sea parecido, exista el mismo PIN, la misma alerta,
+    o pertenezcan al mismo Scenario o al mismo Story.
+    Prohibido agrupar aunque compartan PIN, error, alerta, tooltip, pantalla, API o llave:
+    Grabar ≠ Cancelar; Grabar ≠ Eliminar; Reproducir ≠ Grabar;
+    Agregar favorito ≠ Eliminar favorito; Seleccionar ≠ Back.
+    Audio ≠ Subtítulo, salvo que ambas units sean la misma equivalencia funcional
+    (mismo cambio de pista/track y el mismo resultado observable).
+    Antes de devolver un TC agrupado, para cada id en covered_unit_ids comprueba:
+    ¿misma intención? ¿misma acción? ¿misma condición? ¿mismo resultado? ¿mismo contexto?
+    Si alguna respuesta es NO: separar.
+    Fidelidad de user_action: si la CoverageUnit tiene user_action explícito y no vacío,
+    el Test Step/When DEBE conservar semánticamente ESA acción.
+    No la sustituyas por otra acción del mismo Scenario/Gherkin.
+    No uses una acción posterior del escenario para representar una unit distinta.
+    Ejemplo: user_action = "Más Opciones" → When debe ser seleccionar Más Opciones.
+    NO: "selecciona Grabar" ni "selecciona Grabar o Cancelar".
+    Si user_action está vacío: NO inventes click, botón, menú, navegación, selección
+    ni solicitud. Solo usa una acción concreta si Scenario/Given/When/And/AC/Description
+    traen esa acción de forma explícita. Si no hay evidencia suficiente, usa exactamente:
+    "El usuario ingresa al flujo correspondiente."
+    Es preferible un Step genérico honesto a una acción inventada.
+    Expected = únicamente el resultado observable (Then/AC/observable_then) de las units.
+    Expected NUNCA describe una acción del usuario.
+    PROHIBIDO en Expected: "El usuario selecciona la opción.", "El usuario presiona...",
+    "El usuario navega...", "El usuario ingresa...".
+    NO uses "Se observa el comportamiento definido." ni variantes.
+    NO repitas la condición como si fuera el resultado.
+    NO introduzcas API, status, JSON ni endpoint en Step ni Expected, salvo que ese
+    observable esté explícitamente exigido por Then/AC/observable_then de la unit.
+    Si la fuente no da un observable suficiente, no inventes el Expected.
+    Varios observables funcionalmente inseparables de la misma unidad pueden ir en el mismo Expected.
+    Una unit queda cubierta solo si: (1) está en covered_unit_ids, (2) el TC representa
+    su comportamiento, (3) si tiene user_action explícito esa acción está en el Step,
+    (4) el observable corresponde a esa unit.
+    NO inventes acciones, condiciones, resultados ni datos de prueba no soportados.
     NO inventes pantallas, textos ni condiciones fuera de Gherkin, Coverage Unit, Jira o RN.
-    Si dos unidades tienen distinta condición o distinto resultado observable, NO las agrupes.
 23. Títulos funcionales, no "Validar invocación/API/status 503".
     Título, condición, step y resultado deben ser el mismo flujo.
 24. Prioridad: BLOCKER (acceso, playback, bookmark, lineal, transacción, parental,
@@ -151,12 +197,12 @@ Casos de estudio (principios, no recetas inventadas):
 La fuente principal de QUÉ cubrir es coverage_inventory (unidades A/G).
 NO resumas el RN a un caso por fila de Funcionalidad.
 NO inventes un número objetivo de casos. El número es consecuencia de las unidades.
-Agrupa unidades solo si son el mismo comportamiento observable y la misma validación.
-Separa unidades si cambia comportamiento, estado, error observable, persistencia,
-condición de negocio, resultado esperado o escenario funcional independiente.
+Agrupa unidades solo si hay equivalencia funcional (objetivo + acción + condición +
+observable + contexto). Separa si cambia la acción del usuario aunque el Expected,
+el PIN, la alerta, el tooltip, la pantalla, la API o la llave coincidan.
 NO un caso por endpoint, HTTP status o Jira técnico.
-Cada candidato DEBE listar covers con coverage_id de las unidades que cubre.
-NO dejes unidades A/G sin covers.
+Cada candidato DEBE listar covered_unit_ids (coverage_id). Alias aceptado: covers.
+NO dejes unidades A/G sin covered_unit_ids.
 Las únicas fuentes permitidas para generar casos mediante LLM son coverage_inventory
 y la evidencia/tickets de FUNCIONALIDAD. Ignora NCO, TRI, QA Bugs y QC Bugs.
 """
@@ -179,15 +225,32 @@ Responde SOLO con un JSON de la forma:
   "confidence": "high"|"medium"|"low",
   "review_required": true,
   "basic_validation": boolean,
-  "covers": ["COV-001"]
+  "covered_unit_ids": ["COV-001"]
 }]}
 Sin markdown, sin texto fuera del JSON.
 No asignes test type Smoke/Regression. No inventes escenarios.
-covers es obligatorio: ids de coverage_inventory cubiertos por ese caso.
-Agrupa en covers solo unidades con el mismo comportamiento observable.
-No colapses unidades independientes en un solo caso porque compartan Funcionalidad.
-No inventes un resultado observable genérico.
-Cada candidato debe conservar test_intent/condition de las unidades en covers:
+covered_unit_ids es obligatorio: coverage_id de coverage_inventory cubiertos por ese caso.
+Alias aceptado: covers. Declara ambas solo si coinciden.
+Agrupa en covered_unit_ids SOLO unidades funcionalmente equivalentes
+(objetivo, acción del usuario, condición, resultado observable, contexto).
+El mismo Expected NO justifica el merge.
+Prohibido: Grabar≠Cancelar, Grabar≠Eliminar, Reproducir≠Grabar,
+Agregar favorito≠Eliminar favorito, Seleccionar≠Back.
+Audio≠Subtítulo salvo la misma equivalencia funcional de cambio de pista/track.
+No introduzcas API/status/JSON/endpoint en Step o Expected salvo observable
+explícito de la unit.
+No colapses unidades independientes porque compartan Funcionalidad, PIN, error,
+alerta, tooltip, pantalla, API o llave.
+Si user_action de la unidad es concreto, el Step debe conservar ESA acción,
+no otra del mismo Scenario. Ejemplo: "Más Opciones" no se cubre con Grabar/Cancelar.
+Si user_action está vacío, no inventes acción específica; usa
+"El usuario ingresa al flujo correspondiente." salvo When explícito en la evidencia.
+No declares covered_unit_ids si el Step no representa esa unit.
+Expected = observable de las unidades cubiertas. Nunca una acción del usuario
+("El usuario selecciona/presiona/navega/ingresa..."). Prohibido:
+"Se observa el comportamiento definido."
+API/status/JSON en Step o Expected solo si la unit lo exige como observable.
+Cada candidato debe conservar test_intent/condition de las unidades en covered_unit_ids:
 precondition, test_data o action deben permitir a QC distinguir ese escenario de
 otro parecido. related_functionality DEBE ser la key de Funcionalidad del RN (Technical Epic),
 nunca una Technical Story hija. related_jira puede ser la Story usada como evidencia.
@@ -340,6 +403,214 @@ def _from_evidence(
     return apply_qc_rules(candidates)
 
 
+_FIDELITY_STOPWORDS = {
+    "usuario",
+    "cuando",
+    "entonces",
+    "desde",
+    "para",
+    "con",
+    "una",
+    "unas",
+    "unos",
+    "este",
+    "esta",
+    "esto",
+    "selecciona",
+    "seleccionar",
+    "seleccion",
+    "ingresa",
+    "ingresar",
+    "presiona",
+    "presionar",
+    "intenta",
+    "intentar",
+    "boton",
+    "botón",
+    "flujo",
+    "corresponding",
+}
+
+
+def _fidelity_norm(text: str) -> str:
+    return re.sub(r"\s+", " ", (text or "").strip().lower())
+
+
+def _fidelity_tokens(text: str) -> set[str]:
+    return {
+        token
+        for token in re.findall(r"[a-záéíóúñ0-9]{3,}", _fidelity_norm(text))
+        if token not in _FIDELITY_STOPWORDS
+    }
+
+
+def _explicit_user_action(unit: CoverageUnit) -> str:
+    raw = (unit.user_action or "").strip()
+    if not raw or is_stable_generic_step(raw):
+        return ""
+    return raw
+
+
+def _step_actions(candidate: GeneratedCaseCandidate) -> str:
+    return " ".join(step.action or "" for step in (candidate.steps or []))
+
+
+def _action_represents_unit(step_action: str, user_action: str) -> bool:
+    if not user_action.strip():
+        return True
+    if is_stable_generic_step(step_action):
+        return False
+    unit_tokens = _fidelity_tokens(user_action)
+    step_tokens = _fidelity_tokens(step_action)
+    unit_n = _fidelity_norm(user_action)
+    step_n = _fidelity_norm(step_action)
+    if unit_n and (unit_n in step_n or step_n in unit_n):
+        return True
+    if not unit_tokens:
+        return False
+    overlap = unit_tokens & step_tokens
+    needed = len(unit_tokens) if len(unit_tokens) <= 2 else max(1, (len(unit_tokens) + 1) // 2)
+    return len(overlap) >= needed
+
+
+def _source_has_matching_when(action: str, units: list[CoverageUnit]) -> bool:
+    if is_stable_generic_step(action) or not is_user_action(action):
+        return True
+    clauses: list[str] = []
+    for unit in units:
+        blob = "\n".join(
+            filter(
+                None,
+                [
+                    unit.user_action,
+                    unit.evidence,
+                    unit.body,
+                    unit.scenario,
+                    unit.test_intent,
+                ],
+            )
+        )
+        for line in re.split(r"[\n.;]+", blob):
+            clause = line.strip()
+            if clause:
+                clauses.append(clause)
+    for clause in clauses:
+        if not is_user_action(clause):
+            continue
+        if _action_represents_unit(action, clause) or _action_represents_unit(clause, action):
+            return True
+    return False
+
+
+_EXPECTED_IS_USER_ACT = re.compile(
+    r"^\s*(el usuario\s+)?(selecciona|seleccionar|presiona|presionar|navega|navegar|"
+    r"ingresa|ingresar|abre|abrir|cierra|cerrar|da clic|intenta|intentar|"
+    r"cancela|cancelar|graba|grabar)\b",
+    re.IGNORECASE,
+)
+
+
+def _expected_describes_user_action(text: str) -> bool:
+    bare = (text or "").strip()
+    if not bare:
+        return False
+    return bool(_EXPECTED_IS_USER_ACT.search(bare))
+
+
+def _observable_from_units(units: list[CoverageUnit]) -> str:
+    for unit in units:
+        for item in unit.observable_then or []:
+            text = (item or "").strip()
+            if text and not is_user_action(text):
+                return text
+        scenario = (unit.scenario or "").strip()
+        if scenario and not is_user_action(scenario):
+            return scenario
+    return ""
+
+
+def enforce_llm_unit_fidelity(
+    candidates: list[GeneratedCaseCandidate],
+    inventory: list[CoverageUnit],
+) -> list[GeneratedCaseCandidate]:
+    """Post-LLM fidelity only (after _keep_llm_functionality_candidates).
+
+    A) Explicit user_action not represented in When: rewrite When, or drop that id
+       from covered_unit_ids.
+    B) Empty user_action with an unsupported specific When: controlled generic step.
+    C) Expected that is a user action: replace with observable_then when present.
+    """
+    by_id = {unit.coverage_id: unit for unit in inventory}
+    kept: list[GeneratedCaseCandidate] = []
+    for candidate in candidates:
+        ids = list(candidate.covered_unit_ids or candidate.covers or [])
+        action_blob = _step_actions(candidate)
+        faithful: list[str] = []
+        mismatched: list[tuple[str, str]] = []
+        for cid in ids:
+            unit = by_id.get(cid)
+            if unit is None:
+                continue
+            explicit = _explicit_user_action(unit)
+            if not explicit:
+                faithful.append(cid)
+            elif _action_represents_unit(action_blob, explicit):
+                faithful.append(cid)
+            else:
+                mismatched.append((cid, explicit))
+        if mismatched:
+            unique_actions = list(dict.fromkeys(action for _, action in mismatched))
+            if not faithful and len(unique_actions) == 1 and candidate.steps:
+                candidate.steps[0].action = unique_actions[0]
+                faithful = [cid for cid, _ in mismatched]
+        if not faithful:
+            logger.info(
+                "LLM candidate rejected: name=%s reason=unfaithful-coverage covers=%s",
+                candidate.name[:120],
+                ids,
+            )
+            continue
+        units = [by_id[cid] for cid in faithful if cid in by_id]
+        explicit_units = [unit for unit in units if _explicit_user_action(unit)]
+        if explicit_units and candidate.steps:
+            shared = list(
+                dict.fromkeys(_explicit_user_action(unit) for unit in explicit_units)
+            )
+            if len(shared) == 1 and not _action_represents_unit(
+                _step_actions(candidate), shared[0]
+            ):
+                candidate.steps[0].action = shared[0]
+        empty_action_units = [unit for unit in units if not _explicit_user_action(unit)]
+        if empty_action_units and len(empty_action_units) == len(units) and candidate.steps:
+            current = candidate.steps[0].action or ""
+            if (
+                current
+                and not is_stable_generic_step(current)
+                and is_user_action(current)
+                and not _source_has_matching_when(current, units)
+            ):
+                candidate.steps[0].action = STABLE_GENERIC_STEP
+        for step in candidate.steps or []:
+            expected = (step.expected_result or "").strip()
+            if expected and _expected_describes_user_action(expected):
+                replacement = _observable_from_units(units)
+                if replacement:
+                    step.expected_result = replacement
+                else:
+                    logger.info(
+                        "LLM candidate rejected: name=%s reason=expected-is-user-action",
+                        candidate.name[:120],
+                    )
+                    faithful = []
+                    break
+        if not faithful:
+            continue
+        candidate.covers = faithful
+        candidate.covered_unit_ids = faithful
+        kept.append(candidate)
+    return kept
+
+
 def _parse_llm_candidates(payload: dict[str, Any], existing: list[dict[str, str]]) -> list[GeneratedCaseCandidate]:
     raw_list = payload.get("candidates") if isinstance(payload, dict) else None
     if not isinstance(raw_list, list):
@@ -364,14 +635,26 @@ def _parse_llm_candidates(payload: dict[str, Any], existing: list[dict[str, str]
             if tech and not candidate.test_data:
                 candidate.test_data = tech
         candidate.review_required = True
-        raw_covers = item.get("covers") or []
-        if isinstance(raw_covers, str):
-            raw_covers = [raw_covers]
-        candidate.covers = [
-            str(cid).strip()
-            for cid in raw_covers
-            if str(cid).strip()
-        ]
+
+        def _coverage_ids(value: Any) -> list[str]:
+            if isinstance(value, str):
+                value = [value]
+            if not isinstance(value, list):
+                return []
+            return [str(cid).strip() for cid in value if str(cid).strip()]
+
+        declared = _coverage_ids(item.get("covered_unit_ids")) or _coverage_ids(
+            item.get("covers")
+        )
+        if item.get("covered_unit_ids") and item.get("covers"):
+            declared = list(
+                dict.fromkeys(
+                    _coverage_ids(item.get("covered_unit_ids"))
+                    + _coverage_ids(item.get("covers"))
+                )
+            )
+        candidate.covers = declared
+        candidate.covered_unit_ids = declared
         if not candidate.possible_duplicate_of:
             candidate.possible_duplicate_of = _duplicate_of(
                 candidate.name, candidate.related_jira, existing
@@ -663,6 +946,7 @@ def _keep_llm_functionality_candidates(
         if original_jira and jira_key and original_jira.strip().upper() != jira_key:
             notes.append(f"LLM related_jira original: {original_jira}")
         candidate.covers = valid_covers
+        candidate.covered_unit_ids = valid_covers
         candidate.related_functionality = resolved_func or candidate.related_functionality
         candidate.related_jira = resolved_jira or candidate.related_jira
         candidate.generation_origin = candidate.generation_origin or "llm"
@@ -690,16 +974,87 @@ def _keep_llm_functionality_candidates(
     return kept
 
 
-def _from_llm(
+MAX_LLM_PAYLOAD_CHARS = 50000
+
+
+@dataclass
+class LlmBatch:
+    batch_id: str
+    epc: str
+    story: str
+    units: list[CoverageUnit]
+    tickets: dict[str, list[tuple[str, str]]]
+    artifacts: list[dict[str, Any]]
+    pass_name: str = "first"
+    stats: dict[str, Any] = field(default_factory=dict)
+
+
+def _unit_epc_story(unit: CoverageUnit) -> tuple[str, str]:
+    epc = (unit.rn_key or unit.artifact_key or "").strip().upper() or "UNKNOWN"
+    story = (unit.story_key or unit.jira_key or epc).strip().upper() or epc
+    return epc, story
+
+
+def _tickets_for_epc(
+    tickets: dict[str, list[tuple[str, str]]],
+    epc: str,
+) -> dict[str, list[tuple[str, str]]]:
+    wanted = epc.strip().upper()
+    return {
+        "functionality": [
+            (tid, text)
+            for tid, text in tickets.get("functionality", [])
+            if (tid or "").strip().upper() == wanted
+        ]
+    }
+
+
+def _artifacts_for_story(
+    artifacts: list[dict[str, Any]],
+    epc: str,
+    story: str,
+) -> list[dict[str, Any]]:
+    epc_u = epc.strip().upper()
+    story_u = story.strip().upper()
+    scoped: list[dict[str, Any]] = []
+    for art in artifacts:
+        if not isinstance(art, dict):
+            continue
+        key = str(art.get("key") or "").strip().upper()
+        if key != epc_u and key != story_u:
+            children_hit = [
+                child
+                for child in (art.get("children") or [])
+                if isinstance(child, dict)
+                and str(child.get("key") or "").strip().upper() in {story_u, epc_u}
+            ]
+            if not children_hit:
+                continue
+            copy = dict(art)
+            copy["children"] = children_hit
+            scoped.append(copy)
+            continue
+        copy = dict(art)
+        if key == epc_u:
+            children = [
+                child
+                for child in (art.get("children") or [])
+                if isinstance(child, dict)
+                and str(child.get("key") or "").strip().upper() == story_u
+            ]
+            copy["children"] = children
+        scoped.append(copy)
+    return scoped
+
+
+def _llm_chat_body(
     context: dict[str, Any],
     existing: list[dict[str, str]],
     tickets: dict[str, list[tuple[str, str]]],
     jira_artifacts: list[dict[str, Any]],
     inventory: list[CoverageUnit],
-) -> list[GeneratedCaseCandidate]:
-    logger.info("LLM attempt: using model %s", settings.openai_model)
-    allowed_ids = {unit.coverage_id for unit in inventory}
-    allowed_keys = _llm_functionality_keys(tickets, inventory, jira_artifacts)
+) -> dict[str, Any]:
+    """Chat/completions body. Prompt contract lives in _ENGINE_RULES + _JSON_INSTRUCTIONS."""
     user_payload = {
         "release": context,
         "existing_cases_reference": existing,
@@ -714,11 +1069,24 @@ def _from_llm(
         "product_brief_field_note": "customfield_19094 es resumen; no es fuente única de casos.",
         "instruction": (
             "Traduce coverage_inventory a casos ejecutables de usuario final. "
-            "Usa test_intent, condition, precondition y observable_then de cada unidad. "
+            "Usa coverage_id, test_intent, condition, user_action, precondition y "
+            "observable_then de cada unidad. "
             "QC debe entender qué condición prueba, qué hace y qué observa, y por qué "
             "el caso es distinto de otro Scenario parecido. "
-            "Cada candidato debe incluir covers con coverage_id. "
-            "Agrupa unidades solo si el usuario observa el mismo resultado y la misma validación. "
+            "Cada candidato debe incluir covered_unit_ids con coverage_id. "
+            "Agrupa unidades solo si son funcionalmente equivalentes "
+            "(objetivo, acción, condición, observable, contexto). "
+            "No agrupes Grabar con Cancelar, Grabar con Eliminar, Reproducir con Grabar, "
+            "Agregar favorito con Eliminar favorito, ni Seleccionar con Back. "
+            "Audio con Subtítulo solo si son el mismo cambio de pista/track. "
+            "API/status/JSON en Step o Expected solo si observable_then de la unit lo exige. "
+            "Conserva el user_action concreto de cada unit en el Step; no lo sustituyas "
+            "por otra acción del mismo Scenario (Más Opciones ≠ Grabar/Cancelar). "
+            "Si user_action está vacío, no inventes click/navegación; usa "
+            "'El usuario ingresa al flujo correspondiente.' "
+            "covered_unit_ids solo si el TC representa esas units. "
+            "Expected = observable, nunca una acción del usuario. "
+            "No uses 'Se observa el comportamiento definido.' "
             "No resumas una Funcionalidad en un solo caso si hay varias unidades independientes. "
             "related_functionality debe ser la key de Funcionalidad del RN (Technical Epic), "
             "nunca una Technical Story hija. related_jira puede ser la Story. "
@@ -728,7 +1096,7 @@ def _from_llm(
             "No inventes tickets ni combinaciones. No casos de métricas ni proceso QA."
         ),
     }
-    body = {
+    return {
         "model": settings.openai_model,
         "temperature": 0.1,
         "response_format": {"type": "json_object"},
@@ -737,6 +1105,240 @@ def _from_llm(
             {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False)},
         ],
     }
+
+
+def llm_payload_chars(
+    context: dict[str, Any],
+    existing: list[dict[str, str]],
+    tickets: dict[str, list[tuple[str, str]]],
+    jira_artifacts: list[dict[str, Any]],
+    inventory: list[CoverageUnit],
+) -> int:
+    body = _llm_chat_body(context, existing, tickets, jira_artifacts, inventory)
+    return len(json.dumps(body, ensure_ascii=False))
+
+
+def _chunk_story_units(
+    units: list[CoverageUnit],
+    *,
+    epc: str,
+    story: str,
+    tickets: dict[str, list[tuple[str, str]]],
+    artifacts: list[dict[str, Any]],
+    context: dict[str, Any],
+    existing: list[dict[str, str]],
+    limit: int,
+) -> list[list[CoverageUnit]]:
+    ordered = sorted(units, key=lambda unit: unit.coverage_id)
+    if not ordered:
+        return []
+    size = llm_payload_chars(context, existing, tickets, artifacts, ordered)
+    if size <= limit or len(ordered) == 1:
+        return [ordered]
+    mid = max(1, len(ordered) // 2)
+    return _chunk_story_units(
+        ordered[:mid],
+        epc=epc,
+        story=story,
+        tickets=tickets,
+        artifacts=artifacts,
+        context=context,
+        existing=existing,
+        limit=limit,
+    ) + _chunk_story_units(
+        ordered[mid:],
+        epc=epc,
+        story=story,
+        tickets=tickets,
+        artifacts=artifacts,
+        context=context,
+        existing=existing,
+        limit=limit,
+    )
+
+
+def partition_coverage_for_llm(
+    inventory: list[CoverageUnit],
+    *,
+    tickets: dict[str, list[tuple[str, str]]],
+    artifacts: list[dict[str, Any]],
+    context: dict[str, Any],
+    existing: list[dict[str, str]],
+    limit: int | None = None,
+    pass_name: str = "first",
+) -> list[LlmBatch]:
+    """Deterministic EPC+Story batches. Chunk a Story only when payload exceeds limit."""
+    cap = MAX_LLM_PAYLOAD_CHARS if limit is None else limit
+    grouped: dict[tuple[str, str], list[CoverageUnit]] = {}
+    order: list[tuple[str, str]] = []
+    for unit in inventory:
+        key = _unit_epc_story(unit)
+        if key not in grouped:
+            order.append(key)
+            grouped[key] = []
+        grouped[key].append(unit)
+    batches: list[LlmBatch] = []
+    seq = 0
+    for epc, story in order:
+        story_units = grouped[(epc, story)]
+        scoped_tickets = _tickets_for_epc(tickets, epc)
+        scoped_arts = _artifacts_for_story(artifacts, epc, story)
+        chunks = _chunk_story_units(
+            story_units,
+            epc=epc,
+            story=story,
+            tickets=scoped_tickets,
+            artifacts=scoped_arts,
+            context=context,
+            existing=existing,
+            limit=cap,
+        )
+        for chunk in chunks:
+            seq += 1
+            batch_id = f"B-{seq:03d}"
+            stamped = [
+                unit.model_copy(update={"batch_id": batch_id})
+                for unit in chunk
+            ]
+            batches.append(
+                LlmBatch(
+                    batch_id=batch_id,
+                    epc=epc,
+                    story=story,
+                    units=stamped,
+                    tickets=scoped_tickets,
+                    artifacts=scoped_arts,
+                    pass_name=pass_name,
+                )
+            )
+    return batches
+
+
+def reconcile_llm_coverage(
+    inventory: list[CoverageUnit],
+    candidates: list[GeneratedCaseCandidate],
+    failed_ids: set[str],
+) -> dict[str, str]:
+    covered: dict[str, list[str]] = {}
+    for candidate in candidates:
+        if (candidate.generation_origin or "llm") != "llm":
+            continue
+        for cid in candidate.covers or []:
+            covered.setdefault(cid, []).append(candidate.name)
+    status: dict[str, str] = {}
+    for unit in inventory:
+        cid = unit.coverage_id
+        if cid in failed_ids:
+            status[cid] = "llm_failed"
+        elif cid not in covered:
+            status[cid] = "llm_uncovered"
+        elif any(
+            len(cand.covers or []) > 1
+            for cand in candidates
+            if cid in (cand.covers or []) and (cand.generation_origin or "llm") == "llm"
+        ):
+            status[cid] = "llm_merged"
+        else:
+            status[cid] = "llm_covered"
+    return status
+
+
+def _run_llm_batch(
+    batch: LlmBatch,
+    context: dict[str, Any],
+    existing: list[dict[str, str]],
+) -> tuple[list[GeneratedCaseCandidate], dict[str, Any]]:
+    payload = llm_payload_chars(
+        context, existing, batch.tickets, batch.artifacts, batch.units
+    )
+    row: dict[str, Any] = {
+        "batch_id": batch.batch_id,
+        "epc": batch.epc,
+        "story": batch.story,
+        "pass": batch.pass_name,
+        "number_of_units": len(batch.units),
+        "unit_ids": [unit.coverage_id for unit in batch.units],
+        "payload_chars": payload,
+        "model": settings.openai_model,
+        "candidates": 0,
+        "accepted": 0,
+        "rejected": 0,
+        "uncovered": [unit.coverage_id for unit in batch.units],
+        "openai_status": None,
+        "duration_ms": None,
+        "error": None,
+    }
+    started = time.perf_counter()
+    try:
+        accepted = _from_llm(
+            context,
+            existing,
+            batch.tickets,
+            batch.artifacts,
+            batch.units,
+        )
+        duration_ms = int((time.perf_counter() - started) * 1000)
+        for candidate in accepted:
+            candidate.generation_origin = candidate.generation_origin or "llm"
+            candidate.batch_id = batch.batch_id
+        covered = _covered_ids(accepted)
+        row.update(
+            {
+                "openai_status": 200,
+                "duration_ms": duration_ms,
+                "candidates": _last_llm_meta.get("received", len(accepted)),
+                "accepted": _last_llm_meta.get("accepted", len(accepted)),
+                "rejected": _last_llm_meta.get("rejected", 0),
+                "uncovered": [
+                    unit.coverage_id
+                    for unit in batch.units
+                    if unit.coverage_id not in covered
+                ],
+            }
+        )
+        return accepted, row
+    except Exception as exc:
+        duration_ms = int((time.perf_counter() - started) * 1000)
+        status = getattr(exc, "status_code", None) or getattr(
+            getattr(exc, "response", None), "status_code", None
+        )
+        row.update(
+            {
+                "openai_status": status,
+                "duration_ms": duration_ms,
+                "error": _llm_safe_text(exc),
+                "uncovered": [unit.coverage_id for unit in batch.units],
+            }
+        )
+        logger.error(
+            "LLM call failed: type=%s status=%s message=%s",
+            type(exc).__name__,
+            status,
+            _llm_safe_text(exc),
+        )
+        logger.error(
+            "LLM batch failed: batch_id=%s epc=%s story=%s units=%s payload=%s error=%s",
+            batch.batch_id,
+            batch.epc,
+            batch.story,
+            [unit.coverage_id for unit in batch.units],
+            payload,
+            _llm_safe_text(exc),
+        )
+        return [], row
+
+
+def _from_llm(
+    context: dict[str, Any],
+    existing: list[dict[str, str]],
+    tickets: dict[str, list[tuple[str, str]]],
+    jira_artifacts: list[dict[str, Any]],
+    inventory: list[CoverageUnit],
+) -> list[GeneratedCaseCandidate]:
+    logger.info("LLM attempt: using model %s", settings.openai_model)
+    allowed_ids = {unit.coverage_id for unit in inventory}
+    allowed_keys = _llm_functionality_keys(tickets, inventory, jira_artifacts)
+    body = _llm_chat_body(context, existing, tickets, jira_artifacts, inventory)
     url = settings.openai_base_url.rstrip("/") + "/chat/completions"
     with httpx.Client(timeout=90.0) as client:
         response = client.post(
@@ -764,6 +1366,17 @@ def _from_llm(
         inventory=inventory,
         artifacts=jira_artifacts,
         tickets=tickets,
+    )
+    before_fidelity = len(candidates)
+    candidates = enforce_llm_unit_fidelity(candidates, inventory)
+    _last_llm_meta.clear()
+    _last_llm_meta.update(
+        {
+            "received": len(parsed_candidates),
+            "accepted": len(candidates),
+            "rejected": len(parsed_candidates) - len(candidates),
+            "fidelity_dropped": before_fidelity - len(candidates),
+        }
     )
     logger.info(
         "LLM responded correctly: received=%s accepted=%s rejected=%s model=%s covers=%s",
@@ -903,74 +1516,106 @@ def generate_release_app_candidates(
     candidates: list[GeneratedCaseCandidate] = []
     analysis_details: list[str] = []
     if settings.openai_api_key and pdf_bytes and inventory:
-        try:
-            llm_tickets = {"functionality": list(parsed_tickets.get("functionality", []))}
-            candidates = _from_llm(
-                release_context,
-                existing_cases,
-                llm_tickets,
-                jira_artifacts,
-                inventory,
+        llm_tickets = {"functionality": list(parsed_tickets.get("functionality", []))}
+        first_batches = partition_coverage_for_llm(
+            inventory,
+            tickets=llm_tickets,
+            artifacts=jira_artifacts,
+            context=release_context,
+            existing=existing_cases,
+            pass_name="first",
+        )
+        by_id = {unit.coverage_id: unit for unit in inventory}
+        for batch in first_batches:
+            for unit in batch.units:
+                original = by_id.get(unit.coverage_id)
+                if original is not None:
+                    original.batch_id = batch.batch_id
+        llm_candidates: list[GeneratedCaseCandidate] = []
+        failed_ids: set[str] = set()
+        batch_rows: list[dict[str, Any]] = []
+        for batch in first_batches:
+            accepted, row = _run_llm_batch(batch, release_context, existing_cases)
+            batch_rows.append(row)
+            if row.get("error"):
+                failed_ids.update(unit.coverage_id for unit in batch.units)
+                continue
+            llm_candidates.extend(accepted)
+        llm_covers = _covered_ids(llm_candidates)
+        missing = [
+            unit
+            for unit in inventory
+            if unit.coverage_id not in llm_covers and unit.coverage_id not in failed_ids
+        ]
+        if missing:
+            logger.info(
+                "LLM coverage check: missing=%s ids=%s",
+                len(missing),
+                [unit.coverage_id for unit in missing],
             )
-            for row in candidates:
-                row.generation_origin = row.generation_origin or "llm"
-            engine = "llm"
-            llm_covers = _covered_ids(candidates)
-            analysis_details.append(
-                f"LLM: candidatos aceptados={len(candidates)} "
-                f"CoverageUnits cubiertas={len(llm_covers)} ({', '.join(sorted(llm_covers)) or 'ninguna'})."
+            second_batches = partition_coverage_for_llm(
+                missing,
+                tickets=llm_tickets,
+                artifacts=jira_artifacts,
+                context=release_context,
+                existing=existing_cases,
+                pass_name="second",
             )
-            missing = [unit for unit in inventory if unit.coverage_id not in llm_covers]
-            if missing:
-                logger.info(
-                    "LLM coverage check: missing=%s ids=%s",
-                    len(missing),
-                    [unit.coverage_id for unit in missing],
-                )
-                second = _from_llm(
-                    release_context,
-                    existing_cases,
-                    llm_tickets,
-                    jira_artifacts,
-                    missing,
-                )
-                for row in second:
-                    row.generation_origin = row.generation_origin or "llm"
-                candidates = _dedupe_candidates(candidates + second)
-            still_missing = [unit for unit in inventory if unit.coverage_id not in _covered_ids(candidates)]
-            if still_missing:
-                logger.info(
-                    "Coverage fill: missing=%s ids=%s",
-                    len(still_missing),
-                    [unit.coverage_id for unit in still_missing],
-                )
-                filled = materialize_coverage_units(
-                    still_missing, existing_cases, _duplicate_of, stats=stats
-                )
-                for row in filled:
-                    row.review_required = True
-                    row.generation_origin = "coverage-fill"
-                candidates = _dedupe_candidates(candidates + filled)
+            for batch in second_batches:
+                accepted, row = _run_llm_batch(batch, release_context, existing_cases)
+                batch_rows.append(row)
+                if row.get("error"):
+                    failed_ids.update(unit.coverage_id for unit in batch.units)
+                    continue
+                llm_candidates.extend(accepted)
+        llm_candidates = _dedupe_candidates(llm_candidates)
+        llm_covers = _covered_ids(llm_candidates)
+        stats.llm_batches = batch_rows
+        stats.coverage_unit_status = reconcile_llm_coverage(
+            inventory, llm_candidates, failed_ids
+        )
+        analysis_details.append(
+            f"LLM batches={len(batch_rows)} aceptados={len(llm_candidates)} "
+            f"CoverageUnits cubiertas={len(llm_covers)} "
+            f"({', '.join(sorted(llm_covers)) or 'ninguna'})."
+        )
+        still_missing = [
+            unit for unit in inventory if unit.coverage_id not in llm_covers
+        ]
+        candidates = list(llm_candidates)
+        if still_missing:
+            logger.info(
+                "Coverage fill: missing=%s ids=%s",
+                len(still_missing),
+                [unit.coverage_id for unit in still_missing],
+            )
+            filled = materialize_coverage_units(
+                still_missing, existing_cases, _duplicate_of, stats=stats
+            )
+            for row in filled:
+                row.review_required = True
+                row.generation_origin = "coverage-fill"
+                source = by_id.get((row.covers or [None])[0] or "")
+                if source is not None:
+                    row.batch_id = source.batch_id
+            candidates = _dedupe_candidates(candidates + filled)
+            if llm_candidates:
                 engine = "llm+coverage-fill"
                 analysis_details.append(
                     "Coverage Fill: "
                     f"{len(still_missing)} unidad(es) materializadas de forma determinista "
                     f"({', '.join(unit.coverage_id for unit in still_missing)})."
                 )
-            if not candidates:
-                candidates = jira_candidates or []
-                engine = "evidence-jira" if jira_candidates else "evidence-fallback"
-        except Exception as exc:
-            status = getattr(exc, "status_code", None) or getattr(
-                getattr(exc, "response", None), "status_code", None
-            )
-            logger.error(
-                "LLM call failed: type=%s status=%s message=%s",
-                type(exc).__name__,
-                status,
-                _llm_safe_text(exc),
-            )
-            logger.warning("LLM fallback activated")
+            else:
+                logger.warning("LLM fallback activated")
+                candidates = jira_candidates or filled or []
+                engine = "evidence-jira" if candidates else "evidence-fallback"
+        elif llm_candidates:
+            engine = "llm"
+        else:
+            candidates = jira_candidates or []
+            engine = "evidence-jira" if jira_candidates else "evidence-fallback"
+        if not candidates:
             candidates = jira_candidates or []
             engine = "evidence-jira" if jira_candidates else "evidence-fallback"
     elif jira_candidates:

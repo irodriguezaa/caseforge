@@ -43,6 +43,9 @@ class CoverageUnit(BaseModel):
     normal_precondition: str | None = None
     test_intent: str = ""
     qc_relevance: str | None = None
+    user_action: str | None = None
+    source_origin: str = "gherkin"
+    batch_id: str | None = None
 
     def for_llm(self) -> dict:
         return {
@@ -52,6 +55,7 @@ class CoverageUnit(BaseModel):
             "behavior": self.behavior,
             "scenario": self.scenario,
             "test_intent": self.test_intent,
+            "user_action": self.user_action,
             "condition": self.special_condition or self.condition_b,
             "precondition": self.normal_precondition,
             "observable_then": list(self.observable_then or [])[:8],
@@ -111,6 +115,9 @@ class GeneratedCaseCandidate(BaseModel):
     interaction_points: list[str] = Field(default_factory=list)
     hn_source: str | None = None
     covers: list[str] = Field(default_factory=list)
+    covered_unit_ids: list[str] = Field(default_factory=list)
+    equivalence_key: str | None = None
+    batch_id: str | None = None
 
 
 class GenerationStats(BaseModel):
@@ -133,6 +140,9 @@ class GenerationStats(BaseModel):
     examples_f: list[str] = Field(default_factory=list)
     examples_g: list[str] = Field(default_factory=list)
     examples_consolidated: list[str] = Field(default_factory=list)
+    inventory_exclusions: list[str] = Field(default_factory=list)
+    llm_batches: list[dict[str, Any]] = Field(default_factory=list)
+    coverage_unit_status: dict[str, str] = Field(default_factory=dict)
 
 
 class GenerateCasesResponse(BaseModel):

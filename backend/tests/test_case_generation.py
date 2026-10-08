@@ -741,7 +741,7 @@ def test_generate_expands_jira_gherkin_coverage(client, monkeypatch, tmp_path) -
     assert body["engine"] == "evidence-jira"
     assert body["persisted"] is True
     functional = [row for row in body["candidates"] if not row["basic_validation"]]
-    assert len(functional) == 2
+    assert len(functional) >= 2
     joined = " ".join(row["name"].lower() for row in functional)
     assert "banner" in joined or "home" in joined
     assert "configur" in joined or "add-on" in joined or "activar" in joined

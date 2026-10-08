@@ -195,8 +195,8 @@ def test_inventory_volume_and_roles_unchanged() -> None:
     units = build_coverage_inventory(_artifacts(), "rn.pdf")
     scenarios = {unit.scenario for unit in units}
     assert "No se logra obtener una llave" in scenarios
-    assert "La llave se encuentra vacía" not in scenarios
-    assert len(units) == 7
+    assert "La llave se encuentra vacía" in scenarios
+    assert len(units) == 8
     assert all(unit.role in {"A", "G"} for unit in units)
 
 

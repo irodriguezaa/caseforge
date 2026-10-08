@@ -12,6 +12,7 @@ from typing import Literal
 from app.schemas.case_generation import CandidateStep, GeneratedCaseCandidate, GenerationStats
 
 from app.services.executability import STABLE_GENERIC_STEP, bound_expected, condition_clause
+from app.services.functional_equivalence import build_functional_equivalence_key
 
 Priority = Literal["BLOCKER", "CRITICAL"]
 Confidence = Literal["high", "medium", "low"]
@@ -601,7 +602,7 @@ def merge_candidates(group: list[GeneratedCaseCandidate]) -> GeneratedCaseCandid
             )
         if item.precondition:
             extra_pre.append(item.precondition)
-        extra_covers.extend(item.covers or [])
+        extra_covers.extend(item.covered_unit_ids or item.covers or [])
         extra_rules.extend(item.applied_rules or [])
     jiras = list(dict.fromkeys(extra_jira))
     epics = list(dict.fromkeys(extra_epic))
@@ -617,8 +618,8 @@ def merge_candidates(group: list[GeneratedCaseCandidate]) -> GeneratedCaseCandid
     justification = primary.justification
     if consolidated:
         justification += (
-            " Consolidado: mismo comportamiento observable; se conservan todas las "
-            "referencias Jira/Scenario en la evidencia."
+            " Consolidado: equivalencia funcional (mismo EPC, objetivo, acción, "
+            "condición, resultado y flujo); se conservan referencias Jira/Scenario."
         )
     return GeneratedCaseCandidate(
         name=name,
@@ -644,12 +645,17 @@ def merge_candidates(group: list[GeneratedCaseCandidate]) -> GeneratedCaseCandid
         priority=classify_priority(name, steps, test_data),
         user_type=user_type,
         covers=list(dict.fromkeys(extra_covers)),
-        applied_rules=list(dict.fromkeys(extra_rules)),
+        covered_unit_ids=list(dict.fromkeys(extra_covers)),
+        applied_rules=list(dict.fromkeys(
+            [*extra_rules, *("functional_equivalence",)] if consolidated else extra_rules
+        )),
+        equivalence_key=primary.equivalence_key,
         generation_origin=primary.generation_origin,
         source_type=primary.source_type,
         origin_release_id=primary.origin_release_id,
         origin_release_name=primary.origin_release_name,
         related_origin_case_ids=list(primary.related_origin_case_ids or []),
+        batch_id=primary.batch_id,
     )
 
 
@@ -701,18 +707,6 @@ def apply_qc_rules(
         )
         if candidate_lacks_observable_qc(candidate):
             continue
-        if candidate.covers:
-            cluster_key = (
-                "covers:"
-                + "|".join(sorted(candidate.covers))
-                + "|"
-                + ux_fingerprint(original_name, rewritten_steps, candidate.test_data)
-            )
-        else:
-            cluster_key = (
-                f"{candidate.related_jira or candidate.related_functionality or ''}|"
-                f"{ux_fingerprint(original_name, rewritten_steps, candidate.test_data)}"
-            )
         if candidate.user_type is None:
             candidate.user_type = extract_user_type(
                 f"{candidate.precondition or ''} {candidate.test_data or ''} {candidate.name}"
@@ -728,17 +722,11 @@ def apply_qc_rules(
             technical_heavy=bool(candidate.test_data and len(candidate.test_data) > 80)
             or still_interpreted,
         )
+        equiv = build_functional_equivalence_key(candidate)
+        candidate.equivalence_key = equiv.value()
+        cluster_key = equiv.value()
+        if not (equiv.objective or equiv.observable):
+            cluster_key = f"unique:{id(candidate)}"
         kept.append((cluster_key, candidate))
 
-    story_merged = _bucket_merge(kept, stats, count_consolidation=False)
-    cross_story: list[tuple[str, GeneratedCaseCandidate]] = []
-    for index, item in enumerate(story_merged):
-        if item.basic_validation:
-            key = f"basic:{item.related_jira or index}"
-        else:
-            key = (
-                observable_fingerprint(item.steps, item.name, item.test_data)
-                or f"unique:{index}"
-            )
-        cross_story.append((key, item))
-    return _bucket_merge(cross_story, stats, count_consolidation=True)
+    return _bucket_merge(kept, stats, count_consolidation=True)

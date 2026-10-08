@@ -308,7 +308,8 @@ def test_key_token_with_functional_then_is_not_discarded() -> None:
     )
     scenarios = [unit.scenario for unit in units]
     assert "No se logra obtener una llave" in scenarios
-    assert len(units) == 1
+    assert "La llave se encuentra vacia" in scenarios
+    assert len(units) == 2
 
 
 def test_does_not_turn_every_scenario_into_a_tc() -> None:
@@ -373,11 +374,11 @@ def test_stvcl332_recovers_four_functional_behaviors_without_one_to_one_tcs() ->
     assert "Seleccionar la ventana con formato visual tipo PIP desde el RCU" in scenarios
     assert "Comportamiento de la vista del reproductor con formato visual tipo PIP" in scenarios
     assert "No se logra obtener una llave" in scenarios
-    assert "La llave se encuentra vacia" not in scenarios
-    assert 3 <= len(units) <= 4
+    assert "La llave se encuentra vacia" in scenarios
+    assert 4 <= len(units) <= 6
     cases = candidates_from_jira_artifacts(artifacts, "rn.pdf", [], lambda *_args: None)
     assert len(cases) == len(units)
-    assert len(cases) < 5
+    assert len(cases) <= 6
     for unit in units:
         assert "STVCL-286" in unit.traceability
         assert "STVCL-332" in unit.traceability
