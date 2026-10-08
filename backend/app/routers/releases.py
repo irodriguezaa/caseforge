@@ -4,6 +4,7 @@ Apps, Operativas and Release BE can be hard-deleted (including the stored Releas
 A Release that is origin of Revalidaciones cannot be deleted.
 """
 
+import logging
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
@@ -38,6 +39,8 @@ from app.schemas.release import (
     RnScopeExportRequest,
 )
 from app.services.ai_case_engine import _tickets_by_section, generate_release_app_candidates
+
+logger = logging.getLogger(__name__)
 from app.services.rn_scope_export import build_rn_scope_workbook
 from app.services.revalidation_engine import (
     candidates_from_incremental_plan,
@@ -752,6 +755,27 @@ def generate_cases_from_rn(
     db: Session = Depends(get_db),
 ) -> GenerateCasesResponse:
     """Generate functional Test Cases: Apps from RN/Jira, Operativas from QC-selected BRFs."""
+    try:
+        return _generate_cases_from_rn(release_id, regenerate, db)
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("generate-cases crashed release_id=%s", release_id)
+        db.rollback()
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "Regenerar casos se cayó en el backend (Jira/LLM o memoria). "
+                "Espera a que qcpulse-backend-1 esté Healthy y reintenta."
+            ),
+        ) from None
+
+
+def _generate_cases_from_rn(
+    release_id: int,
+    regenerate: bool,
+    db: Session,
+) -> GenerateCasesResponse:
     release = get_release_or_404(release_id, db)
     if release.be_release_id is not None:
         raise HTTPException(
