@@ -335,6 +335,12 @@ export const api = {
     }
     const contentType = response.headers.get("content-type") ?? "";
     if (!response.ok) {
+      if (response.status === 504) {
+        throw new ApiRequestError(
+          504,
+          "El proxy cortó Extraer alcance RN (504). El RN es grande; espera y reintenta.",
+        );
+      }
       const body = (await response.json().catch(() => ({}))) as { detail?: unknown; message?: string };
       const detail = typeof body.detail === "string" ? body.detail : body.message;
       throw new ApiRequestError(response.status, detail || "No se pudo extraer el alcance del RN.");

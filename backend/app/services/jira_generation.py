@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from typing import Any
 
+import httpx
+
 from app.services.jira_client import JiraApiError, JiraNotConfiguredError, _client
 
 # Documented in Prompt v4 — not discovered ad hoc.
@@ -226,7 +228,7 @@ def fetch_scope_fields_for_keys(keys: list[str]) -> dict[str, dict[str, str]]:
                     next_page_token = payload.get("nextPageToken") or None
                     if not next_page_token:
                         break
-    except JiraApiError:
+    except (JiraApiError, httpx.TimeoutException, httpx.RequestError):
         return found
     return found
 

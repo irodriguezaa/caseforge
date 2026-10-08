@@ -66,14 +66,42 @@ fix_nginx() {
       '/location \^~ \/qcpulse\/ {/a\        client_max_body_size 25m;' \
       "$NGINX_CONF"
   fi
-  # A previous revision inserted proxy_read_timeout 600s into locations that already
-  # had the directive (nginx: duplicate). Strip those inserted lines only.
+  # Extraer alcance RN / generate-cases: el default de nginx (60s) devuelve 504.
+  # Quitar inserts 600s duplicados y dejar un solo timeout 300s en /qcpulse.
   docker exec "$PROXY" sed -i \
     '/^[[:space:]]*proxy_read_timeout 600s;$/d;/^[[:space:]]*proxy_send_timeout 600s;$/d' \
     "$NGINX_CONF"
+  local conf_tmp
+  conf_tmp="$(mktemp)"
+  docker exec "$PROXY" cat "$NGINX_CONF" > "$conf_tmp"
+  python3 - "$conf_tmp" <<'PY'
+from pathlib import Path
+import re
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text()
+pattern = re.compile(
+    r"(location\s+(?:=\s*|\^~\s+)/qcpulse/?\s*\{)(.*?)(\n[ \t]*\})",
+    re.DOTALL,
+)
+
+def patch_block(match: re.Match[str]) -> str:
+    head, body, tail = match.group(1), match.group(2), match.group(3)
+    body = re.sub(r"\n[ \t]*proxy_read_timeout\s+[^;]+;", "", body)
+    body = re.sub(r"\n[ \t]*proxy_send_timeout\s+[^;]+;", "", body)
+    body += "\n        proxy_read_timeout 300s;\n        proxy_send_timeout 300s;"
+    return head + body + tail
+
+patched, n = pattern.subn(patch_block, text)
+if n:
+    path.write_text(patched)
+PY
+  docker cp "$conf_tmp" "$PROXY:$NGINX_CONF"
+  rm -f "$conf_tmp"
   docker exec "$PROXY" nginx -t
   docker exec "$PROXY" nginx -s reload
-  echo "nginx: /qcpulse/ → $FRONTEND, Connection \$connection_upgrade, reload OK. Django no se recreó."
+  echo "nginx: /qcpulse/ → $FRONTEND, proxy timeout 300s, reload OK. Django no se recreó."
 }
 
 diagnose() {

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { proxyToBackend } from "@/lib/backend";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 180;
+export const maxDuration = 300;
 
 function errorDetail(body: unknown): string {
   if (!body || typeof body !== "object") {
@@ -23,7 +23,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const response = await proxyToBackend(
     "/api/v1/releases/rn-scope/export",
     { method: "POST", body },
-    { timeoutMs: 180_000 },
+    { timeoutMs: 300_000 },
   );
   const contentType = response.headers.get("Content-Type") ?? "";
   if (!response.ok) {

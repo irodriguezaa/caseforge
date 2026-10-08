@@ -100,6 +100,21 @@ def test_export_rn_scope_from_analyzed_pdf(client, monkeypatch, tmp_path) -> Non
     assert "spreadsheet" in response.headers["content-type"]
 
 
+def test_fetch_scope_fields_timeout_returns_empty(monkeypatch) -> None:
+    import httpx
+    from app.services.jira_generation import fetch_scope_fields_for_keys
+
+    class Boom:
+        def __enter__(self):
+            raise httpx.TimeoutException("slow")
+
+        def __exit__(self, *_args):
+            return False
+
+    monkeypatch.setattr("app.services.jira_generation._client", lambda timeout=None: Boom())
+    assert fetch_scope_fields_for_keys(["WEBCL-3721"]) == {}
+
+
 def test_export_rn_scope_rejects_path_outside_storage(client, monkeypatch, tmp_path) -> None:
     _store_dir(monkeypatch, tmp_path)
     response = client.post(
