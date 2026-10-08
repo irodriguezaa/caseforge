@@ -63,16 +63,21 @@ _USER_OR_UI = re.compile(
     r"\b(usuario|user|banner|modal|qr|c[oó]digo qr|[ií]tem|pesta[nñ]a|bot[oó]n|"
     r"pantalla|home|men[uú]|player|mini ?player|tarjeta|carrusel|vcard|"
     r"mensaje|error (en|de|visible)|pago|paypal|checkout|reproducci[oó]n|"
-    r"live ?feed|marcador|alineaci[oó]n|partido|add-?on|activaci[oó]n)\b",
+    r"live ?feed|marcador|alineaci[oó]n|partido|add-?on|activaci[oó]n|"
+    r"pip|cr[eé]ditos|outline|calificaci[oó]n|post reproducci[oó]n|"
+    r"fin player|pantalla completa|fullscreen|leyenda|foco|rcu|remote|"
+    r"elemento|posici[oó]n)\b",
     re.IGNORECASE,
 )
 _OBSERVABLE_VERB = re.compile(
-    r"\b(muestra|mostrar|mostrarse|oculta|presenta|presentar|presentarse|"
+    r"\b(muestra|mostrar|mostrarse|oculta|ocultar|presenta|presentar|presentarse|"
     r"abre|cierra|visualiza|visualizar|visualizarse|redirige|reproduce|"
     r"no (se )?muestra|no (se )?mostrarse|no presenta|no presentar|"
     r"no abre|no visualiza|no visualizarse|"
     r"ve |ven |retira|permanece|contin[uú]a|completa|ingresa|selecciona|"
-    r"navega|disponible para el usuario|deja de (ver|visualizar)|ya no (ve|visualiza))\b",
+    r"navega|disponible para el usuario|deja de (ver|visualizar)|ya no (ve|visualiza)|"
+    r"cambiar( al siguiente)?|no se realiza( ninguna)? acci[oó]n|"
+    r"outline|pantalla completa|quedar vac[ií]a|queda vac[ií]a)\b",
     re.IGNORECASE,
 )
 _SHOW_FAMILY = re.compile(
@@ -119,6 +124,18 @@ _LAYOUT_HOLDS = re.compile(
     r"estructura actual de la pantalla)\b",
     re.IGNORECASE,
 )
+_GENERIC_THEN = re.compile(
+    r"el comportamiento debe cumplir|"
+    r"debe cumplir con las especificaciones|"
+    r"cumplir con las especificaciones solicitadas|"
+    r"especificaciones solicitadas",
+    re.IGNORECASE,
+)
+_TABLE_HEADER = re.compile(
+    r"^(elemento|elementos|acci[oó]n|descripci[oó]n|campo|valor)$",
+    re.IGNORECASE,
+)
+_BULLET = re.compile(r"^[\*\-]\s+(.+)")
 _USER_SUBJECT = re.compile(r"^\s*(el )?usuario\b", re.IGNORECASE)
 _IMPL_SUBJECT = re.compile(
     r"\b(el sistema|el backend|el servicio|el frontend|el fe\b|el handler|"
@@ -193,6 +210,23 @@ class ScenarioClassification:
     special_condition: str | None = None
     normal_precondition: str | None = None
     reason: str = ""
+    qc_relevance: str | None = None
+    qc_observables: list[str] = field(default_factory=list)
+    qc_user_action: str | None = None
+    qc_condition: str | None = None
+
+
+def _table_row_clause(line: str) -> str | None:
+    stripped = line.strip()
+    if not stripped.startswith("|"):
+        return None
+    cells = [cell.strip() for cell in stripped.strip("|").split("|")]
+    cells = [cell for cell in cells if cell and not re.fullmatch(r":?-{3,}:?", cell)]
+    if not cells:
+        return None
+    if _TABLE_HEADER.match(cells[0]):
+        return None
+    return ": ".join(cells)
 
 
 def split_gherkin_clauses(body: str) -> tuple[list[str], list[str], list[str]]:
@@ -200,12 +234,28 @@ def split_gherkin_clauses(body: str) -> tuple[list[str], list[str], list[str]]:
     when: list[str] = []
     then: list[str] = []
     mode = "given"
+
+    def _target() -> list[str]:
+        if mode == "when":
+            return when
+        if mode == "then":
+            return then
+        return given
+
     for raw in (body or "").splitlines():
         line = raw.strip()
-        if not line or line.startswith("#") or line.startswith("|"):
+        if not line or line.startswith("#"):
             continue
         if re.match(r"^\s*Examples\s*:", line, re.I):
             break
+        table_clause = _table_row_clause(line)
+        if table_clause:
+            _target().append(table_clause)
+            continue
+        bullet = _BULLET.match(line)
+        if bullet:
+            _target().append(bullet.group(1).strip())
+            continue
         if _WHEN.match(line):
             mode = "when"
             when.append(_WHEN.sub("", line).strip())
@@ -223,10 +273,31 @@ def split_gherkin_clauses(body: str) -> tuple[list[str], list[str], list[str]]:
         elif _STEP.match(line):
             continue
         else:
-            target = given if mode == "given" else when if mode == "when" else then
+            target = _target()
             if target:
                 target[-1] = f"{target[-1]} {line}".strip()
     return given, when, then
+
+
+def _is_generic_then(text: str) -> bool:
+    if not text:
+        return True
+    if _GENERIC_THEN.search(text) and not _has_observable_consequence(text):
+        return True
+    return False
+
+
+def _observables_from_block(title: str, given: list[str], when: list[str], then: list[str]) -> list[str]:
+    observable = _observable_clauses(then)
+    then_generic = bool(then) and all(_is_generic_then(clause) for clause in then)
+    if not observable or then_generic:
+        extra = _observable_clauses(given)
+        for item in extra:
+            if item not in observable:
+                observable.append(item)
+    if not observable and _has_observable_consequence(title):
+        observable = [title.strip()]
+    return observable
 
 
 def _has_user_verifiable_then(text: str) -> bool:
@@ -352,12 +423,10 @@ def _preconditions(given: list[str], title: str, body: str) -> tuple[str | None,
     )
 
 
-def classify_scenario(title: str, body: str) -> ScenarioClassification:
+def _classify_gherkin_role(title: str, body: str) -> ScenarioClassification:
     given, when, then = split_gherkin_clauses(body)
     blob = f"{title}\n{body}"
-    observable = _observable_clauses(then)
-    if not observable and _has_observable_consequence(title):
-        observable = [title.strip()]
+    observable = _observables_from_block(title, given, when, then)
     vis_placeholder = bool(re.search(r"<visibilidad>|<resultado>", blob, re.I))
     technical = _technical_clauses(then) + _technical_clauses(when)
     normal_pre, special_pre = _preconditions(given, title, body)
@@ -418,7 +487,7 @@ def classify_scenario(title: str, body: str) -> ScenarioClassification:
             reason="Métrica, analytics o telemetría sin consecuencia observable de QC.",
         )
 
-    if _KEY_TOKEN_SCENARIO.search(title) or _KEY_TOKEN_SCENARIO.search(blob):
+    if (_KEY_TOKEN_SCENARIO.search(title) or _KEY_TOKEN_SCENARIO.search(blob)) and not has_obs:
         if not _PRODUCT_CONTROL_UX.search(blob):
             return ScenarioClassification(
                 role="B",
@@ -539,6 +608,35 @@ def classify_scenario(title: str, body: str) -> ScenarioClassification:
         technical_notes=technical or [title],
         reason="Sin Then observable; no se inventa consecuencia funcional.",
     )
+
+
+def classify_scenario(title: str, body: str) -> ScenarioClassification:
+    """A–G first, then QC observability. Role C can still be QC_FUNCTIONAL."""
+    from app.services.qc_observability import classify_qc_observability
+
+    clf = _classify_gherkin_role(title, body)
+    obs = classify_qc_observability(
+        title,
+        body,
+        role=clf.role,
+        observable_then=list(clf.observable_then or []),
+        given=list(clf.given or []),
+        when=list(clf.when or []),
+        then=list(clf.then or []),
+    )
+    clf.qc_relevance = obs.kind
+    clf.qc_observables = list(obs.observables or [])
+    clf.qc_user_action = obs.user_action
+    clf.qc_condition = obs.condition
+    if obs.observables and not clf.observable_then:
+        clf.observable_then = list(obs.observables)
+    if (
+        clf.observable_then
+        and _KEY_TOKEN_SCENARIO.search(title)
+        and clf.qc_relevance in {"QC_FUNCTIONAL", "QC_REGRESSION", "QC_VARIANT"}
+    ):
+        clf.qc_relevance = "QC_VARIANT"
+    return clf
 
 
 def record_classification(stats: GenerationStats, classification: ScenarioClassification, title: str) -> None:

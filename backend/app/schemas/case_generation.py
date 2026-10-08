@@ -42,11 +42,13 @@ class CoverageUnit(BaseModel):
     special_condition: str | None = None
     normal_precondition: str | None = None
     test_intent: str = ""
+    qc_relevance: str | None = None
 
     def for_llm(self) -> dict:
         return {
             "coverage_id": self.coverage_id,
             "role": self.role,
+            "qc_relevance": self.qc_relevance,
             "behavior": self.behavior,
             "scenario": self.scenario,
             "test_intent": self.test_intent,

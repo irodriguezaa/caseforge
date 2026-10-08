@@ -194,9 +194,9 @@ def test_last_resort_does_not_invent_a_user_action() -> None:
 def test_inventory_volume_and_roles_unchanged() -> None:
     units = build_coverage_inventory(_artifacts(), "rn.pdf")
     scenarios = {unit.scenario for unit in units}
-    assert "No se logra obtener una llave" not in scenarios
+    assert "No se logra obtener una llave" in scenarios
     assert "La llave se encuentra vacía" not in scenarios
-    assert len(units) == 6
+    assert len(units) == 7
     assert all(unit.role in {"A", "G"} for unit in units)
 
 

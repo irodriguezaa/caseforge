@@ -352,11 +352,13 @@ def _coverage_unit(
     condition_b: str | None,
     trace: str,
 ) -> CoverageUnit:
-    behavior = functional_title(title, clf.observable_then or [title])
+    observables = list(clf.observable_then or clf.qc_observables or [])
+    behavior = functional_title(title, observables or [title])
     intent = build_test_intent(title)
+    unit_role: str = clf.role if clf.role in {"A", "G"} else "G"
     return CoverageUnit(
         coverage_id=coverage_id,
-        role=clf.role if clf.role in {"A", "G"} else "A",
+        role=unit_role,  # type: ignore[arg-type]
         behavior=behavior[:250],
         scenario=title,
         evidence=evidence[:2000],
@@ -374,12 +376,77 @@ def _coverage_unit(
         rn_filename=rn_filename,
         artifact_key=epic_key,
         story_key=story_key,
-        observable_then=list(clf.observable_then or []),
+        observable_then=observables,
         technical_notes=list(clf.technical_notes or []),
-        special_condition=clf.special_condition,
+        special_condition=clf.special_condition or clf.qc_condition,
         normal_precondition=clf.normal_precondition,
         test_intent=intent,
+        qc_relevance=clf.qc_relevance,
     )
+
+
+_SCROLL = re.compile(r"\bscroll\b", re.IGNORECASE)
+_KEY_DEGRADATION = re.compile(
+    r"no se logra obtener una llave|"
+    r"la llave se encuentra vac[ií]a|"
+    r"llave (inexistente|vac[ií]a|no se encuentra)",
+    re.IGNORECASE,
+)
+
+
+def _is_coverable(clf: ScenarioClassification) -> bool:
+    if clf.role in {"A", "G"}:
+        return True
+    if clf.qc_relevance in {"QC_FUNCTIONAL", "QC_REGRESSION"}:
+        return True
+    if clf.qc_relevance == "QC_VARIANT" and (clf.observable_then or clf.qc_observables):
+        return True
+    return False
+
+
+def _merge_family(
+    coverable: list[tuple[dict[str, Any], ScenarioClassification]],
+    matcher: re.Pattern[str],
+    extra_label: str,
+) -> list[tuple[dict[str, Any], ScenarioClassification]]:
+    if len(coverable) < 2:
+        return coverable
+    matched: list[tuple[dict[str, Any], ScenarioClassification]] = []
+    rest: list[tuple[dict[str, Any], ScenarioClassification]] = []
+    for block, clf in coverable:
+        blob = f"{block.get('title') or ''}\n{block.get('body') or ''}"
+        if matcher.search(blob):
+            matched.append((block, clf))
+        else:
+            rest.append((block, clf))
+    if len(matched) <= 1:
+        return coverable
+    primary_block, primary_clf = matched[0]
+    extras = [block["title"] for block, _clf in matched[1:] if block.get("title")]
+    for _block, clf in matched[1:]:
+        for obs in clf.observable_then or clf.qc_observables or []:
+            if obs not in (primary_clf.observable_then or []):
+                primary_clf.observable_then = list(primary_clf.observable_then or []) + [obs]
+            if obs not in (primary_clf.qc_observables or []):
+                primary_clf.qc_observables = list(primary_clf.qc_observables or []) + [obs]
+    merged = dict(primary_block)
+    if extras:
+        merged["_qc_extra"] = extra_label + "; ".join(extras)
+    return rest + [(merged, primary_clf)]
+
+
+def _merge_scroll_family(
+    coverable: list[tuple[dict[str, Any], ScenarioClassification]],
+) -> list[tuple[dict[str, Any], ScenarioClassification]]:
+    """One CoverageUnit for scroll + observable change; variants stay as test data."""
+    return _merge_family(coverable, _SCROLL, "Variantes de scroll agrupadas: ")
+
+
+def _merge_key_degradation_family(
+    coverable: list[tuple[dict[str, Any], ScenarioClassification]],
+) -> list[tuple[dict[str, Any], ScenarioClassification]]:
+    """Missing and empty copy keys are one negative/variant CoverageUnit."""
+    return _merge_family(coverable, _KEY_DEGRADATION, "Variantes de leyenda/llave agrupadas: ")
 
 
 def _units_from_story_blocks(
@@ -400,15 +467,16 @@ def _units_from_story_blocks(
     for block in blocks:
         clf = classify_scenario(block["title"], block["body"])
         classified.append((block, clf))
-        if clf.role in {"B", "C"}:
-            record_classification(stats, clf, block["title"])
-            support_notes.extend(clf.technical_notes or [block["title"]])
+        if _is_coverable(clf):
+            continue
+        record_classification(stats, clf, block["title"])
+        if clf.role == "B" or clf.qc_relevance == "QC_VARIANT":
             if clf.special_condition:
                 support_conditions.append(clf.special_condition)
-            elif clf.role == "B":
-                support_conditions.append(block["title"])
-        elif clf.role in {"D", "E", "F"}:
-            record_classification(stats, clf, block["title"])
+            support_conditions.append(block["title"])
+            support_notes.extend(clf.technical_notes or [])
+        elif clf.qc_relevance == "IMPLEMENTATION_ONLY" or clf.role in {"D", "E", "F"}:
+            support_notes.extend(clf.technical_notes or [block["title"]])
 
     if support_notes:
         stats.attached_support += 1
@@ -419,11 +487,17 @@ def _units_from_story_blocks(
         seq_holder[0] += 1
         return f"COV-{seq_holder[0]:03d}"
 
-    for block, clf in classified:
-        if clf.role not in {"A", "G"}:
-            continue
+    coverable = [(block, clf) for block, clf in classified if _is_coverable(clf)]
+    coverable = _merge_scroll_family(coverable)
+    coverable = _merge_key_degradation_family(coverable)
+
+    for block, clf in coverable:
         title = block["title"]
         body = block["body"]
+        if block.get("_qc_extra"):
+            extra_support = "; ".join(
+                part for part in (extra_support, str(block["_qc_extra"])) if part
+            )
         evidence = f"{story_key}: {title}\n{body[:1500]}"
         needs_story_condition = bool(support_conditions)
         examples = block["examples"] if block["outline"] else []
