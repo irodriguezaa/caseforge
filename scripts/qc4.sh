@@ -102,9 +102,19 @@ if n:
 PY
   docker exec -u root -i "$PROXY" sh -c "cat > '$NGINX_CONF' && chmod 644 '$NGINX_CONF'" < "$conf_tmp"
   rm -f "$conf_tmp"
-  # -t/reload como el USER del contenedor. No tocar /tmp/nginx.pid (el master ya lo tiene).
+  # nginx -t abre /tmp/nginx.pid; si quedó root:600 el user del contenedor falla (13).
+  local nginx_uid nginx_gid
+  nginx_uid="$(docker exec "$PROXY" id -u)"
+  nginx_gid="$(docker exec "$PROXY" id -g)"
+  docker exec -u root "$PROXY" sh -c "
+    master=\$(ps | grep '[n]ginx: master' | awk '{print \$1; exit}')
+    [ -n \"\$master\" ] || master=1
+    printf '%s\n' \"\$master\" > /tmp/nginx.pid
+    chown ${nginx_uid}:${nginx_gid} /tmp/nginx.pid
+    chmod 644 /tmp/nginx.pid
+  "
   docker exec "$PROXY" nginx -t
-  docker exec "$PROXY" nginx -s reload
+  docker exec "$PROXY" nginx -s reload || docker exec -u root "$PROXY" kill -HUP 1
   echo "nginx: /qcpulse/ → $FRONTEND, proxy timeout 300s, reload OK. Django no se recreó."
 }
 
