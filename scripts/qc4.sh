@@ -37,15 +37,10 @@ nginx_conf_readable() {
   docker exec -u root "$PROXY" chown "${uid}:${gid}" "$NGINX_CONF"
 }
 
-# Recupera default.conf desde el compose host o la imagen. No recreate Django.
-restore_nginx() {
-  if ! docker inspect "$PROXY" >/dev/null 2>&1; then
-    die "No está $PROXY. No se toca Django si el proxy no existe."
-  fi
-  local image wd src tmp
+extract_proxy_conf() {
+  local dest="$1" image wd src cid
   image="$(docker inspect -f '{{.Config.Image}}' "$PROXY")"
   wd="$(docker inspect -f '{{index .Config.Labels "com.docker.compose.project.working_dir"}}' "$PROXY")"
-  tmp="$(mktemp)"
   echo "proxy image=$image"
   echo "compose dir=$wd"
   src=""
@@ -53,12 +48,37 @@ restore_nginx() {
     src="$(find "$wd" -name 'default.conf' -size +0c 2>/dev/null | head -1 || true)"
   fi
   if [[ -n "$src" ]]; then
-    echo "Restaurando $NGINX_CONF desde $src"
-    cat "$src" > "$tmp"
+    echo "origen: $src"
+    cat "$src" > "$dest"
   else
-    echo "Restaurando $NGINX_CONF desde la imagen (sin recreate)"
-    docker run --rm --entrypoint cat "$image" "$NGINX_CONF" > "$tmp"
+    echo "origen: imagen (docker create, sin recreate Django)"
+    cid="$(docker create "$image")"
+    docker cp "$cid:$NGINX_CONF" "$dest"
+    docker rm -f "$cid" >/dev/null
   fi
+}
+
+write_nginx_pid() {
+  local nginx_uid nginx_gid
+  nginx_uid="$(docker exec "$PROXY" id -u)"
+  nginx_gid="$(docker exec "$PROXY" id -g)"
+  docker exec -u root "$PROXY" sh -c "
+    master=\$(ps | grep '[n]ginx: master' | awk '{print \$1; exit}')
+    [ -n \"\$master\" ] || master=1
+    printf '%s\n' \"\$master\" > /tmp/nginx.pid
+    chown ${nginx_uid}:${nginx_gid} /tmp/nginx.pid
+    chmod 644 /tmp/nginx.pid
+  "
+}
+
+# Recupera default.conf desde el compose host o la imagen. No recreate Django.
+restore_nginx() {
+  if ! docker inspect "$PROXY" >/dev/null 2>&1; then
+    die "No está $PROXY. No se toca Django si el proxy no existe."
+  fi
+  local tmp
+  tmp="$(mktemp)"
+  extract_proxy_conf "$tmp"
   if [[ ! -s "$tmp" ]]; then
     rm -f "$tmp"
     die "No hay default.conf en el host ni en la imagen. No se tocó Django."
@@ -95,6 +115,10 @@ fix_nginx() {
     die "No está $PROXY. No se toca Django si el proxy no existe."
   fi
   reconnect_frontend
+  if ! docker exec -u root "$PROXY" sh -c "test -s '$NGINX_CONF'"; then
+    echo "default.conf vacío; restaurando desde imagen/compose."
+    restore_nginx
+  fi
   nginx_conf_readable
   docker exec -u root "$PROXY" sed -i \
     's|http://caseforge-frontend-1:3000|http://qcpulse-frontend-1:3000|g' \
@@ -125,8 +149,10 @@ fix_nginx() {
       "$NGINX_CONF"
   fi
   nginx_conf_readable
+  write_nginx_pid
   docker exec "$PROXY" nginx -t
-  docker exec "$PROXY" nginx -s reload
+  docker exec "$PROXY" nginx -s reload || docker restart "$PROXY"
+  nginx_conf_readable
   echo "nginx: /qcpulse/ → $FRONTEND. Django no se recreó."
 }
 
