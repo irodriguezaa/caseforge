@@ -294,7 +294,8 @@ export function hoursByTechnicalEpic(
 ): { label: string; value: number }[] {
   return progressByTechnicalEpic(cases, scopeKeys, coverage)
     .filter((row) => !row.orphan)
-    .map((row) => ({ label: row.key, value: row.hours }));
+    .map((row) => ({ label: row.key, value: row.hours }))
+    .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label, "es"));
 }
 
 export function estimateReleaseEffortLegacyCount(testCaseCount: number): { hours: number; days: number } {
