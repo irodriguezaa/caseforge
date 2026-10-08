@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { ExecutivePieChart } from "@/app/components/ExecutivePieChart";
 import { ExecutionPriorityBars } from "@/app/components/ExecutionPriorityBars";
 import { GroupedStackedBars } from "@/app/components/GroupedStackedBars";
@@ -231,28 +231,30 @@ export default function SprintTestingPage(): React.ReactElement {
                 {data.execution.blockers.length === 0 ? (
                   <p className="muted">No hay Blockers para este SWF.</p>
                 ) : (
-                  data.execution.programs
-                    .filter((program) => program.blocker > 0)
-                    .map((program) => {
-                      const rows = data.execution!.blockers.filter(
-                        (row) => row.program_key === program.program_key,
-                      );
-                      return (
-                        <div key={program.program_key} style={{ marginBottom: "16px" }}>
-                          <p style={{ margin: "0 0 8px", fontSize: "12.5px", fontWeight: 600 }}>
-                            {program.display_name}{" "}
-                            <span className="muted">({program.blocker})</span>
-                          </p>
-                          <table className="activity">
-                            <thead>
-                              <tr>
-                                <th>Key</th>
-                                <th>Summary</th>
-                                <th>Issue Type</th>
-                                <th>Estado</th>
+                  <table className="activity blockers">
+                    <thead>
+                      <tr>
+                        <th>Key</th>
+                        <th>Summary</th>
+                        <th>Issue Type</th>
+                        <th>Estado</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.execution.programs
+                        .filter((program) => program.blocker > 0)
+                        .map((program) => {
+                          const rows = data.execution!.blockers.filter(
+                            (row) => row.program_key === program.program_key,
+                          );
+                          return (
+                            <Fragment key={program.program_key}>
+                              <tr className="group">
+                                <td colSpan={4}>
+                                  {program.display_name}{" "}
+                                  <span className="muted">({program.blocker})</span>
+                                </td>
                               </tr>
-                            </thead>
-                            <tbody>
                               {rows.map((row) => {
                                 const href = jiraIssueUrl(row.key);
                                 return (
@@ -272,11 +274,11 @@ export default function SprintTestingPage(): React.ReactElement {
                                   </tr>
                                 );
                               })}
-                            </tbody>
-                          </table>
-                        </div>
-                      );
-                    })
+                            </Fragment>
+                          );
+                        })}
+                    </tbody>
+                  </table>
                 )}
               </>
             )}
