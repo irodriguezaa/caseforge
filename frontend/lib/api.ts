@@ -286,13 +286,22 @@ export const api = {
   },
   createReleaseFromBe: (beReleaseId: number) =>
     request<Release>(`/api/releases-be/${beReleaseId}/create-release`, { method: "POST" }),
-  generateCasesFromRN: (releaseId: number, regenerate = false) =>
-    request<GenerateCasesResponse>(
-      `/api/releases/${releaseId}/generate-cases${regenerate ? "?regenerate=true" : ""}`,
-      {
-        method: "POST",
-      },
-    ),
+  generateCasesFromRN: async (releaseId: number, regenerate = false) => {
+    try {
+      return await request<GenerateCasesResponse>(
+        `/api/releases/${releaseId}/generate-cases${regenerate ? "?regenerate=true" : ""}`,
+        { method: "POST" },
+      );
+    } catch (err) {
+      if (err instanceof ApiRequestError && err.status === 504) {
+        throw new ApiRequestError(
+          504,
+          "El proxy cortó Regenerar casos (504). El RN es grande; espera y reintenta.",
+        );
+      }
+      throw err;
+    }
+  },
   getCoverageMatrix: (releaseId: number, brfKey?: string) => {
     const query = brfKey ? `?brf_key=${encodeURIComponent(brfKey)}` : "";
     return request<CoverageMatrixResponse>(`/api/releases/${releaseId}/coverage-matrix${query}`);

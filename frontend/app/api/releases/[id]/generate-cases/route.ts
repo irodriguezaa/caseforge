@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { backendUnavailableResponse, idAfterDrain, proxyToBackend } from "@/lib/backend";
 
+export const dynamic = "force-dynamic";
+export const maxDuration = 600;
+
 export async function POST(
   request: NextRequest,
   context: { params: Promise<{ id: string }> }
