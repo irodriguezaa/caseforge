@@ -67,55 +67,25 @@ fix_nginx() {
       '/location \^~ \/qcpulse\/ {/a\        client_max_body_size 25m;' \
       "$NGINX_CONF"
   fi
-  # Extraer alcance RN / generate-cases: el default de nginx (60s) devuelve 504.
-  # Quitar inserts 600s duplicados y dejar un solo timeout 300s en /qcpulse.
+  # Extraer alcance RN: default nginx 60s → 504. Solo sed; no docker cp / python / pid / HUP 1.
   docker exec -u root "$PROXY" sed -i \
     '/^[[:space:]]*proxy_read_timeout 600s;$/d;/^[[:space:]]*proxy_send_timeout 600s;$/d' \
     "$NGINX_CONF"
-  # docker cp deja default.conf root:root 600; nginx -t corre como nginx y falla (13).
+  if ! docker exec -u root "$PROXY" grep -q 'proxy_read_timeout 300s' "$NGINX_CONF"; then
+    docker exec -u root "$PROXY" sed -i \
+      '/location = \/qcpulse {/a\        proxy_read_timeout 300s;\n        proxy_send_timeout 300s;' \
+      "$NGINX_CONF"
+    docker exec -u root "$PROXY" sed -i \
+      '/location \^~ \/qcpulse\/ {/a\        proxy_read_timeout 300s;\n        proxy_send_timeout 300s;' \
+      "$NGINX_CONF"
+  fi
   docker exec -u root "$PROXY" chmod 644 "$NGINX_CONF"
-  local conf_tmp
-  conf_tmp="$(mktemp)"
-  docker exec -u root "$PROXY" cat "$NGINX_CONF" > "$conf_tmp"
-  python3 - "$conf_tmp" <<'PY'
-from pathlib import Path
-import re
-import sys
-
-path = Path(sys.argv[1])
-text = path.read_text()
-pattern = re.compile(
-    r"(location\s+(?:=\s*|\^~\s+)/qcpulse/?\s*\{)(.*?)(\n[ \t]*\})",
-    re.DOTALL,
-)
-
-def patch_block(match: re.Match[str]) -> str:
-    head, body, tail = match.group(1), match.group(2), match.group(3)
-    body = re.sub(r"\n[ \t]*proxy_read_timeout\s+[^;]+;", "", body)
-    body = re.sub(r"\n[ \t]*proxy_send_timeout\s+[^;]+;", "", body)
-    body += "\n        proxy_read_timeout 300s;\n        proxy_send_timeout 300s;"
-    return head + body + tail
-
-patched, n = pattern.subn(patch_block, text)
-if n:
-    path.write_text(patched)
-PY
-  docker exec -u root -i "$PROXY" sh -c "cat > '$NGINX_CONF' && chmod 644 '$NGINX_CONF'" < "$conf_tmp"
-  rm -f "$conf_tmp"
-  # nginx -t abre /tmp/nginx.pid; si quedó root:600 el user del contenedor falla (13).
-  local nginx_uid nginx_gid
-  nginx_uid="$(docker exec "$PROXY" id -u)"
-  nginx_gid="$(docker exec "$PROXY" id -g)"
-  docker exec -u root "$PROXY" sh -c "
-    master=\$(ps | grep '[n]ginx: master' | awk '{print \$1; exit}')
-    [ -n \"\$master\" ] || master=1
-    printf '%s\n' \"\$master\" > /tmp/nginx.pid
-    chown ${nginx_uid}:${nginx_gid} /tmp/nginx.pid
-    chmod 644 /tmp/nginx.pid
-  "
-  docker exec "$PROXY" nginx -t
-  docker exec "$PROXY" nginx -s reload || docker exec -u root "$PROXY" kill -HUP 1
-  echo "nginx: /qcpulse/ → $FRONTEND, proxy timeout 300s, reload OK. Django no se recreó."
+  if ! docker exec "$PROXY" nginx -t; then
+    docker restart "$PROXY"
+  else
+    docker exec "$PROXY" nginx -s reload || docker restart "$PROXY"
+  fi
+  echo "nginx: /qcpulse/ → $FRONTEND, proxy timeout 300s. Django no se recreó."
 }
 
 diagnose() {
@@ -123,8 +93,12 @@ diagnose() {
   git log -1 --oneline
   echo "==== red frontend ===="
   docker inspect "$FRONTEND" --format '{{json .NetworkSettings.Networks}}' 2>/dev/null || echo "no $FRONTEND"
+  echo "==== proxy ps/logs ===="
+  docker ps -a --filter "name=$PROXY" --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'
+  docker logs --tail 20 "$PROXY" 2>&1 || true
   echo "==== nginx qcpulse ===="
-  docker exec "$PROXY" grep -n -E 'qcpulse|Connection|proxy_pass|client_max_body' "$NGINX_CONF" || true
+  docker exec -u root "$PROXY" ls -la "$NGINX_CONF" /tmp/nginx.pid 2>&1 || true
+  docker exec -u root "$PROXY" grep -n -E 'qcpulse|Connection|proxy_pass|client_max_body|proxy_read_timeout' "$NGINX_CONF" || true
   echo "==== curl host 3001 ===="
   curl -sS -o /dev/null -w 'GET 3001/qcpulse/ -> %{http_code}\n' --max-time 10 http://127.0.0.1:3001/qcpulse/ || echo "3001 FAIL"
   echo "==== curl via :80 ===="
