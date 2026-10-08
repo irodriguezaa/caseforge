@@ -991,11 +991,15 @@ export default function ReleaseDetailPage(): React.ReactElement {
               <td>{testCase.test_case_id}</td>
               <td>{isOperativa ? stripDeviceFromCaseName(testCase.test_case_name, testCase.device) : testCase.test_case_name}</td>
               {isApp ? <td>{formatRnSourceType(testCase.source_type)}</td> : null}
-              <td>{testCase.component}</td>
               {isApp ? (
                 <td onClick={(e) => e.stopPropagation()}>
-                  <TechnicalStoryCell value={testCase.technical_story} />
+                  <JiraKeyText value={testCase.component || testCase.technical_epic} />
                 </td>
+              ) : (
+                <td>{testCase.component}</td>
+              )}
+              {isApp ? (
+                <td>{testCase.technical_story?.trim() || "—"}</td>
               ) : (
                 <>
                   <td>{testCase.ecosystem ?? "—"}</td>
@@ -1077,7 +1081,7 @@ export default function ReleaseDetailPage(): React.ReactElement {
   );
 }
 
-function TechnicalStoryCell({ value }: { value?: string | null }): React.ReactElement {
+function JiraKeyText({ value }: { value?: string | null }): React.ReactElement {
   const raw = (value ?? "").trim();
   if (!raw) {
     return <span className="muted">—</span>;
@@ -1086,23 +1090,31 @@ function TechnicalStoryCell({ value }: { value?: string | null }): React.ReactEl
   if (keys.length === 0) {
     return <>{raw}</>;
   }
-  return (
-    <>
-      {keys.map((key, index) => {
-        const href = jiraIssueUrl(key);
-        return (
-          <span key={key}>
-            {index > 0 ? " · " : null}
-            {href ? (
-              <a href={href} target="_blank" rel="noopener noreferrer" title={`Abrir ${key} en Jira`}>
-                {key}
-              </a>
-            ) : (
-              key
-            )}
-          </span>
-        );
-      })}
-    </>
-  );
+  const parts: React.ReactNode[] = [];
+  const splitter = /\b([A-Z][A-Z0-9_]+-\d+)\b/gi;
+  let last = 0;
+  let index = 0;
+  for (const match of raw.matchAll(splitter)) {
+    const start = match.index ?? 0;
+    if (start > last) {
+      parts.push(raw.slice(last, start));
+    }
+    const key = match[1].toUpperCase();
+    const href = jiraIssueUrl(key);
+    parts.push(
+      href ? (
+        <a key={`${key}-${index}`} href={href} target="_blank" rel="noopener noreferrer" title={`Abrir ${key} en Jira`}>
+          {match[0]}
+        </a>
+      ) : (
+        match[0]
+      ),
+    );
+    index += 1;
+    last = start + match[0].length;
+  }
+  if (last < raw.length) {
+    parts.push(raw.slice(last));
+  }
+  return <>{parts}</>;
 }
