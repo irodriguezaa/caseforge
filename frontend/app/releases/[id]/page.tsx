@@ -1,6 +1,7 @@
 "use client";
 
 import { Download, Pencil, Plus, Sparkles, Trash2, Upload } from "lucide-react";
+import { ColumnFilter } from "@/app/components/ColumnFilter";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -50,6 +51,18 @@ function toDateInputValue(isoDate?: string | null): string {
   return /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : "";
 }
 
+function uniqueSorted(values: string[]): string[] {
+  return [...new Set(values.filter(Boolean))].sort((a, b) => a.localeCompare(b, "es"));
+}
+
+function componentLabel(row: TestCase): string {
+  return (row.component || row.technical_epic || "").trim();
+}
+
+function storyLabel(row: TestCase): string {
+  return (row.technical_story || "").trim();
+}
+
 export default function ReleaseDetailPage(): React.ReactElement {
   const params = useParams<{ id: string }>();
   const router = useRouter();
@@ -66,6 +79,10 @@ export default function ReleaseDetailPage(): React.ReactElement {
   const [submitting, setSubmitting] = useState(false);
 
   const [deviceFilter, setDeviceFilter] = useState<string>("");
+  const [componentFilter, setComponentFilter] = useState<string[]>([]);
+  const [storyFilter, setStoryFilter] = useState<string[]>([]);
+  const [priorityFilter, setPriorityFilter] = useState<string[]>([]);
+  const [statusFilter, setStatusFilter] = useState<string[]>([]);
   const [showImport, setShowImport] = useState(false);
   const [showManualForm, setShowManualForm] = useState(false);
   const [generateResult, setGenerateResult] = useState<GenerateCasesResponse | null>(null);
@@ -325,12 +342,49 @@ export default function ReleaseDetailPage(): React.ReactElement {
     }
     return [...labels].sort((a, b) => a.localeCompare(b, "es"));
   }, [testCases]);
+  const componentOptions = useMemo(
+    () => uniqueSorted(testCases.map((row) => componentLabel(row))),
+    [testCases],
+  );
+  const storyOptions = useMemo(
+    () => uniqueSorted(testCases.map((row) => storyLabel(row))),
+    [testCases],
+  );
+  const priorityOptions = useMemo(
+    () => uniqueSorted(testCases.map((row) => row.priority)),
+    [testCases],
+  );
+  const statusOptions = useMemo(
+    () => uniqueSorted(testCases.map((row) => row.status)),
+    [testCases],
+  );
+  const tableFiltersOn = Boolean(
+    componentFilter.length || storyFilter.length || priorityFilter.length || statusFilter.length,
+  );
   const visibleCases = useMemo(() => {
-    if (!deviceFilter) {
-      return testCases;
-    }
-    return testCases.filter((row) => (row.device || "").trim() === deviceFilter);
-  }, [testCases, deviceFilter]);
+    const components = new Set(componentFilter);
+    const stories = new Set(storyFilter);
+    const priorities = new Set(priorityFilter);
+    const statuses = new Set(statusFilter);
+    return testCases.filter((row) => {
+      if (deviceFilter && (row.device || "").trim() !== deviceFilter) {
+        return false;
+      }
+      if (components.size && !components.has(componentLabel(row))) {
+        return false;
+      }
+      if (stories.size && !stories.has(storyLabel(row))) {
+        return false;
+      }
+      if (priorities.size && !priorities.has(row.priority)) {
+        return false;
+      }
+      if (statuses.size && !statuses.has(row.status)) {
+        return false;
+      }
+      return true;
+    });
+  }, [testCases, deviceFilter, componentFilter, storyFilter, priorityFilter, statusFilter]);
   const rnEpicKeys = useMemo(() => rnScopeEpicKeys(analysis), [analysis]);
   const rnCoverage = useMemo(() => rnScopeCoverage(analysis), [analysis]);
   const epicHours = useMemo(
@@ -729,7 +783,7 @@ export default function ReleaseDetailPage(): React.ReactElement {
 
       {/* Test Cases Section */}
       <div className="section-header">
-        <h2>Test Cases ({visibleCases.length}{deviceFilter ? ` / ${testCases.length}` : ""})</h2>
+        <h2>Test Cases ({visibleCases.length}{deviceFilter || tableFiltersOn ? ` / ${testCases.length}` : ""})</h2>
         <div className="form-actions" style={{ margin: 0 }}>
           {canLoadRn && (
           <button
@@ -811,6 +865,23 @@ export default function ReleaseDetailPage(): React.ReactElement {
                   </option>
                 ))}
               </select>
+            </div>
+          )}
+          {(tableFiltersOn || deviceFilter) && (
+            <div className="form-actions" style={{ marginBottom: "10px" }}>
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => {
+                  setDeviceFilter("");
+                  setComponentFilter([]);
+                  setStoryFilter([]);
+                  setPriorityFilter([]);
+                  setStatusFilter([]);
+                }}
+              >
+                Quitar filtros
+              </button>
             </div>
           )}
         <div
@@ -965,21 +1036,68 @@ export default function ReleaseDetailPage(): React.ReactElement {
         </div>
       )}
 
-      <table>
+      <table className="case-grid">
         <thead>
           <tr>
             <th>ID</th>
             <th>Nombre</th>
             {isApp ? <th>Issue Type</th> : null}
-            <th>Componente</th>
-            {isApp ? <th>Technical Story</th> : (
+            <th>
+              {testCases.length > 0 ? (
+                <ColumnFilter
+                  label="Componente"
+                  options={componentOptions}
+                  selected={componentFilter}
+                  onChange={setComponentFilter}
+                />
+              ) : (
+                "Componente"
+              )}
+            </th>
+            {isApp ? (
+              <th>
+                {testCases.length > 0 ? (
+                  <ColumnFilter
+                    label="Technical Story"
+                    options={storyOptions}
+                    selected={storyFilter}
+                    onChange={setStoryFilter}
+                  />
+                ) : (
+                  "Technical Story"
+                )}
+              </th>
+            ) : (
               <>
                 <th>Ecosistema</th>
                 <th>Dispositivo</th>
               </>
             )}
-            <th>Prioridad</th>
-            <th>Estado</th>
+            <th>
+              {testCases.length > 0 ? (
+                <ColumnFilter
+                  label="Prioridad"
+                  options={priorityOptions}
+                  selected={priorityFilter}
+                  onChange={setPriorityFilter}
+                />
+              ) : (
+                "Prioridad"
+              )}
+            </th>
+            <th>
+              {testCases.length > 0 ? (
+                <ColumnFilter
+                  label="Estado"
+                  options={statusOptions}
+                  selected={statusFilter}
+                  onChange={setStatusFilter}
+                  formatOption={(value) => (value === "N_A" ? "N/A" : value)}
+                />
+              ) : (
+                "Estado"
+              )}
+            </th>
             <th>Acciones</th>
           </tr>
         </thead>
@@ -1057,7 +1175,9 @@ export default function ReleaseDetailPage(): React.ReactElement {
           {visibleCases.length === 0 && (
             <tr>
               <td colSpan={caseTableCols} className="muted">
-                {testCases.length === 0 ? "Sin test cases todavía." : "Ningún Test Case para ese dispositivo."}
+                {testCases.length === 0
+                  ? "Sin test cases todavía."
+                  : "Ningún Test Case con esos filtros."}
               </td>
             </tr>
           )}
