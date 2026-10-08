@@ -302,20 +302,29 @@ export const api = {
       }
       let last = plan;
       const failed: string[] = [];
+      const empty: string[] = [];
+      let persisted = 0;
       for (const key of keys) {
         try {
           last = await post(
             `?chunked=true&functionality_key=${encodeURIComponent(key)}`,
           );
+          const n = last.test_case_count ?? 0;
+          persisted += n;
+          if (!last.persisted || n === 0) {
+            empty.push(key);
+          }
         } catch {
           failed.push(key);
         }
       }
       const ok = keys.length - failed.length;
+      last.test_case_count = persisted;
       last.message = [
-        `Generación por funcionalidad: ${ok}/${keys.length} completadas.`,
-        failed.length ? `Fallaron: ${failed.join(", ")}.` : "",
-        last.message,
+        `Procesadas ${ok}/${keys.length} funcionalidades del RN.`,
+        `Test Cases persistidos: ${persisted}.`,
+        empty.length ? `Sin casos: ${empty.join(", ")}.` : "",
+        failed.length ? `Error HTTP: ${failed.join(", ")}.` : "",
       ]
         .filter(Boolean)
         .join(" ");
