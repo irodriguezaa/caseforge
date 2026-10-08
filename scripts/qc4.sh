@@ -29,6 +29,14 @@ need_stack_files() {
   [[ -f "$ENV_FILE" ]] || die "No está $ENV_FILE. Cópialo de .env.example y no uses el .env del Mac."
 }
 
+nginx_conf_readable() {
+  local uid gid
+  uid="$(docker exec "$PROXY" id -u)"
+  gid="$(docker exec "$PROXY" id -g)"
+  docker exec -u root "$PROXY" chmod 644 "$NGINX_CONF"
+  docker exec -u root "$PROXY" chown "${uid}:${gid}" "$NGINX_CONF"
+}
+
 reconnect_frontend() {
   if ! docker inspect "$FRONTEND" >/dev/null 2>&1; then
     echo "Aún no existe $FRONTEND; nada que conectar."
@@ -52,7 +60,7 @@ fix_nginx() {
     die "No está $PROXY. No se toca Django si el proxy no existe."
   fi
   reconnect_frontend
-  docker exec -u root "$PROXY" chmod 644 "$NGINX_CONF"
+  nginx_conf_readable
   docker exec -u root "$PROXY" sed -i \
     's|http://caseforge-frontend-1:3000|http://qcpulse-frontend-1:3000|g' \
     "$NGINX_CONF"
@@ -71,20 +79,32 @@ fix_nginx() {
   docker exec -u root "$PROXY" sed -i \
     '/^[[:space:]]*proxy_read_timeout 600s;$/d;/^[[:space:]]*proxy_send_timeout 600s;$/d' \
     "$NGINX_CONF"
+  docker exec -u root "$PROXY" sed -i \
+    's/proxy_read_timeout 300s;\\n[[:space:]]*proxy_send_timeout 300s;/proxy_read_timeout 300s; proxy_send_timeout 300s;/' \
+    "$NGINX_CONF"
   if ! docker exec -u root "$PROXY" grep -q 'proxy_read_timeout 300s' "$NGINX_CONF"; then
     docker exec -u root "$PROXY" sed -i \
-      '/location = \/qcpulse {/a\        proxy_read_timeout 300s;\n        proxy_send_timeout 300s;' \
+      '/location = \/qcpulse {/a\        proxy_read_timeout 300s;' \
       "$NGINX_CONF"
     docker exec -u root "$PROXY" sed -i \
-      '/location \^~ \/qcpulse\/ {/a\        proxy_read_timeout 300s;\n        proxy_send_timeout 300s;' \
+      '/location = \/qcpulse {/a\        proxy_send_timeout 300s;' \
+      "$NGINX_CONF"
+    docker exec -u root "$PROXY" sed -i \
+      '/location \^~ \/qcpulse\/ {/a\        proxy_read_timeout 300s;' \
+      "$NGINX_CONF"
+    docker exec -u root "$PROXY" sed -i \
+      '/location \^~ \/qcpulse\/ {/a\        proxy_send_timeout 300s;' \
       "$NGINX_CONF"
   fi
-  docker exec -u root "$PROXY" chmod 644 "$NGINX_CONF"
+  nginx_conf_readable
   if ! docker exec "$PROXY" nginx -t; then
-    docker restart "$PROXY"
-  else
-    docker exec "$PROXY" nginx -s reload || docker restart "$PROXY"
+    docker exec "$PROXY" nginx -t || true
+    die "nginx -t falló. No se reinicia el proxy. Pasa el conf y docker logs."
   fi
+  docker exec "$PROXY" nginx -s reload || {
+    docker restart "$PROXY"
+    nginx_conf_readable
+  }
   echo "nginx: /qcpulse/ → $FRONTEND, proxy timeout 300s. Django no se recreó."
 }
 
@@ -98,7 +118,10 @@ diagnose() {
   docker logs --tail 20 "$PROXY" 2>&1 || true
   echo "==== nginx qcpulse ===="
   docker exec -u root "$PROXY" ls -la "$NGINX_CONF" /tmp/nginx.pid 2>&1 || true
-  docker exec -u root "$PROXY" grep -n -E 'qcpulse|Connection|proxy_pass|client_max_body|proxy_read_timeout' "$NGINX_CONF" || true
+  docker exec "$PROXY" nginx -t 2>&1 || true
+  docker inspect "$PROXY" --format 'RestartCount={{.RestartCount}} Image={{.Config.Image}} WD={{index .Config.Labels "com.docker.compose.project.working_dir"}}' 2>/dev/null || true
+  echo "==== $NGINX_CONF ===="
+  docker exec -u root "$PROXY" cat "$NGINX_CONF" 2>&1 || true
   echo "==== curl host 3001 ===="
   curl -sS -o /dev/null -w 'GET 3001/qcpulse/ -> %{http_code}\n' --max-time 10 http://127.0.0.1:3001/qcpulse/ || echo "3001 FAIL"
   echo "==== curl via :80 ===="
