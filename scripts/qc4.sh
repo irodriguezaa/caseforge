@@ -102,8 +102,10 @@ if n:
 PY
   docker exec -u root -i "$PROXY" sh -c "cat > '$NGINX_CONF' && chmod 644 '$NGINX_CONF'" < "$conf_tmp"
   rm -f "$conf_tmp"
-  docker exec -u root "$PROXY" nginx -t
-  docker exec -u root "$PROXY" nginx -s reload
+  # nginx -t como root deja /tmp/nginx.pid root:root y el test (user nginx) falla (13).
+  docker exec -u root "$PROXY" rm -f /tmp/nginx.pid
+  docker exec "$PROXY" nginx -t
+  docker exec "$PROXY" nginx -s reload
   echo "nginx: /qcpulse/ → $FRONTEND, proxy timeout 300s, reload OK. Django no se recreó."
 }
 
