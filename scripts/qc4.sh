@@ -115,8 +115,8 @@ if "qcpulse-frontend-1:3000" in text:
 block = """
     location = /qcpulse {
         client_max_body_size 25m;
-        proxy_read_timeout 300s;
-        proxy_send_timeout 300s;
+        proxy_read_timeout 600s;
+        proxy_send_timeout 600s;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -128,8 +128,8 @@ block = """
     }
     location ^~ /qcpulse/ {
         client_max_body_size 25m;
-        proxy_read_timeout 300s;
-        proxy_send_timeout 300s;
+        proxy_read_timeout 600s;
+        proxy_send_timeout 600s;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -202,18 +202,21 @@ fix_nginx() {
       '/location \^~ \/qcpulse\/ {/a\        client_max_body_size 25m;' \
       "$NGINX_CONF"
   fi
-  if ! docker exec -u root "$PROXY" grep -q 'proxy_read_timeout 300s' "$NGINX_CONF"; then
+  docker exec -u root "$PROXY" sed -i \
+    's/proxy_read_timeout 300s/proxy_read_timeout 600s/;s/proxy_send_timeout 300s/proxy_send_timeout 600s/' \
+    "$NGINX_CONF"
+  if ! docker exec -u root "$PROXY" grep -q 'proxy_read_timeout 600s' "$NGINX_CONF"; then
     docker exec -u root "$PROXY" sed -i \
-      '/location = \/qcpulse {/a\        proxy_read_timeout 300s;' \
+      '/location = \/qcpulse {/a\        proxy_read_timeout 600s;' \
       "$NGINX_CONF"
     docker exec -u root "$PROXY" sed -i \
-      '/location = \/qcpulse {/a\        proxy_send_timeout 300s;' \
+      '/location = \/qcpulse {/a\        proxy_send_timeout 600s;' \
       "$NGINX_CONF"
     docker exec -u root "$PROXY" sed -i \
-      '/location \^~ \/qcpulse\/ {/a\        proxy_read_timeout 300s;' \
+      '/location \^~ \/qcpulse\/ {/a\        proxy_read_timeout 600s;' \
       "$NGINX_CONF"
     docker exec -u root "$PROXY" sed -i \
-      '/location \^~ \/qcpulse\/ {/a\        proxy_send_timeout 300s;' \
+      '/location \^~ \/qcpulse\/ {/a\        proxy_send_timeout 600s;' \
       "$NGINX_CONF"
   fi
   nginx_conf_readable
