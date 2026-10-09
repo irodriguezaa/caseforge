@@ -147,7 +147,14 @@ export function ReleaseAnalysisCard({
             ))}
           </div>
         )}
-        {(tata || pasted) && analysis.observations.length > 0 ? (
+        {(tata
+          || pasted
+          || (analysis.features_count
+            + analysis.nco_issues_count
+            + analysis.qa_qc_issues_count
+            + analysis.tri_issues_count
+            === 0))
+          && analysis.observations.length > 0 ? (
           <ul className="muted" style={{ fontSize: "12.5px", margin: "10px 0 0", paddingLeft: "18px" }}>
             {analysis.observations.map((row) => (
               <li key={row}>{row}</li>

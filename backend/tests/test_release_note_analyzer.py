@@ -17,7 +17,11 @@ from pathlib import Path
 
 import pytest
 
-from app.services.release_note_analyzer import RuleBasedPdfAnalyzer
+from app.services.release_note_analyzer import (
+    RuleBasedPdfAnalyzer,
+    _has_extractable_rn_text,
+    _is_page_label,
+)
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -395,6 +399,14 @@ def test_embedded_ticket_reference_inside_a_functionality_cell_is_not_double_cou
     assert _CELL_TICKET_RE.match("TE-2026-WEBCL-activacion-hbomax") is not None
     result = _analyze(WEB)
     assert result.features_count == 6  # would be 7 if TE-2026 were miscounted as a distinct item
+
+
+def test_page_label_only_pdf_is_not_extractable_rn_text() -> None:
+    assert _is_page_label("Página1")
+    assert _is_page_label("Página 12!")
+    assert not _is_page_label("RN-CV - WEB -17.0.0")
+    assert not _has_extractable_rn_text("Página1\nPágina2\nPágina3")
+    assert _has_extractable_rn_text("1.1 Funcionalidad\nWEBCL-1900 Banner de cookies")
 
 
 def test_nco_is_a_word_not_a_substring_of_encontrados() -> None:

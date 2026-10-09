@@ -204,11 +204,32 @@ def _detect_name_from_page1(pdf_bytes: bytes) -> str | None:
             if not best_text:
                 return None
             candidate = best_text.strip()
-            if len(candidate) < 5 or len(candidate) > 150 or "http" in candidate.lower():
+            if (
+                len(candidate) < 5
+                or len(candidate) > 150
+                or "http" in candidate.lower()
+                or _is_page_label(candidate)
+            ):
                 return None
             return candidate
     except Exception:
         return None
+
+
+# Print-to-PDF / screenshot RNs often keep only "Página1" as selectable text.
+_PAGE_LABEL_RE = re.compile(r"p[aá]gina\s*\d+\s*!?", re.IGNORECASE)
+
+
+def _is_page_label(text: str) -> bool:
+    return bool(re.fullmatch(_PAGE_LABEL_RE, (text or "").strip()))
+
+
+def _body_pdf_text(text: str) -> str:
+    return _PAGE_LABEL_RE.sub(" ", text or "").strip()
+
+
+def _has_extractable_rn_text(text: str) -> bool:
+    return len(re.sub(r"\s+", "", _body_pdf_text(text))) >= 40
 
 
 # Anchored to the "1.N" numbered subsection convention (several templates use it, in different
@@ -344,6 +365,8 @@ def _iter_damco_ticket_rows(pdf_bytes: bytes) -> list[tuple[str, str, str]]:
                 events: list[tuple[float, str, Any]] = []
 
                 words = page.extract_words()
+                if not any(not _is_page_label(str(word.get("text") or "")) for word in words):
+                    continue
                 lines: dict[int, list] = {}
                 for word in words:
                     lines.setdefault(round(word["top"]), []).append(word)
@@ -498,9 +521,20 @@ class RuleBasedPdfAnalyzer:
         if detect_rn_vendor(filename, pdf_bytes, text=text) == "tata":
             scope = parse_tata_release_note(pdf_bytes, filename)
             return self._build_tata_analysis(filename, text, scope, detected_name)
-        table_counts = self._extract_table_counts(pdf_bytes, filename)
+        hits: list[tuple[str, str, str]] = []
+        if _has_extractable_rn_text(text):
+            hits = _iter_damco_ticket_rows(pdf_bytes)
+        counts: dict[str, set[str]] = {key: set() for key in _RN_BUCKETS}
+        for ticket_id, _cell_text, bucket in hits:
+            if bucket in counts:
+                counts[bucket].add(ticket_id)
+        table_counts = TableCounts(
+            functionality=len(counts["functionality"]),
+            nco=len(counts["nco"]),
+            tri=len(counts["tri"]),
+            qa_qc=len(counts["qa_qc"]),
+        )
         analysis = self._build_analysis(filename, text, table_counts, detected_name)
-        hits = _iter_damco_ticket_rows(pdf_bytes)
         analysis.raw_analysis["vendor"] = "damco"
         analysis.raw_analysis["normalized"] = damco_scope_from_legacy_hits(
             hits,
@@ -615,7 +649,7 @@ class RuleBasedPdfAnalyzer:
         detected_platform = _detect_device(filename, text, detected_name)
         detected_description = _detect_description(text)
 
-        if not text:
+        if not _has_extractable_rn_text(text):
             observations.append("El archivo PDF no contiene texto extraíble (puede ser un documento escaneado o protegido).")
         else:
             if not detected_name:
