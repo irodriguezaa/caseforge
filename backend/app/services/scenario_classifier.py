@@ -75,7 +75,8 @@ _OBSERVABLE_VERB = re.compile(
     r"no (se )?muestra|no (se )?mostrarse|no presenta|no presentar|"
     r"no abre|no visualiza|no visualizarse|"
     r"ve |ven |retira|permanece|contin[uú]a|completa|ingresa|selecciona|"
-    r"navega|disponible para el usuario|deja de (ver|visualizar|visualizarse)|"
+    r"navega|redirig|"
+    r"disponible para el usuario|deja de (ver|visualizar|visualizarse)|"
     r"ya no (ve|visualiza)|se debe ocultar|debe ocultarse|"
     r"cambiar( al siguiente)?|no se realiza( ninguna)? acci[oó]n|"
     r"outline|pantalla completa|quedar vac[ií]a|queda vac[ií]a)\b",
@@ -389,7 +390,7 @@ def _has_observable_consequence(text: str) -> bool:
         return True
     if re.search(
         r"\bno (se )?muestra\b|\bse muestra\b|\bno visualiza\b|\bvisualiza\b|"
-        r"\bse cierra\b|\bse abre\b|\bredirige\b|\bcompleta el pago\b|"
+        r"\bse cierra\b|\bse abre\b|\bredirig|\bcompleta el pago\b|"
         r"\bactualiza(n)? el marcador\b|\bactualiza(n)? las alineaciones\b",
         text,
         re.I,

@@ -457,6 +457,135 @@ Scenario Outline: Validar respuesta de PIN
     assert len(units) == 1
 
 
+def test_legend_key_template_is_dropped_on_banner_feature_not_ticket() -> None:
+    """Stock leyenda-key Gherkin is QC on Ticket/leyenda Features, not on a banner Feature."""
+    banner_gherkin = """
+Feature: Implementar banner con políticas de cookies
+  Scenario: Mostrar automáticamente el banner informativo de cookies
+    When la Landing Page termina de cargar
+    Then se debe mostrar el banner informativo de cookies
+  Scenario: Redirección a la política de cookies al seleccionar el enlace
+    Given el banner informativo de cookies está visible
+    When el usuario hace clic en el enlace configurado en los insumos de diseño
+    Then el navegador debe redirigir al usuario a la URL de la política de cookies
+  Scenario: No se logra obtener una llave
+    Given una llave no se encuentra en apa/metadata
+    When la aplicación intenta construir la leyenda
+    Then el espacio donde debería mostrarse la leyenda debe mostrar la llave
+  Scenario: La llave se encuentra vacía
+    Given una llave está vacía en apa/metadata
+    When la aplicación intenta construir la leyenda
+    Then el espacio donde debería mostrarse la leyenda debe quedar vacía
+"""
+    ticket_gherkin = """
+Feature: Pantalla de Ticket
+  Scenario: No se logra obtener una llave
+    Given una llave no se encuentra en apa/metadata
+    When la aplicación intenta construir la leyenda
+    Then el espacio donde debería mostrarse la leyenda debe mostrar la llave
+    And no debe mostrarse un texto de error visible para el usuario
+"""
+    banner_units = build_coverage_inventory(
+        [
+            {
+                "key": "EPC-BANNER",
+                "issuetype": "Technical Epic",
+                "summary": "Banner de cookies",
+                "description": "",
+                "acceptance_criteria": (
+                    "El banner se muestra automáticamente cuando no existe consentimiento previo válido.\n"
+                    "La redirección a la página oficial de la política completa de cookies funciona correctamente.\n"
+                ),
+                "children": [
+                    {
+                        "key": "STORY-BANNER",
+                        "issuetype": "Technical Story",
+                        "summary": "Feature: Implementar banner con políticas de cookies",
+                        "description": banner_gherkin,
+                        "acceptance_criteria": "",
+                    }
+                ],
+            }
+        ],
+        "rn.pdf",
+    )
+    names = " ".join((unit.scenario or "").lower() for unit in banner_units)
+    assert "no se logra obtener una llave" not in names
+    assert "llave se encuentra vac" not in names
+    assert any("banner" in (unit.scenario or "").lower() for unit in banner_units)
+    assert any("redir" in (unit.scenario or "").lower() for unit in banner_units)
+    assert any(
+        "landing" in (unit.user_action or "").lower()
+        for unit in banner_units
+        if unit.user_action
+    )
+    assert any(
+        "clic" in (unit.user_action or "").lower() or "enlace" in (unit.user_action or "").lower()
+        for unit in banner_units
+        if unit.user_action
+    )
+
+    ticket_units = build_coverage_inventory(
+        [
+            {
+                "key": "EPC-TICKET",
+                "issuetype": "Technical Epic",
+                "summary": "Pantalla de Ticket",
+                "description": "",
+                "acceptance_criteria": "",
+                "children": [
+                    {
+                        "key": "STORY-TICKET",
+                        "issuetype": "Technical Story",
+                        "summary": "Feature: Pantalla de Ticket",
+                        "description": ticket_gherkin,
+                        "acceptance_criteria": "",
+                    }
+                ],
+            }
+        ],
+        "rn.pdf",
+    )
+    ticket_names = {(unit.scenario or "") for unit in ticket_units}
+    assert "No se logra obtener una llave" in ticket_names
+
+
+def test_page_load_when_is_preserved_as_entry_action() -> None:
+    description = """
+Scenario: Mostrar banner al cargar
+  When la Landing Page termina de cargar
+  Then se debe mostrar el banner informativo de cookies
+"""
+    units = build_coverage_inventory(
+        _epic("EPC-1", "STORY-1", description=description),
+        "rn.pdf",
+    )
+    assert units
+    assert any(
+        "landing" in (unit.user_action or "").lower()
+        or "ingresa" in (unit.user_action or "").lower()
+        for unit in units
+    )
+    assert all(
+        (unit.user_action or "").lower() != "el usuario ingresa al flujo correspondiente."
+        for unit in units
+    )
+
+
+def test_redirect_then_is_coverable_user_navigation() -> None:
+    from app.services.scenario_classifier import classify_scenario
+
+    clf = classify_scenario(
+        "Redirección a la política de cookies al seleccionar el enlace",
+        "Given el banner informativo de cookies está visible\n"
+        "When el usuario hace clic en el enlace configurado en los insumos de diseño\n"
+        "Then el navegador debe redirigir al usuario a la URL de la política de cookies\n",
+    )
+    assert clf.role in {"A", "G"}
+    assert clf.qc_relevance in {"QC_FUNCTIONAL", "QC_REGRESSION", "QC_VARIANT"}
+    assert clf.observable_then or clf.qc_observables
+
+
 def test_webcl_1900_cookie_ac_not_stv_legend_keys() -> None:
     """Cookie banner AC is QC; STB-style 'llave' Gherkin without leyenda is not."""
     gherkin = """

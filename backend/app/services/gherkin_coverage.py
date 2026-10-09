@@ -135,6 +135,16 @@ _USER_WHEN = re.compile(
     r"\b(CH\+|CH-|Back|OK|ACEPTAR)\b",
     re.IGNORECASE,
 )
+_PAGE_LOAD_WHEN = re.compile(
+    r"(landing page|p[aá]gina( de inicio)?|sitio( web)?).{0,20}"
+    r"(termina de cargar|carga)\b",
+    re.IGNORECASE,
+)
+_BANNER_SURFACE = re.compile(
+    r"banner|cookies|consentimiento|landing|pol[ií]tica de cookies",
+    re.IGNORECASE,
+)
+_LEYENDA_SURFACE = re.compile(r"leyenda|\bticket\b|fin player", re.IGNORECASE)
 _SATELLITE_OBS = re.compile(
     r"no (debe |se )?(mostrarse|mostrar|presentar).{0,80}error|"
     r"texto de error visible|"
@@ -247,12 +257,28 @@ def _orphan_config_key(title: str, body: str) -> bool:
     return not bool(_LEYENDA_KEY_UX.search(blob))
 
 
+def _legend_template_off_surface(story: dict[str, Any] | None, title: str, body: str) -> bool:
+    """Stock leyenda-key Gherkin pasted into a banner/cookies Feature is not QC."""
+    blob = f"{title or ''}\n{body or ''}"
+    if not _KEY_DEGRADATION.search(blob) or not _LEYENDA_KEY_UX.search(blob):
+        return False
+    if _LEYENDA_SURFACE.search(title or ""):
+        return False
+    ctx = str((story or {}).get("summary") or "")
+    if _LEYENDA_SURFACE.search(ctx):
+        return False
+    return bool(_BANNER_SURFACE.search(ctx))
+
+
 def _non_qc_inventory_reason(
     title: str,
     body: str,
     user_action: str | None,
+    story: dict[str, Any] | None = None,
 ) -> str | None:
     blob = f"{title or ''}\n{body or ''}"
+    if _legend_template_off_surface(story, title, body):
+        return "plantilla de leyenda/llave fuera de la superficie funcional de la Story"
     if _orphan_config_key(title, body):
         return "llave de configuración/consentimiento sin UX de leyenda"
     if _http_or_api_only(blob):
@@ -303,14 +329,29 @@ def _is_table_atom(text: str) -> bool:
     return bool(_TABLE_ATOM.match(stripped) and ":" in stripped and len(stripped.split(":")) >= 2)
 
 
+def _entry_action_from_page_load(clause: str) -> str | None:
+    if not _PAGE_LOAD_WHEN.search(clause or ""):
+        return None
+    if re.search(r"landing", clause, re.I):
+        return "El usuario ingresa a la Landing Page."
+    if re.search(r"sitio", clause, re.I):
+        return "El usuario ingresa al sitio web."
+    return "El usuario ingresa a la página."
+
+
 def _pick_user_action(clf: ScenarioClassification) -> str | None:
     candidates = [clf.qc_user_action, *(clf.when or [])]
     for raw in candidates:
         clause = (raw or "").strip()
         if not clause or is_stable_generic_step(clause):
             continue
+        if re.fullmatch(r"(ACEPTAR|OK|Back|CH\+|CH-)", clause, re.I):
+            return f"El usuario selecciona {clause}."
         if is_user_action(clause) or _USER_WHEN.search(clause):
             return clause
+        rewritten = _entry_action_from_page_load(clause)
+        if rewritten:
+            return rewritten
     return None
 
 
@@ -922,7 +963,7 @@ def _units_from_story_blocks(
         trace = f"RN={epic_key}; Story={story_key}; Scenario={title}"
         source_origin = str(block.get("source_origin") or "gherkin")
         user_action = _pick_user_action(clf)
-        noise = _non_qc_inventory_reason(title, body, user_action)
+        noise = _non_qc_inventory_reason(title, body, user_action, story=story)
         if noise:
             stats.inventory_exclusions.append(f"{story_key}: {title}: {noise}")
             continue

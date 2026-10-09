@@ -161,6 +161,17 @@ def test_config_without_observable_stays_b() -> None:
     assert clf.role == "B"
 
 
+def test_user_click_redirect_is_observable_not_implementation() -> None:
+    clf = classify_scenario(
+        "Redirección a la política de cookies al seleccionar el enlace",
+        "Given el banner informativo de cookies está visible\n"
+        "When el usuario hace clic en el enlace configurado en los insumos de diseño\n"
+        "Then el navegador debe redirigir al usuario a la URL de la política de cookies\n",
+    )
+    assert clf.role in {"A", "G"}
+    assert clf.qc_relevance in {"QC_FUNCTIONAL", "QC_REGRESSION", "QC_VARIANT"}
+
+
 def test_technical_when_does_not_block_observable_then() -> None:
     clf = classify_scenario(
         "Resiliencia de leyenda",
