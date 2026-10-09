@@ -39,7 +39,11 @@ from app.services.executability import (
     is_user_action,
     STABLE_GENERIC_STEP,
 )
-from app.services.jira_generation import fetch_artifacts_for_keys
+from app.services.jira_generation import (
+    fetch_artifacts_for_keys,
+    fetch_issuetypes_for_keys,
+    keep_technical_epic_keys,
+)
 from app.services.qc_candidate_rules import apply_qc_rules
 from app.services.release_note_analyzer import iter_rn_ticket_rows
 from app.services.rn_epc_scope import (
@@ -1499,8 +1503,27 @@ def generate_release_app_candidates(
             ],
         }
     functionality_keys = rn_keys_from_tickets(parsed_tickets)
-    jira_artifacts = fetch_artifacts_for_keys(functionality_keys) if functionality_keys else []
     stats = GenerationStats()
+    if functionality_keys:
+        kept, dropped_nco = keep_technical_epic_keys(
+            functionality_keys,
+            fetch_issuetypes_for_keys(functionality_keys),
+        )
+        functionality_keys = kept
+        for key in dropped_nco:
+            stats.inventory_exclusions.append(
+                f"{key}: no es Technical Epic; no genera casos de funcionalidad"
+            )
+        if dropped_nco:
+            parsed_tickets = {
+                **parsed_tickets,
+                "functionality": [
+                    (tid, text)
+                    for tid, text in parsed_tickets.get("functionality", [])
+                    if tid.upper() not in {item.upper() for item in dropped_nco}
+                ],
+            }
+    jira_artifacts = fetch_artifacts_for_keys(functionality_keys) if functionality_keys else []
     inventory = build_coverage_inventory(jira_artifacts, rn_filename or "", stats=stats)
     if allowed:
         inventory = [

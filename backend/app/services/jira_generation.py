@@ -102,7 +102,29 @@ def _issue_payload(issue: dict[str, Any]) -> dict[str, Any]:
 
 
 def _is_epic(issuetype: str) -> bool:
-    return "epic" in issuetype.lower()
+    return "epic" in (issuetype or "").lower()
+
+
+def keep_technical_epic_keys(
+    keys: list[str],
+    issuetypes: dict[str, str] | None,
+) -> tuple[list[str], list[str]]:
+    """WEBCL (and similar) keys can be NCO or Bug; generation only uses Epic types.
+
+    Unknown keys (Jira down / 404) stay in the list — fail open.
+    """
+    types = issuetypes or {}
+    if not types:
+        return list(keys), []
+    kept: list[str] = []
+    dropped: list[str] = []
+    for key in keys:
+        name = (types.get(key) or "").strip()
+        if name and not _is_epic(name):
+            dropped.append(key)
+        else:
+            kept.append(key)
+    return kept, dropped
 
 
 def _is_feature_summary(summary: str) -> bool:

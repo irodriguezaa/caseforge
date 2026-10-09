@@ -63,6 +63,39 @@ def test_extract_splits_qa_qc_from_jira_issuetype(monkeypatch) -> None:
     assert by_key["WEBCL-3721"]["actividad"] == "Technical Epic"
 
 
+def test_extract_jira_nco_overrides_functionality_bucket(monkeypatch) -> None:
+    """WEBCL keys are shared by Technical Epic and NCO; Jira issuetype wins."""
+    monkeypatch.setattr(
+        "app.services.rn_scope_export.iter_rn_ticket_rows",
+        lambda _pdf, _filename="": [
+            ("WEBCL-450", "WEBCL-450: ajuste CMS", "functionality"),
+            ("WEBCL-1900", "WEBCL-1900: banner cookies", "functionality"),
+        ],
+    )
+    fields = {
+        "WEBCL-450": {
+            "issuetype": "NCO",
+            "priority": "",
+            "status": "",
+            "affected_versions": "",
+            "fix_versions": "",
+        },
+        "WEBCL-1900": {
+            "issuetype": "Technical Epic",
+            "priority": "",
+            "status": "",
+            "affected_versions": "",
+            "fix_versions": "",
+        },
+    }
+    by_key = {
+        row["key"]: row
+        for row in extract_rn_scope_rows(b"pdf", jira_fields=fields, fetch_jira=False)
+    }
+    assert by_key["WEBCL-450"]["actividad"] == "NCO"
+    assert by_key["WEBCL-1900"]["actividad"] == "Technical Epic"
+
+
 def test_workbook_headers_and_rows() -> None:
     payload = build_rn_scope_workbook(WEB_RN.read_bytes(), fetch_jira=False)
     book = load_workbook(BytesIO(payload))
@@ -122,3 +155,22 @@ def test_export_rn_scope_rejects_path_outside_storage(client, monkeypatch, tmp_p
         json={"pdf_file_path": str(WEB_RN)},
     )
     assert response.status_code == 404
+
+
+def test_keep_technical_epic_keys_drops_nco_webcl() -> None:
+    from app.services.jira_generation import keep_technical_epic_keys
+
+    kept, dropped = keep_technical_epic_keys(
+        ["WEBCL-1900", "WEBCL-450", "WEBCL-451", "WEBCL-2103", "WEBCL-2116"],
+        {
+            "WEBCL-1900": "Technical Epic",
+            "WEBCL-450": "NCO",
+            "WEBCL-451": "NCO",
+            "WEBCL-2103": "NCO",
+            "WEBCL-2116": "NCO",
+        },
+    )
+    assert kept == ["WEBCL-1900"]
+    assert dropped == ["WEBCL-450", "WEBCL-451", "WEBCL-2103", "WEBCL-2116"]
+    open_kept, open_dropped = keep_technical_epic_keys(["WEBCL-450"], {})
+    assert open_kept == ["WEBCL-450"] and open_dropped == []

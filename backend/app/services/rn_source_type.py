@@ -34,14 +34,22 @@ _VALID = {
 
 def source_type_from_issuetype(issuetype: str | None) -> str | None:
     name = (issuetype or "").strip().lower()
+    tokens = name.replace("_", " ").replace("-", " ").split()
     if name == "qa bug":
         return SOURCE_QA_BUG
     if name == "qc bug":
         return SOURCE_QC_BUG
+    if "nco" in tokens:
+        return SOURCE_NCO
+    if "epic" in name:
+        return SOURCE_FUNCTIONALITY
     return None
 
 
 def source_type_for_rn_bucket(bucket: str, issuetype: str | None = None) -> str:
+    from_jira = source_type_from_issuetype(issuetype)
+    if from_jira == SOURCE_NCO:
+        return SOURCE_NCO
     if bucket == "nco":
         return SOURCE_NCO
     if bucket == "tri":

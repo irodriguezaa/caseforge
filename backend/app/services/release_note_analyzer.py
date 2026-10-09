@@ -271,6 +271,8 @@ def _table_header_override(header_cell: str) -> str | None:
     normalized = header_cell.strip().upper().replace("ʼ", "'").replace("’", "'")
     if normalized == "TRI":
         return "tri"
+    if re.fullmatch(r"NCO(?:'?S)?", normalized.strip()):
+        return "nco"
     if "QA BUGS" in normalized or "QC BUGS" in normalized:
         return "qa_qc"
     if normalized == "ARTEFACTO" or normalized.startswith("ARTEFACTO"):
@@ -285,7 +287,7 @@ def _classify_heading(label: str) -> str | None:
     # generally, not just for one specific heading's exact wording.
     normalized_label = label.replace("ʼ", "'").replace("’", "'").replace("`", "'")
     upper = normalized_label.upper()
-    if re.search(r"\bNCO\b", upper):
+    if re.search(r"\bNCO'S\b", upper) or re.search(r"\bNCOS\b", upper) or re.search(r"\bNCO\b", upper):
         return "nco"
     if "QA-QC" in upper or "QCO" in upper or ("QA" in upper and "'" in normalized_label):
         return "qa_qc"
@@ -334,6 +336,7 @@ def _iter_damco_ticket_rows(pdf_bytes: bytes) -> list[tuple[str, str, str]]:
     hits: list[tuple[str, str, str]] = []
     current_section: str | None = None
     any_numbered_heading_found = False
+    nco_section_seen = False
 
     try:
         with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
@@ -385,6 +388,8 @@ def _iter_damco_ticket_rows(pdf_bytes: bytes) -> list[tuple[str, str, str]]:
                         if idx not in toc_indices and payload is not None:
                             current_section = payload
                             any_numbered_heading_found = True
+                            if payload == "nco":
+                                nco_section_seen = True
                         continue
                     if kind == "qa_sentence":
                         current_section = "qa_qc"
@@ -426,6 +431,8 @@ def _iter_damco_ticket_rows(pdf_bytes: bytes) -> list[tuple[str, str, str]]:
                     if override is not None:
                         current_section = override
                         bucket = override
+                        if override == "nco":
+                            nco_section_seen = True
                     else:
                         bucket = current_section
                         if bucket is None and not any_numbered_heading_found:
@@ -434,7 +441,11 @@ def _iter_damco_ticket_rows(pdf_bytes: bytes) -> list[tuple[str, str, str]]:
 
                     if bucket == "qa_qc":
                         for ticket_id, cell_text, nco_marked in found:
-                            hits.append((ticket_id, cell_text, "nco" if nco_marked else "qa_qc"))
+                            # "Negocio XX |" inside a QA/QC cell is an NCO only when the RN
+                            # has no NCO section of its own (iOS/Roku mixed tables). WEB 17
+                            # has 1.2 NCOs plus a QA table that reuses the same marker.
+                            as_nco = nco_marked and not nco_section_seen
+                            hits.append((ticket_id, cell_text, "nco" if as_nco else "qa_qc"))
                     elif bucket in _RN_BUCKETS:
                         for ticket_id, cell_text, _nco_marked in found:
                             hits.append((ticket_id, cell_text, bucket))

@@ -29,6 +29,7 @@ def _analyze(filename: str):
 
 WEB = "DAMCO-RN-CV_-_WEB_-16_9_1-290826-044927.pdf"
 WEB_1690 = "DAMCO-RN-CV_-_WEB_-16.9.0-010926-005137.pdf"
+WEB_1700 = "DAMCO-CV_-_WEB_-17.0.0-081026-201059.pdf"
 XBOX = "XBOX_-_v7_8_1-280826-194602.pdf"
 ANDROID_TV_CSTB = "DAMCO-CSTB-RN_CV_Android_TV_11_0_2-280826-194439.pdf"
 IOS = "DAMCO-RN_CV_IOS_10_1_5-290826-175843.pdf"
@@ -48,7 +49,7 @@ AAF_STALE = "DAMCO-RN_AAF_STALE-_Nueva_experiencia_para_Activacio_n_de_HBO_Max__
 AAF_STALE_MUNDIAL = "DAMCO-RN_AAF_STALE_MUNDIAL_Fase_2___QA___QC_BUG_s_25_0_11-290826-175322.pdf"
 
 ALL_FIXTURES = [
-    WEB, WEB_1690, XBOX, ANDROID_TV_CSTB, IOS, TVOS, ADR_5, ADR_9, COSHIP, ROKU,
+    WEB, WEB_1690, WEB_1700, XBOX, ANDROID_TV_CSTB, IOS, TVOS, ADR_5, ADR_9, COSHIP, ROKU,
     ADT_HF, ADT_PLAIN, FIRETV_HF, FIRETV_PLAIN,
     AAF_OTT, AAF_OTT_MUNDIAL, AAF_STALE, AAF_STALE_MUNDIAL,
 ]
@@ -187,6 +188,32 @@ def test_counts_web_exact() -> None:
     assert (r.features_count, r.nco_issues_count, r.qa_qc_issues_count, r.tri_issues_count) == (6, 0, 0, 0)
 
 
+def test_counts_web_1700_nco_section_not_negocio_marker_in_qa_table() -> None:
+    """WEB 17.0.0: 18 TE, 5 NCOs in 1.2, 33 QA/QC. WEBCL-1755 sits in QA-QC| Bugs with
+    a 'Negocio DUI |' prefix and must stay QA/QC because the RN already has an NCO section."""
+    from app.services.release_note_analyzer import iter_rn_ticket_rows
+
+    r = _analyze(WEB_1700)
+    assert (r.features_count, r.nco_issues_count, r.qa_qc_issues_count, r.tri_issues_count) == (
+        18,
+        5,
+        33,
+        0,
+    )
+    hits = iter_rn_ticket_rows((FIXTURES / WEB_1700).read_bytes(), WEB_1700)
+    nco = {ticket_id for ticket_id, _text, bucket in hits if bucket == "nco"}
+    qa = {ticket_id for ticket_id, _text, bucket in hits if bucket == "qa_qc"}
+    assert nco == {
+        "WEBCL-450",
+        "WEBCL-451",
+        "WEBCL-2103",
+        "WEBCL-2116",
+        "WEBCL-2701",
+    }
+    assert "WEBCL-1755" in qa
+    assert "WEBCL-1900" in {ticket_id for ticket_id, _text, bucket in hits if bucket == "functionality"}
+
+
 def test_counts_web_1690_empty_qa_qc_table_is_zero_not_alcance() -> None:
     """WEB 16.9.0 section 1.4 is an empty QA-QC| Bugs table. The only ticket-shaped cell after
     it is TBRFRE-2105 in 1.5 Alcance no entregado (header Artefacto). That row must not be
@@ -271,6 +298,13 @@ from app.services.release_note_analyzer import (
     _classify_heading,
     _table_header_override,
 )
+
+
+def test_table_header_nco_is_recognized_as_an_override_signal() -> None:
+    assert _table_header_override("NCO") == "nco"
+    assert _table_header_override("NCOs") == "nco"
+    assert _table_header_override("NCO's") == "nco"
+    assert _table_header_override("Funcionalidad / NCOs / Incidentes Productivos") is None
 
 
 def test_table_header_tri_is_recognized_as_an_override_signal() -> None:
@@ -371,6 +405,8 @@ def test_nco_is_a_word_not_a_substring_of_encontrados() -> None:
     assert _classify_heading("Defectos encontrados") == "qa_qc"  # this template's real QA-QC heading
     assert _classify_heading("Incidencias NCO's") == "nco"  # a genuine NCO heading must still match
     assert _classify_heading("1.4 ) Incidencias NCO's".split(")")[-1]) == "nco"
+    assert _classify_heading("NCOs") == "nco"
+    assert _classify_heading("NCO") == "nco"
 
 
 def test_a_ticket_mentioned_inside_a_description_paragraph_is_never_counted_as_qa_qc() -> None:

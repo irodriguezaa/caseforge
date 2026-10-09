@@ -129,10 +129,10 @@ def extract_gherkin_blocks(description: str, acceptance_criteria: str = "") -> l
 
 _USER_WHEN = re.compile(
     r"\b((el )?usuario)\b.{0,100}\b("
-    r"selecciona|presiona|ingresa|pulsa|abre|cierra|digita|navega|"
-    r"agrega|elimina|desbloquea|graba|cancela|reproduce|da clic|hace clic"
+    r"selecciona|seleccionar|presiona|ingresa|pulsa|abre|cierra|digita|navega|"
+    r"agrega|elimina|desbloquea|graba|cancela|reproduce|da clic|hace clic|acepta"
     r")\b|"
-    r"\b(CH\+|CH-|Back|OK)\b",
+    r"\b(CH\+|CH-|Back|OK|ACEPTAR)\b",
     re.IGNORECASE,
 )
 _SATELLITE_OBS = re.compile(
@@ -164,7 +164,8 @@ _INVENTORY_THEN_UX = re.compile(
     r"subt[ií]tul|desactiv|"
     r"permanece (abierto|desplegado)|"
     r"\bcheck\b|"
-    r"preferencia",
+    r"preferencia|"
+    r"banner|consentimiento|cookies|redirecci[oó]n|pol[ií]tica de cookies",
     re.IGNORECASE,
 )
 _HTTP_API_LINE = re.compile(
@@ -183,7 +184,15 @@ _PROSE_UX = re.compile(
     r"continuidad|no se ve afect|no (deben )?verse afectadas|no afecta otras|"
     r"comportamiento por defecto|por defecto del dispositivo|comportamiento esperado del dispositivo|"
     r"reflej|textos (y valores )?configurables|player vod|"
-    r"se (muestra|visualiza|reproduce|pausa|oculta|restaura)",
+    r"se (muestra|visualiza|reproduce|pausa|oculta|restaura)|"
+    r"banner|consentimiento|cookies|redirecci[oó]n|pol[ií]tica de cookies|"
+    r"\baceptar\b|versi[oó]n vigente",
+    re.IGNORECASE,
+)
+_LEYENDA_KEY_UX = re.compile(
+    r"leyenda|construir la leyenda|"
+    r"espacio donde.{0,80}(mostrarse la leyenda|la llave)|"
+    r"fin player",
     re.IGNORECASE,
 )
 _BACKGROUND = re.compile(r"^\s*Background\s*:", re.IGNORECASE | re.MULTILINE)
@@ -230,12 +239,22 @@ def _implementation_without_ux(title: str, body: str, user_action: str | None) -
     return bool(_TECH_IMPL_ONLY.search(blob) or _pure_config_only(blob) or _http_or_api_only(blob))
 
 
+def _orphan_config_key(title: str, body: str) -> bool:
+    """STB leyenda 'llave' is QC; cookie/appKey 'llave' without leyenda UX is not."""
+    blob = f"{title or ''}\n{body or ''}"
+    if not _KEY_DEGRADATION.search(blob):
+        return False
+    return not bool(_LEYENDA_KEY_UX.search(blob))
+
+
 def _non_qc_inventory_reason(
     title: str,
     body: str,
     user_action: str | None,
 ) -> str | None:
     blob = f"{title or ''}\n{body or ''}"
+    if _orphan_config_key(title, body):
+        return "llave de configuración/consentimiento sin UX de leyenda"
     if _http_or_api_only(blob):
         return "HTTP/API sin UX observable"
     if _pure_config_only(blob):
@@ -382,7 +401,9 @@ def extract_prose_observable_blocks(
                 and re.search(
                     r"usuario|panel|player|experiencia|dispositivo|vod|pantalla|"
                     r"funcionalidades|comportamiento esperado|"
-                    r"administraci[oó]n|herramienta de admin",
+                    r"administraci[oó]n|herramienta de admin|"
+                    r"banner|consentimiento|cookies|redirecci[oó]n|"
+                    r"pol[ií]tica|aceptar",
                     snippet,
                     re.I,
                 )

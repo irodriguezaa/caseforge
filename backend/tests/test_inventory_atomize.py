@@ -457,3 +457,75 @@ Scenario Outline: Validar respuesta de PIN
     assert len(units) == 1
 
 
+def test_webcl_1900_cookie_ac_not_stv_legend_keys() -> None:
+    """Cookie banner AC is QC; STB-style 'llave' Gherkin without leyenda is not."""
+    gherkin = """
+Feature: Banner informativo de cookies
+  Scenario: Mostrar banner informativo de cookies
+    When el usuario ingresa al sitio sin consentimiento previo
+    Then el banner de cookies se muestra automáticamente
+  Scenario: No mostrar banner informativo de cookies
+    Given existe consentimiento previo válido
+    When el usuario ingresa al sitio
+    Then el banner de cookies no se muestra
+  Scenario: No se logra obtener una llave
+    Given no se obtiene una llave
+    When la aplicación intenta leer la llave
+    Then no se logra obtener una llave
+  Scenario: La llave se encuentra vacía
+    Given la llave se encuentra vacía
+    When la aplicación intenta leer la llave
+    Then la llave se encuentra vacía
+"""
+    ac = (
+        "El banner se muestra automáticamente cuando no existe consentimiento previo válido.\n"
+        "El consentimiento se registra correctamente al seleccionar ACEPTAR.\n"
+        "Una vez aceptadas las cookies, el banner no debe volver a mostrarse mientras "
+        "la política de cookies permanezca vigente.\n"
+        "El consentimiento debe solicitarse nuevamente únicamente cuando exista una "
+        "nueva versión vigente de la política de cookies.\n"
+        "La redirección a la página oficial de la política completa de cookies de "
+        "Claro funciona correctamente.\n"
+    )
+    artifacts = [
+        {
+            "key": "WEBCL-1900",
+            "issuetype": "Technical Epic",
+            "summary": "Banner cookies",
+            "description": "",
+            "acceptance_criteria": ac,
+            "children": [
+                {
+                    "key": "WEBCL-1901",
+                    "issuetype": "Technical Story",
+                    "summary": "Banner cookies",
+                    "description": gherkin,
+                    "acceptance_criteria": "",
+                },
+                {
+                    "key": "WEBCL-1902",
+                    "issuetype": "Technical Story",
+                    "summary": "Setup de métricas cookies",
+                    "description": (
+                        "Scenario: Implementación inicial del setup de métricas\n"
+                        "  When el backend envía la métrica\n"
+                        "  Then el esquema de métricas cumple el pipeline\n"
+                    ),
+                    "acceptance_criteria": "",
+                },
+            ],
+        }
+    ]
+    stats = GenerationStats()
+    units = build_coverage_inventory(artifacts, "rn.pdf", stats=stats)
+    names = " ".join((unit.scenario or "").lower() for unit in units)
+    text = _blob(units)
+    assert "no se logra obtener una llave" not in names
+    assert "llave se encuentra vac" not in names
+    assert "métric" not in names
+    assert "banner" in text
+    assert "aceptar" in text or "consentimiento" in text
+    assert "versi" in text
+    assert "redirec" in text or "pol" in text
+
+

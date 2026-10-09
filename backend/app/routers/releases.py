@@ -62,6 +62,7 @@ from app.services.epc_paste import (
     tickets_from_normalized_technical_epics,
 )
 from app.services.rn_epc_scope import rn_keys_from_normalized
+from app.services.jira_generation import fetch_issuetypes_for_keys, keep_technical_epic_keys
 from app.services.operativa_engine import ENGINE_VERSION as OPERATIVA_ENGINE, generate_operativa_from_matrix
 from app.services.operativa_engine.coverage_matrix import build_coverage_matrix
 from app.services.operativa_engine.matrix_expand import expand_matrix_preview
@@ -878,6 +879,17 @@ def _generate_cases_from_rn(
         if key and key not in seen_keys:
             seen_keys.add(key)
             func_keys.append(key)
+    if func_keys:
+        func_keys, dropped_non_epic = keep_technical_epic_keys(
+            func_keys,
+            fetch_issuetypes_for_keys(func_keys),
+        )
+        if dropped_non_epic:
+            logger.info(
+                "Release %s: omitiendo keys que no son Technical Epic: %s",
+                release.id,
+                ", ".join(dropped_non_epic),
+            )
     scoped_key = (functionality_key or "").strip().upper() or None
     if chunked and not scoped_key:
         if regenerate:
