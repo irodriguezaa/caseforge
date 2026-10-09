@@ -2,12 +2,15 @@
 
 import { ChevronDown } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import type { ColumnFilterSelection } from "@/lib/releaseCaseFilters";
+
+export type { ColumnFilterSelection };
 
 interface ColumnFilterProps {
   label: string;
   options: string[];
-  selected: string[];
-  onChange: (next: string[]) => void;
+  selected: ColumnFilterSelection;
+  onChange: (next: ColumnFilterSelection) => void;
   formatOption?: (value: string) => string;
 }
 
@@ -20,9 +23,9 @@ export function ColumnFilter({
 }: ColumnFilterProps): React.ReactElement {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
-  const active = selected.length > 0;
-  const selectedSet = new Set(selected);
-  const allChecked = !active;
+  const selectedSet = new Set(selected ?? []);
+  const allChecked = selected === null || (options.length > 0 && selected.length === options.length);
+  const active = !allChecked;
 
   useEffect(() => {
     if (!open) {
@@ -38,7 +41,7 @@ export function ColumnFilter({
   }, [open]);
 
   function toggleAll(): void {
-    onChange([]);
+    onChange(allChecked ? [] : null);
   }
 
   function toggleValue(value: string): void {
@@ -46,13 +49,13 @@ export function ColumnFilter({
       onChange(options.filter((item) => item !== value));
       return;
     }
+    const current = selected ?? [];
     if (selectedSet.has(value)) {
-      const next = selected.filter((item) => item !== value);
-      onChange(next.length === options.length ? [] : next);
+      onChange(current.filter((item) => item !== value));
       return;
     }
-    const next = [...selected, value];
-    onChange(next.length === options.length ? [] : next);
+    const next = [...current, value];
+    onChange(next.length === options.length ? null : next);
   }
 
   const caption = formatOption ?? ((value: string) => value);

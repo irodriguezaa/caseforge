@@ -17,9 +17,11 @@ import { StatusBadge } from "@/app/components/StatusBadge";
 import { api, ApiRequestError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import {
+  columnFilterIsActive,
   loadReleaseCaseFilters,
   pruneFilterList,
   saveReleaseCaseFilters,
+  type ColumnFilterSelection,
 } from "@/lib/releaseCaseFilters";
 import { BE_REGRESIVO_SCOPE_LABEL, OPERATIVA_DEVICE_OPTIONS, SHOW_QCO_ZEPHYR_PUBLISH, VALIDATION_TYPE_OPTIONS } from "@/lib/constants";
 import { calculateBusinessDays } from "@/lib/dateUtils";
@@ -84,10 +86,10 @@ export default function ReleaseDetailPage(): React.ReactElement {
   const [submitting, setSubmitting] = useState(false);
 
   const [deviceFilter, setDeviceFilter] = useState<string>("");
-  const [componentFilter, setComponentFilter] = useState<string[]>([]);
-  const [storyFilter, setStoryFilter] = useState<string[]>([]);
-  const [priorityFilter, setPriorityFilter] = useState<string[]>([]);
-  const [statusFilter, setStatusFilter] = useState<string[]>([]);
+  const [componentFilter, setComponentFilter] = useState<ColumnFilterSelection>(null);
+  const [storyFilter, setStoryFilter] = useState<ColumnFilterSelection>(null);
+  const [priorityFilter, setPriorityFilter] = useState<ColumnFilterSelection>(null);
+  const [statusFilter, setStatusFilter] = useState<ColumnFilterSelection>(null);
   const skipFilterPersist = useRef(true);
   const [showImport, setShowImport] = useState(false);
   const [showManualForm, setShowManualForm] = useState(false);
@@ -402,27 +404,30 @@ export default function ReleaseDetailPage(): React.ReactElement {
   ]);
 
   const tableFiltersOn = Boolean(
-    componentFilter.length || storyFilter.length || priorityFilter.length || statusFilter.length,
+    columnFilterIsActive(componentFilter)
+    || columnFilterIsActive(storyFilter)
+    || columnFilterIsActive(priorityFilter)
+    || columnFilterIsActive(statusFilter),
   );
   const visibleCases = useMemo(() => {
-    const components = new Set(componentFilter);
-    const stories = new Set(storyFilter);
-    const priorities = new Set(priorityFilter);
-    const statuses = new Set(statusFilter);
+    const components = componentFilter === null ? null : new Set(componentFilter);
+    const stories = storyFilter === null ? null : new Set(storyFilter);
+    const priorities = priorityFilter === null ? null : new Set(priorityFilter);
+    const statuses = statusFilter === null ? null : new Set(statusFilter);
     return testCases.filter((row) => {
       if (deviceFilter && (row.device || "").trim() !== deviceFilter) {
         return false;
       }
-      if (components.size && !components.has(componentLabel(row))) {
+      if (components && !components.has(componentLabel(row))) {
         return false;
       }
-      if (stories.size && !stories.has(storyLabel(row))) {
+      if (stories && !stories.has(storyLabel(row))) {
         return false;
       }
-      if (priorities.size && !priorities.has(row.priority)) {
+      if (priorities && !priorities.has(row.priority)) {
         return false;
       }
-      if (statuses.size && !statuses.has(row.status)) {
+      if (statuses && !statuses.has(row.status)) {
         return false;
       }
       return true;
@@ -917,10 +922,10 @@ export default function ReleaseDetailPage(): React.ReactElement {
                 className="secondary"
                 onClick={() => {
                   setDeviceFilter("");
-                  setComponentFilter([]);
-                  setStoryFilter([]);
-                  setPriorityFilter([]);
-                  setStatusFilter([]);
+                  setComponentFilter(null);
+                  setStoryFilter(null);
+                  setPriorityFilter(null);
+                  setStatusFilter(null);
                 }}
               >
                 Quitar filtros
