@@ -1,11 +1,23 @@
 /** QC effort from real Test Cases. Keep in sync with backend `qc_effort`. */
 
 export const QC_HOURS_PER_DAY = 6;
-export const BLOCKER_MINUTES = 20;
-export const CRITICAL_MINUTES = 15;
+export const BLOCKER_MINUTES = 15;
+export const CRITICAL_MINUTES = 10;
+const PRIORITY_CANON: Record<string, "CRITICAL" | "BLOCKER"> = {
+  BLOCKER: "BLOCKER",
+  CRITICAL: "CRITICAL",
+};
+const COMPLEXITY_CANON: Record<string, "BAJA" | "MEDIA" | "ALTA"> = {
+  BAJA: "BAJA",
+  LOW: "BAJA",
+  MEDIA: "MEDIA",
+  MEDIUM: "MEDIA",
+  ALTA: "ALTA",
+  HIGH: "ALTA",
+};
 export const QC_CASE_MINUTES: Record<string, Record<string, number>> = {
-  CRITICAL: { BAJA: 15, LOW: 15, MEDIA: 20, MEDIUM: 20, ALTA: 25, HIGH: 25 },
-  BLOCKER: { BAJA: 20, LOW: 20, MEDIA: 30, MEDIUM: 30, ALTA: 40, HIGH: 40 },
+  CRITICAL: { BAJA: 10, MEDIA: 15, ALTA: 20 },
+  BLOCKER: { BAJA: 15, MEDIA: 25, ALTA: 35 },
 };
 
 /** Retired count formula, comparison only: (TC / 46) × 3 days. */
@@ -15,26 +27,47 @@ export const QC_RELEASE_EFFORT_FACTOR_LEGACY = 3.0;
 export const QC_OPERATIVA_CASES_PER_DAY = 6;
 
 export const QC_ESTIMATION_TOOLTIP =
-  "Esfuerzo QC en minutos: CRITICAL 15/20/25 y BLOCKER 20/30/40 (BAJA/MEDIA/ALTA). La complejidad sale de pasos/condición/confianza, no de la prioridad. Días-persona = horas / 6. Duración = días-persona / recursos. La ventana de ejecución es calendario y no entra en esta fórmula.";
+  "Esfuerzo QC en minutos: CRITICAL 10/15/20 y BLOCKER 15/25/35 (BAJA/MEDIA/ALTA). La complejidad sale de pasos/condición/confianza, no de la prioridad. Días-persona = horas / 6. Duración = días-persona / recursos. La ventana de ejecución es calendario y no entra en esta fórmula.";
 
 export const QC_OPERATIVA_ESTIMATION_TOOLTIP =
   "Operativa: 1 tester por dispositivo. Horas = N × (6 h/día ÷ 6 TC/día) = N × 1 h. Días QC = max(casos del dispositivo más cargado) ÷ 6 TC/día (trabajo en paralelo). Filtra un dispositivo para ver tu slice.";
 
-export function priorityBaseMinutes(priority?: string | null): number {
-  return String(priority || "").toUpperCase() === "BLOCKER" ? BLOCKER_MINUTES : CRITICAL_MINUTES;
+function token(value?: string | null): string {
+  return String(value ?? "").trim().toUpperCase();
 }
 
-function complexityKey(complexity?: string | null): string {
-  const key = String(complexity || "MEDIA").trim().toUpperCase();
-  if (key in (QC_CASE_MINUTES.CRITICAL || {})) {
-    return key;
+function priorityBand(priority?: string | null): "CRITICAL" | "BLOCKER" {
+  const key = token(priority);
+  if (!key) {
+    return "CRITICAL";
   }
-  return "MEDIA";
+  const band = PRIORITY_CANON[key];
+  if (!band) {
+    console.warn("qc_effort: prioridad desconocida", priority, "; se usa CRITICAL");
+    return "CRITICAL";
+  }
+  return band;
+}
+
+function complexityBand(complexity?: string | null): "BAJA" | "MEDIA" | "ALTA" {
+  const key = token(complexity);
+  if (!key) {
+    return "MEDIA";
+  }
+  const band = COMPLEXITY_CANON[key];
+  if (!band) {
+    console.warn("qc_effort: complejidad desconocida", complexity, "; se usa MEDIA");
+    return "MEDIA";
+  }
+  return band;
+}
+
+export function priorityBaseMinutes(priority?: string | null): number {
+  return priorityBand(priority) === "BLOCKER" ? BLOCKER_MINUTES : CRITICAL_MINUTES;
 }
 
 export function estimateCaseMinutes(priority?: string | null, complexity?: string | null): number {
-  const band = String(priority || "").toUpperCase() === "BLOCKER" ? "BLOCKER" : "CRITICAL";
-  return QC_CASE_MINUTES[band][complexityKey(complexity)];
+  return QC_CASE_MINUTES[priorityBand(priority)][complexityBand(complexity)];
 }
 
 export function estimateReleaseEffortFromCases(
@@ -48,8 +81,8 @@ export function estimateReleaseEffortFromCases(
   const days = realHours / QC_HOURS_PER_DAY;
   return {
     minutes,
-    hours: Math.round(realHours * 10) / 10,
-    days: Math.round(days * 10) / 10,
+    hours: Math.round(realHours * 10000) / 10000,
+    days: Math.round(days * 10000) / 10000,
   };
 }
 
@@ -178,9 +211,6 @@ function caseHours(row: {
   complexity?: string | null;
   estimation_hours?: number | null;
 }): number {
-  if (row.estimation_hours != null && Number.isFinite(Number(row.estimation_hours))) {
-    return Number(row.estimation_hours);
-  }
   return estimateCaseMinutes(row.priority, row.complexity) / 60;
 }
 

@@ -1,25 +1,39 @@
 """QC effort from persisted Test Cases: minutes by priority × complexity.
 
-CRITICAL: BAJA 15 / MEDIA 20 / ALTA 25. BLOCKER: BAJA 20 / MEDIA 30 / ALTA 40.
+CRITICAL: BAJA 10 / MEDIA 15 / ALTA 20. BLOCKER: BAJA 15 / MEDIA 25 / ALTA 35.
 
 Complexity is classified from steps, condition and confidence only.
 """
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Literal
 
 from app.config import settings
 from app.schemas.case_generation import GeneratedCaseCandidate
 
 Complexity = Literal["BAJA", "MEDIA", "ALTA"]
+logger = logging.getLogger(__name__)
 
 QC_HOURS_PER_DAY = 6.0
-BLOCKER_MINUTES = 20
-CRITICAL_MINUTES = 15
+BLOCKER_MINUTES = 15
+CRITICAL_MINUTES = 10
 QC_CASE_MINUTES = {
-    "CRITICAL": {"BAJA": 15, "LOW": 15, "MEDIA": 20, "MEDIUM": 20, "ALTA": 25, "HIGH": 25},
-    "BLOCKER": {"BAJA": 20, "LOW": 20, "MEDIA": 30, "MEDIUM": 30, "ALTA": 40, "HIGH": 40},
+    "CRITICAL": {"BAJA": 10, "MEDIA": 15, "ALTA": 20},
+    "BLOCKER": {"BAJA": 15, "MEDIA": 25, "ALTA": 35},
+}
+_PRIORITY_CANON = {
+    "BLOCKER": "BLOCKER",
+    "CRITICAL": "CRITICAL",
+}
+_COMPLEXITY_CANON = {
+    "BAJA": "BAJA",
+    "LOW": "BAJA",
+    "MEDIA": "MEDIA",
+    "MEDIUM": "MEDIA",
+    "ALTA": "ALTA",
+    "HIGH": "ALTA",
 }
 
 # Retired count formula, kept only so reports can compare old vs new.
@@ -37,7 +51,7 @@ def classify_complexity(candidate: GeneratedCaseCandidate) -> Complexity:
     BAJA: validación básica de 1 paso, o 1 paso con confianza alta.
     MEDIA: condición especial, 2–3 pasos, o confianza media.
     ALTA: 4+ pasos o confianza baja.
-    BLOCKER/CRITICAL no entran aquí; solo eligen la fila de minutos (20 vs 15 en BAJA).
+    BLOCKER/CRITICAL no entran aquí; solo eligen la fila de minutos.
     """
     steps = len(candidate.steps)
     if candidate.basic_validation and steps <= 1 and not candidate.requires_condition:
@@ -49,26 +63,46 @@ def classify_complexity(candidate: GeneratedCaseCandidate) -> Complexity:
     return "BAJA"
 
 
-def _priority_value(priority: Any) -> str:
-    if priority is None:
+def _token(value: Any) -> str:
+    if value is None:
+        return ""
+    raw = value.value if hasattr(value, "value") else value
+    return str(raw).strip().upper()
+
+
+def _priority_band(priority: Any) -> str:
+    token = _token(priority)
+    if not token:
         return "CRITICAL"
-    return str(priority.value if hasattr(priority, "value") else priority).upper()
+    band = _PRIORITY_CANON.get(token)
+    if band is None:
+        logger.warning("qc_effort: prioridad desconocida %r; se usa CRITICAL", priority)
+        return "CRITICAL"
+    return band
+
+
+def _complexity_band(complexity: Any) -> str:
+    token = _token(complexity)
+    if not token:
+        return "MEDIA"
+    band = _COMPLEXITY_CANON.get(token)
+    if band is None:
+        logger.warning("qc_effort: complejidad desconocida %r; se usa MEDIA", complexity)
+        return "MEDIA"
+    return band
+
+
+def _priority_value(priority: Any) -> str:
+    return _priority_band(priority)
 
 
 def priority_base_minutes(priority: Any) -> int:
-    return BLOCKER_MINUTES if _priority_value(priority) == "BLOCKER" else CRITICAL_MINUTES
-
-
-def _complexity_key(complexity: str | None) -> str:
-    key = (complexity or "MEDIA").strip().upper()
-    if key in {"BAJA", "LOW", "MEDIA", "MEDIUM", "ALTA", "HIGH"}:
-        return key
-    return "MEDIA"
+    return BLOCKER_MINUTES if _priority_band(priority) == "BLOCKER" else CRITICAL_MINUTES
 
 
 def estimate_case_minutes(priority: Any, complexity: str | None) -> float:
-    band = QC_CASE_MINUTES["BLOCKER" if _priority_value(priority) == "BLOCKER" else "CRITICAL"]
-    return float(band[_complexity_key(complexity)])
+    band = QC_CASE_MINUTES[_priority_band(priority)]
+    return float(band[_complexity_band(complexity)])
 
 
 def estimate_case_hours(priority: Any, complexity: str | None) -> float:
@@ -90,7 +124,7 @@ def estimate_release_from_cases(cases: list[Any]) -> tuple[float, float]:
         minutes += estimate_case_minutes(priority, complexity)
     hours = minutes / 60.0
     days = hours / hours_per_day()
-    return round(hours, 1), round(days, 1)
+    return round(hours, 4), round(days, 4)
 
 
 def duration_days(person_days: float, resources: int) -> float:

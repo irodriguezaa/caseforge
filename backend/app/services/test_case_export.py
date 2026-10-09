@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session, selectinload
 from sqlalchemy import select
 
 from app.models.test_case import TestCase
+from app.services.qc_effort import estimate_case_hours
 from app.services.rn_epc_scope import left_join_epic_progress
 
 
@@ -104,9 +105,7 @@ def primary_epic_key(case: TestCase) -> str:
 
 
 def _case_hours(case: TestCase) -> float:
-    if case.estimation_hours is not None:
-        return float(case.estimation_hours)
-    return 0.0
+    return estimate_case_hours(getattr(case, "priority", None), getattr(case, "complexity", None))
 
 
 def _is_executed(case: TestCase) -> bool:
