@@ -365,7 +365,7 @@ def _iter_damco_ticket_rows(pdf_bytes: bytes) -> list[tuple[str, str, str]]:
                 events: list[tuple[float, str, Any]] = []
 
                 words = page.extract_words()
-                if not any(not _is_page_label(str(word.get("text") or "")) for word in words):
+                if words and not any(not _is_page_label(str(word.get("text") or "")) for word in words):
                     continue
                 lines: dict[int, list] = {}
                 for word in words:
@@ -521,9 +521,7 @@ class RuleBasedPdfAnalyzer:
         if detect_rn_vendor(filename, pdf_bytes, text=text) == "tata":
             scope = parse_tata_release_note(pdf_bytes, filename)
             return self._build_tata_analysis(filename, text, scope, detected_name)
-        hits: list[tuple[str, str, str]] = []
-        if _has_extractable_rn_text(text):
-            hits = _iter_damco_ticket_rows(pdf_bytes)
+        hits = _iter_damco_ticket_rows(pdf_bytes)
         counts: dict[str, set[str]] = {key: set() for key in _RN_BUCKETS}
         for ticket_id, _cell_text, bucket in hits:
             if bucket in counts:
@@ -649,7 +647,10 @@ class RuleBasedPdfAnalyzer:
         detected_platform = _detect_device(filename, text, detected_name)
         detected_description = _detect_description(text)
 
-        if not _has_extractable_rn_text(text):
+        ticket_total = (
+            table_counts.functionality + table_counts.nco + table_counts.tri + table_counts.qa_qc
+        )
+        if ticket_total == 0 and not _has_extractable_rn_text(text):
             observations.append("El archivo PDF no contiene texto extraíble (puede ser un documento escaneado o protegido).")
         else:
             if not detected_name:
