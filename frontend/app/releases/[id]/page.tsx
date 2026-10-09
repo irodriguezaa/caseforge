@@ -4,7 +4,7 @@ import { Download, Pencil, Plus, Sparkles, Trash2, Upload } from "lucide-react";
 import { ColumnFilter } from "@/app/components/ColumnFilter";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { EditTestCaseModal } from "@/app/components/EditTestCaseModal";
 import { EpicHoursPanel } from "@/app/components/EpicHoursPanel";
 import { EpicProgressPanel } from "@/app/components/EpicProgressPanel";
@@ -16,6 +16,11 @@ import { ReleaseAnalysisCard } from "@/app/components/ReleaseAnalysisCard";
 import { StatusBadge } from "@/app/components/StatusBadge";
 import { api, ApiRequestError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import {
+  loadReleaseCaseFilters,
+  pruneFilterList,
+  saveReleaseCaseFilters,
+} from "@/lib/releaseCaseFilters";
 import { BE_REGRESIVO_SCOPE_LABEL, OPERATIVA_DEVICE_OPTIONS, SHOW_QCO_ZEPHYR_PUBLISH, VALIDATION_TYPE_OPTIONS } from "@/lib/constants";
 import { calculateBusinessDays } from "@/lib/dateUtils";
 import { nextTestCaseId } from "@/lib/testCaseId";
@@ -83,6 +88,7 @@ export default function ReleaseDetailPage(): React.ReactElement {
   const [storyFilter, setStoryFilter] = useState<string[]>([]);
   const [priorityFilter, setPriorityFilter] = useState<string[]>([]);
   const [statusFilter, setStatusFilter] = useState<string[]>([]);
+  const skipFilterPersist = useRef(true);
   const [showImport, setShowImport] = useState(false);
   const [showManualForm, setShowManualForm] = useState(false);
   const [generateResult, setGenerateResult] = useState<GenerateCasesResponse | null>(null);
@@ -358,6 +364,43 @@ export default function ReleaseDetailPage(): React.ReactElement {
     () => uniqueSorted(testCases.map((row) => row.status)),
     [testCases],
   );
+
+  useEffect(() => {
+    const stored = loadReleaseCaseFilters(releaseId);
+    setDeviceFilter(stored.device);
+    setComponentFilter(stored.component);
+    setStoryFilter(stored.story);
+    setPriorityFilter(stored.priority);
+    setStatusFilter(stored.status);
+    skipFilterPersist.current = true;
+  }, [releaseId]);
+
+  useEffect(() => {
+    if (skipFilterPersist.current) {
+      skipFilterPersist.current = false;
+      return;
+    }
+    saveReleaseCaseFilters(releaseId, {
+      device: deviceFilter,
+      component: pruneFilterList(componentFilter, componentOptions),
+      story: pruneFilterList(storyFilter, storyOptions),
+      priority: pruneFilterList(priorityFilter, priorityOptions),
+      status: pruneFilterList(statusFilter, statusOptions),
+    });
+  }, [
+    releaseId,
+    deviceFilter,
+    componentFilter,
+    storyFilter,
+    priorityFilter,
+    statusFilter,
+    deviceOptions,
+    componentOptions,
+    storyOptions,
+    priorityOptions,
+    statusOptions,
+  ]);
+
   const tableFiltersOn = Boolean(
     componentFilter.length || storyFilter.length || priorityFilter.length || statusFilter.length,
   );
