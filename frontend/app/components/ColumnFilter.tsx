@@ -1,7 +1,7 @@
 "use client";
 
 import { ChevronDown } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ColumnFilterSelection } from "@/lib/releaseCaseFilters";
 
 export type { ColumnFilterSelection };
@@ -23,6 +23,8 @@ export function ColumnFilter({
 }: ColumnFilterProps): React.ReactElement {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const menuScrollTop = useRef(0);
   const selectedSet = new Set(selected ?? []);
   const allChecked = selected === null || (options.length > 0 && selected.length === options.length);
   const active = !allChecked;
@@ -40,11 +42,23 @@ export function ColumnFilter({
     return () => document.removeEventListener("mousedown", onPointerDown);
   }, [open]);
 
+  useLayoutEffect(() => {
+    if (menuRef.current) {
+      menuRef.current.scrollTop = menuScrollTop.current;
+    }
+  }, [selected, open]);
+
+  function keepMenuScroll(): void {
+    menuScrollTop.current = menuRef.current?.scrollTop ?? 0;
+  }
+
   function toggleAll(): void {
+    keepMenuScroll();
     onChange(allChecked ? [] : null);
   }
 
   function toggleValue(value: string): void {
+    keepMenuScroll();
     if (allChecked) {
       onChange(options.filter((item) => item !== value));
       return;
@@ -73,7 +87,13 @@ export function ColumnFilter({
         <ChevronDown size={14} aria-hidden="true" />
       </button>
       {open ? (
-        <div className="col-filter-menu" role="listbox" aria-label={label}>
+        <div
+          ref={menuRef}
+          className="col-filter-menu"
+          role="listbox"
+          aria-label={label}
+          onMouseDown={(event) => event.preventDefault()}
+        >
           <label className="col-filter-item">
             <input type="checkbox" checked={allChecked} onChange={toggleAll} />
             (Todos)

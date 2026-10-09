@@ -483,7 +483,7 @@ textarea { resize: vertical; min-height: 4.5rem; }
 .back-link { color: var(--accent); text-decoration: none; font-weight: 600; font-size: 13px; }
 
 table { width: 100%; border-collapse: collapse; background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; font-size: 13px; }
-table.case-grid { overflow: visible; }
+table.case-grid { overflow: visible; overflow-anchor: none; }
 th, td { text-align: left; padding: .65rem .9rem; border-bottom: 1px solid var(--border); }
 th { color: var(--text-dim); font-size: .72rem; text-transform: uppercase; letter-spacing: .03em; font-weight: 600; }
 table.case-grid th { overflow: visible; vertical-align: middle; }
@@ -517,6 +517,7 @@ tr.clickable:hover { background: var(--surface-2); }
   max-width: 320px;
   max-height: 280px;
   overflow: auto;
+  overflow-anchor: none;
   background: var(--surface-1);
   border: 1px solid var(--border-strong);
   border-radius: 8px;
