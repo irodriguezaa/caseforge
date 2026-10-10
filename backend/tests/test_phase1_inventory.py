@@ -98,7 +98,7 @@ def test_duplicate_gherkin_in_description_and_ac_is_not_doubled() -> None:
     assert len(units) == 1
 
 
-def test_empty_feature_falls_back_to_epic_gherkin() -> None:
+def test_empty_feature_does_not_fall_back_to_epic_gherkin() -> None:
     artifacts = [
         {
             "key": "WINCL-219",
@@ -117,6 +117,25 @@ def test_empty_feature_falls_back_to_epic_gherkin() -> None:
                     "acceptance_criteria": "",
                 }
             ],
+        }
+    ]
+    units = build_coverage_inventory(artifacts, "xbox.pdf")
+    assert units == []
+
+
+def test_epic_is_source_when_it_has_no_stories() -> None:
+    artifacts = [
+        {
+            "key": "WINCL-219",
+            "summary": "Navegación secundaria",
+            "issuetype": "Technical Epic",
+            "description": (
+                "Scenario: Reproducción del último canal visto por el perfil\n"
+                "  When el usuario entra a TV en vivo\n"
+                "  Then se muestra el player del último canal del perfil\n"
+            ),
+            "acceptance_criteria": "",
+            "children": [],
         }
     ]
     units = build_coverage_inventory(artifacts, "xbox.pdf")

@@ -94,8 +94,8 @@ def _issue_payload(issue: dict[str, Any]) -> dict[str, Any]:
         "status": ((fields.get("status") or {}).get("name") or "").strip(),
         "parent_key": parent.get("key"),
         "parent_issuetype": ((parent_fields.get("issuetype") or {}).get("name") or "").strip(),
-        "description": adf_to_text(fields.get("description"))[:12000],
-        "acceptance_criteria": adf_to_text(fields.get(_FIELD_USER_STORY_AC))[:8000],
+        "description": adf_to_text(fields.get("description")),
+        "acceptance_criteria": adf_to_text(fields.get(_FIELD_USER_STORY_AC)),
         "product_brief_summary": adf_to_text(fields.get(_FIELD_PRODUCT_BRIEF))[:2000],
         "device": adf_to_text(fields.get(_FIELD_TBRFRE_DEVICE)),
     }

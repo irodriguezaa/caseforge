@@ -26,6 +26,16 @@ from app.services.rn_epc_scope import (
 _ID_NUMBER = re.compile(r"^(?:QC|TC)-(\d+)$", re.IGNORECASE)
 
 
+def _persist_applicability(candidate: GeneratedCaseCandidate) -> str | None:
+    if candidate.applicability == "na_ambiente":
+        detail = (candidate.applicability_reason or "").strip()
+        return f"na_ambiente: {detail}".strip() if detail else "na_ambiente"
+    gates = [rule for rule in (candidate.applied_rules or []) if str(rule).startswith("quality-gate:")]
+    if gates:
+        return "quality-gate: " + ",".join(gates)
+    return candidate.applicability_reason or None
+
+
 def _clip(value: str | None, limit: int) -> str | None:
     text = (value or "").strip()
     if not text:
@@ -164,7 +174,7 @@ def persist_candidates(
             ecosystem=_clip(candidate.ecosystem, 16),
             device=_clip(candidate.device, 80),
             device_source=_clip(candidate.device_source, 250),
-            applicability_reason=(candidate.applicability_reason or None),
+            applicability_reason=_persist_applicability(candidate),
             duplicate_status=_clip(candidate.duplicate_status, 32),
             group_id=_clip(candidate.group_id, 80),
             hn_source=_clip(candidate.hn_source, 32),

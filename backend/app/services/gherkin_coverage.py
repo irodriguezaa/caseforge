@@ -25,6 +25,12 @@ from app.services.executability import (
     is_user_action,
     parse_scenario_clauses,
 )
+from app.services.coverage_quality import (
+    given_requires_remote_setup,
+    looks_like_invalid_lead,
+    normalize_precondition,
+    quality_gate,
+)
 from app.services.qc_candidate_rules import (
     apply_qc_rules,
     classify_confidence,
@@ -59,18 +65,19 @@ _GIVEN = re.compile(r"^\s*(Given|Dado que|Dado)\s+", re.IGNORECASE)
 _WHEN = re.compile(r"^\s*(When|Cuando)\s+", re.IGNORECASE)
 _THEN = re.compile(r"^\s*(Then|Entonces)\s+", re.IGNORECASE)
 _TECHNICAL = re.compile(
-    r"\b(GET|POST|PUT|PATCH|DELETE)\b|"
-    r"https?://\S+|"
+    r"(?i:\b(?:GET|POST|PUT|PATCH|DELETE)\b)|"
+    r"(?i:https?://\S+)|"
     r"/services/[^\s]+|"
     r"/[a-z]+/v\d+/[^\s]+|"
     r"/[a-z][a-z0-9_\-/]{2,}|"
-    r"\bstatus codes?\b|"
-    r"\bHTTP\b|"
-    r"\binvoca\b|"
+    r"(?i:\bstatus codes?\b)|"
+    r"(?i:\bHTTP\b)|"
+    r"(?i:\binvoca\b)|"
     r"module_version|"
     r"`[^`]+`|"
-    r"""["'][A-Za-z_][A-Za-z0-9_]*["']""",
-    re.IGNORECASE,
+    r"""['"][A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9.]+)+['"]|"""
+    r"""['"][a-z]+[A-Z][A-Za-z0-9.]*['"]|"""
+    r"""['"][A-Za-z][A-Za-z0-9]*(?:\.[A-Za-z][A-Za-z0-9_]*)+['"]"""
 )
 _CAMEL_FIELD = re.compile(
     r"\b[a-z][a-zA-Z0-9]*[A-Z][A-Za-z0-9]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*"
@@ -101,6 +108,64 @@ def gherkin_source_text(description: str) -> str:
     if match:
         return description[: match.start()].strip()
     return description.strip()
+
+
+def _fill_placeholders(
+    text: str,
+    example: dict[str, str] | None = None,
+    examples: list[dict[str, str]] | None = None,
+) -> str:
+    out = text or ""
+    rows = list(examples or [])
+    if example:
+        rows = [example, *rows]
+    for row in rows:
+        for key, value in row.items():
+            if not value:
+                continue
+            out = re.sub(rf"<{re.escape(str(key))}>", str(value), out, flags=re.I)
+    return re.sub(r"<([A-Za-zÁ-ú_][\wÁ-ú]*)>", r"\1", out)
+
+
+def _is_functional_source(item: dict[str, Any]) -> bool:
+    issuetype = (item.get("issuetype") or "").strip().lower()
+    summary = (item.get("summary") or "").strip().lower()
+    if re.search(r"\b(bug|tarea|task|ventana|epic|sub-?task)\b", issuetype):
+        return False
+    if not issuetype:
+        return True
+    if "story" in issuetype:
+        return True
+    return summary.startswith("feature") or summary.startswith("user story")
+
+
+def _story_context_precondition(story: dict[str, Any]) -> str | None:
+    parts: list[str] = []
+    summary = (story.get("summary") or "").strip()
+    if summary.lower().startswith("feature"):
+        parts.append(summary)
+    blob = f"{story.get('description') or ''}\n{story.get('acceptance_criteria') or ''}"
+    match = _BACKGROUND.search(blob)
+    if match:
+        after = blob[match.end() :]
+        stop = _SCENARIO_SPLIT.search(after)
+        chunk = after[: stop.start()] if stop else after
+        parsed = parse_scenario_clauses(chunk if _GIVEN.search(chunk) else f"Given {chunk}")
+        parts.extend(parsed.get("given") or [])
+    return normalize_precondition("; ".join(parts))
+
+
+def _pick_translated_observable(blob: str, pool: list[str]) -> str | None:
+    tokens = set(re.findall(r"[A-Za-záéíóúñÁÉÍÓÚ]{4,}", (blob or "").lower()))
+    best = None
+    best_score = 0
+    for item in pool:
+        score = len(tokens & set(re.findall(r"[A-Za-záéíóúñÁÉÍÓÚ]{4,}", item.lower())))
+        if score > best_score:
+            best, best_score = item, score
+    if best_score:
+        return best
+    return pool[0] if pool else None
 
 
 def _block_dedupe_key(block: dict[str, Any]) -> str:
@@ -304,12 +369,12 @@ def _text_without_scenarios(text: str) -> str:
 
 
 def _dedupe_inventory_units(units: list[CoverageUnit]) -> list[CoverageUnit]:
-    """Drop AC/description copies of an intent already covered by Gherkin. Never collapse Gherkin variants."""
+    """Never collapse Gherkin variants. Drop duplicate AC/description intents only among themselves."""
     from app.services.functional_equivalence import build_functional_equivalence_key
 
     gherkin = [unit for unit in units if unit.source_origin == "gherkin"]
     others = [unit for unit in units if unit.source_origin != "gherkin"]
-    seen = {build_functional_equivalence_key(unit).value() for unit in gherkin}
+    seen: set[str] = set()
     kept_others: list[CoverageUnit] = []
     for unit in others:
         key = build_functional_equivalence_key(unit).value()
@@ -385,18 +450,31 @@ def _group_observable_atoms(observables: list[str]) -> list[list[str]]:
 
 def _prose_snippets(text: str) -> list[str]:
     snippets: list[str] = []
-    for raw in (text or "").splitlines():
+    for raw in _strip_adf_noise(text or "").splitlines():
         line = raw.strip()
         if not line:
             continue
         if _SCENARIO_SPLIT.match(line) or re.match(r"^Feature\s*:", line, re.I):
             continue
-        line = re.sub(r"^[\-\*\d.\)\s]+", "", line).strip()
-        if not line:
+        if line.startswith("|") or _GIVEN.match(line) or _WHEN.match(line) or _THEN.match(line):
             continue
+        if _NON_UNIT_HEADING.match(line) or _NON_UNIT_TECH_SCOPE.search(line):
+            continue
+        line = re.sub(r"^[\-\*\d.\)\s]+", "", line).strip()
+        if not line or looks_like_invalid_lead(line):
+            continue
+        if not _has_observable_consequence(line):
+            if not _PROSE_UX.search(line):
+                continue
+            if len(line) < 60 and not re.search(
+                r"\b(se |el usuario |debe|reflej|visualiz|muestra|afect|redirig|solicita)",
+                line,
+                re.I,
+            ):
+                continue
         for piece in re.split(r"(?<=[.!?])\s+", line):
             piece = piece.strip(" .;")
-            if piece:
+            if piece and not looks_like_invalid_lead(piece):
                 snippets.append(piece)
     return snippets
 
@@ -417,6 +495,15 @@ def extract_prose_observable_blocks(
         text = _text_without_scenarios(raw)
         if not text:
             continue
+        for raw_line in _strip_adf_noise(text).splitlines():
+            line = re.sub(r"^[\-\*\d.\)\s]+", "", raw_line.strip()).strip()
+            if not line or line.startswith("|"):
+                continue
+            label = f"{story_key}: {line[:80]}" if story_key else line[:80]
+            if _http_or_api_only(line):
+                stats.inventory_exclusions.append(f"{label}: HTTP/API sin UX observable")
+            elif _pure_config_only(line):
+                stats.inventory_exclusions.append(f"{label}: configuración pura")
         for snippet in _prose_snippets(text):
             key = re.sub(r"\s+", " ", snippet.lower())
             if key in seen:
@@ -474,15 +561,82 @@ def extract_prose_observable_blocks(
     return blocks
 
 
+_ADF_NOISE = re.compile(r"```+|\"\"\"+|_{2,}")
+_NON_UNIT_HEADING = re.compile(r"^\s*(#{1,6}\s|.{0,80}:\s*$)")
+_NON_UNIT_TECH_SCOPE = re.compile(
+    r"\b(dependencias|alcance t[eé]cnico|servicios involucrados|"
+    r"cobertura unitaria|profiling|compilaci[oó]n|"
+    r"rendimiento (medido|con herramientas))\b",
+    re.IGNORECASE,
+)
+_THEN_TITLE = re.compile(r"^\s*(Then|Entonces)\s+(.+)$", re.IGNORECASE)
+
+
+def _strip_adf_noise(text: str) -> str:
+    cleaned = _ADF_NOISE.sub(" ", text or "")
+    return re.sub(r"[ \t]+\n", "\n", cleaned)
+
+
+def _title_from_then(body: str) -> str:
+    for line in (body or "").splitlines():
+        match = _THEN_TITLE.match(line.strip())
+        if match:
+            title = match.group(2).strip().rstrip(".")
+            if title and not looks_like_invalid_lead(title):
+                return title[:180]
+    return "Resultado observable"
+
+
+def _parse_headless_gwt(text: str) -> list[dict[str, Any]]:
+    blocks: list[dict[str, Any]] = []
+    buf: list[str] = []
+    started = False
+
+    def _flush() -> None:
+        nonlocal buf, started
+        body = "\n".join(buf).strip()
+        if started and any(_THEN.match(line) for line in buf) and (
+            any(_WHEN.match(line) for line in buf) or any(_GIVEN.match(line) for line in buf)
+        ):
+            blocks.append(
+                {
+                    "title": _title_from_then(body),
+                    "outline": False,
+                    "body": body,
+                    "examples": [],
+                    "source_origin": "gherkin",
+                }
+            )
+        buf = []
+        started = False
+
+    for raw in (text or "").splitlines():
+        line = raw.strip()
+        if _SCENARIO_SPLIT.match(line) or re.match(r"^Feature\s*:", line, re.I):
+            _flush()
+            continue
+        if _GIVEN.match(line) and (not started or any(_THEN.match(item) for item in buf)):
+            if started:
+                _flush()
+            started = True
+            buf = [line]
+            continue
+        if started:
+            buf.append(line)
+    _flush()
+    return blocks
+
+
 def parse_gherkin_blocks(description: str) -> list[dict[str, Any]]:
-    if not description or not description.strip():
+    description = _strip_adf_noise(description or "")
+    if not description.strip():
         return []
     matches = list(_SCENARIO_SPLIT.finditer(description))
-    if not matches:
-        return []
     blocks: list[dict[str, Any]] = []
+    occupied: list[tuple[int, int]] = []
     for index, match in enumerate(matches):
         end = matches[index + 1].start() if index + 1 < len(matches) else len(description)
+        occupied.append((match.start(), end))
         kind = match.group(1).strip().lower()
         title = match.group(2).strip()
         body = description[match.end() : end].strip()
@@ -497,6 +651,13 @@ def parse_gherkin_blocks(description: str) -> list[dict[str, Any]]:
                 "examples": examples,
             }
         )
+    remainder_parts: list[str] = []
+    cursor = 0
+    for start, end in occupied:
+        remainder_parts.append(description[cursor:start])
+        cursor = end
+    remainder_parts.append(description[cursor:])
+    blocks.extend(_parse_headless_gwt("\n".join(remainder_parts)))
     return blocks
 
 
@@ -562,9 +723,10 @@ def _steps_from_body(body: str) -> tuple[str | None, list[CandidateStep], str | 
             "; ".join(dict.fromkeys(technical)) or None,
         )
     count = max(len(expected), 1)
-    user_action = next((item for item in actions if item), "")
+    joined_action = " y ".join(dict.fromkeys(item for item in actions if item))
+    user_action = joined_action or next((item for item in actions if item), "")
     for index in range(count):
-        action = actions[index] if index < len(actions) else user_action
+        action = user_action if joined_action else (actions[index] if index < len(actions) else user_action)
         result = expected[index] if index < len(expected) else expected[-1]
         steps.append(
             CandidateStep(
@@ -574,7 +736,7 @@ def _steps_from_body(body: str) -> tuple[str | None, list[CandidateStep], str | 
             )
         )
     return (
-        "; ".join(dict.fromkeys(p for p in precondition_parts if p)) or None,
+        normalize_precondition("; ".join(p for p in precondition_parts if p)),
         steps,
         "; ".join(dict.fromkeys(technical)) or None,
     )
@@ -667,7 +829,7 @@ def _candidate(
             "Requiere la configuración/condición descrita en Jira/RN; "
             "el caso es aplicable aunque no sea ejecutable aún."
         )
-    precondition = "; ".join(dict.fromkeys(pre_parts)) or None
+    precondition = normalize_precondition("; ".join(pre_parts))
     expected = [step.expected_result for step in steps]
     functional_name = functional_title(name, expected)
     technical_heavy = bool(test_data_parts)
@@ -728,7 +890,23 @@ def _coverage_unit(
     trace: str,
     user_action: str | None = None,
     source_origin: str = "gherkin",
+    story_context: str | None = None,
+    applied_rules: list[str] | None = None,
+    applicability: str | None = None,
+    applicability_reason: str | None = None,
+    examples: list[dict[str, str]] | None = None,
 ) -> CoverageUnit:
+    title = _fill_placeholders(title, None, examples)
+    body = _fill_placeholders(body, None, examples)
+    user_action = _fill_placeholders(user_action or "", None, examples) or user_action
+    given_blob = " ".join(parse_scenario_clauses(body).get("given") or [])
+    if given_requires_remote_setup(given_blob):
+        applicability = "na_ambiente"
+        applicability_reason = (
+            applicability_reason
+            or "Given exige configuración remota o de backend que el usuario no puede producir en dispositivo"
+        )
+        applied_rules = list(dict.fromkeys([*(applied_rules or []), "na-ambiente"]))
     observables = list(clf.observable_then or clf.qc_observables or [])
     behavior = functional_title(title, observables or [title])
     intent = build_test_intent(title)
@@ -756,11 +934,16 @@ def _coverage_unit(
         observable_then=observables,
         technical_notes=list(clf.technical_notes or []),
         special_condition=clf.special_condition or clf.qc_condition,
-        normal_precondition=clf.normal_precondition,
+        normal_precondition=normalize_precondition(
+            "; ".join(part for part in (story_context, clf.normal_precondition) if part)
+        ),
         test_intent=intent,
         qc_relevance=clf.qc_relevance,
         user_action=user_action,
         source_origin=source_origin,
+        applicability=applicability if applicability in {"ejecutable", "na_ambiente"} else "ejecutable",
+        applicability_reason=applicability_reason,
+        applied_rules=list(applied_rules or []),
     )
 
 
@@ -878,6 +1061,7 @@ def _units_from_story_blocks(
 ) -> list[CoverageUnit]:
     units: list[CoverageUnit] = []
     story_key = story.get("key") or epic_key
+    story_context = _story_context_precondition(story)
     classified: list[tuple[dict[str, Any], ScenarioClassification]] = []
     support_notes: list[str] = []
     support_conditions: list[str] = []
@@ -945,6 +1129,44 @@ def _units_from_story_blocks(
         seq_holder[0] += 1
         return f"COV-{seq_holder[0]:03d}"
 
+    observable_pool: list[str] = []
+    for _block, _clf in classified:
+        for clause in list(_clf.then or []) + list(_clf.observable_then or []):
+            if (_has_observable_consequence(clause) or _INVENTORY_THEN_UX.search(clause)) and not _http_or_api_only(
+                clause
+            ):
+                observable_pool.append(clause)
+    repaired: list[tuple[dict[str, Any], ScenarioClassification]] = []
+    for block, clf in classified:
+        blob = f"{block.get('title') or ''}\n{block.get('body') or ''}"
+        technical_only = _http_or_api_only(blob) or (
+            bool(clf.then) and all(_http_or_api_only(clause) for clause in clf.then)
+        )
+        if not _is_coverable(clf) and technical_only:
+            pick = _pick_translated_observable(blob, observable_pool)
+            if pick:
+                notes = list(clf.technical_notes or [])
+                extra = extract_technical(blob)
+                if extra:
+                    notes.append(extra)
+                block = dict(block)
+                block["_translated_then"] = True
+                block["_qc_extra"] = "; ".join(part for part in notes if part)
+                clf = replace(
+                    clf,
+                    role="G",
+                    observable_then=[pick],
+                    qc_observables=[pick],
+                    qc_relevance="QC_FUNCTIONAL",
+                    technical_notes=notes,
+                )
+            else:
+                stats.inventory_exclusions.append(
+                    f"{story_key}: {block.get('title')}: Then técnico sin efecto visible en la historia"
+                )
+        repaired.append((block, clf))
+    classified = repaired
+
     coverable = [(block, clf) for block, clf in classified if _is_coverable(clf)]
     coverable = _merge_scroll_family(coverable)
     coverable = _merge_key_degradation_family(coverable)
@@ -963,8 +1185,12 @@ def _units_from_story_blocks(
         trace = f"RN={epic_key}; Story={story_key}; Scenario={title}"
         source_origin = str(block.get("source_origin") or "gherkin")
         user_action = _pick_user_action(clf)
+        extra_rules = ["then-tecnico-traducido"] if block.get("_translated_then") else []
+        if looks_like_invalid_lead(title):
+            stats.inventory_exclusions.append(f"{story_key}: {title}: título no es unidad QC")
+            continue
         noise = _non_qc_inventory_reason(title, body, user_action, story=story)
-        if noise:
+        if noise and not block.get("_translated_then"):
             stats.inventory_exclusions.append(f"{story_key}: {title}: {noise}")
             continue
 
@@ -1002,6 +1228,9 @@ def _units_from_story_blocks(
                     trace=trace,
                     user_action=user_action,
                     source_origin=source_origin,
+                    story_context=story_context,
+                    applied_rules=extra_rules,
+                    examples=block.get("examples") or examples,
                 )
             )
             continue
@@ -1028,6 +1257,9 @@ def _units_from_story_blocks(
                         trace=trace + f"; outcome={outcome}",
                         user_action=user_action,
                         source_origin=source_origin,
+                        story_context=story_context,
+                        applied_rules=extra_rules,
+                        examples=group,
                     )
                 )
             continue
@@ -1055,6 +1287,9 @@ def _units_from_story_blocks(
                         trace=trace + f"; example={label}",
                         user_action=user_action,
                         source_origin=source_origin,
+                        story_context=story_context,
+                        applied_rules=extra_rules,
+                        examples=[example],
                     )
                 )
             continue
@@ -1095,6 +1330,9 @@ def _units_from_story_blocks(
                     trace=trace,
                     user_action=user_action,
                     source_origin=source_origin,
+                    story_context=story_context,
+                    applied_rules=extra_rules,
+                    examples=block.get("examples") or examples,
                 )
             )
             continue
@@ -1122,6 +1360,9 @@ def _units_from_story_blocks(
                     trace=f"{trace}; then={obs[0][:120]}",
                     user_action=user_action,
                     source_origin=source_origin,
+                    story_context=story_context,
+                    applied_rules=extra_rules,
+                    examples=block.get("examples") or examples,
                 )
             )
     return units
@@ -1139,23 +1380,37 @@ def build_coverage_inventory(
     for artifact in artifacts:
         epic_key = artifact.get("key") or ""
         children = list(artifact.get("children") or [])
-        sources = children or [artifact]
-        seen_blocks: set[str] = set()
+        functional = [child for child in children if _is_functional_source(child)]
+        discarded = [child for child in children if not _is_functional_source(child)]
+        for child in discarded:
+            stats.inventory_exclusions.append(
+                f"{child.get('key')}: tipo {child.get('issuetype') or 'desconocido'} no es historia funcional"
+            )
         gherkin_corpus: list[str] = []
         added_before = len(units)
 
-        def _consume(story: dict[str, Any]) -> None:
+        def _consume(
+            story: dict[str, Any],
+            include_gherkin: bool = True,
+            story_key_override: str | None = None,
+        ) -> None:
+            if story_key_override:
+                story = {**story, "key": story_key_override}
             ac = story.get("acceptance_criteria") or ""
-            blocks = extract_gherkin_blocks(story.get("description") or "", ac)
             unique: list[dict[str, Any]] = []
-            for block in blocks:
-                key = _block_dedupe_key(block)
-                gherkin_corpus.append(f"{block.get('title') or ''} {block.get('body') or ''}")
-                if key in seen_blocks:
-                    continue
-                seen_blocks.add(key)
-                unique.append(block)
-            gherkin_blob = re.sub(r"\s+", " ", " ".join(gherkin_corpus).lower())
+            seen_blocks: set[str] = set()
+            local_gherkin: list[str] = []
+            if include_gherkin:
+                blocks = extract_gherkin_blocks(story.get("description") or "", ac)
+                for block in blocks:
+                    key = _block_dedupe_key(block)
+                    local_gherkin.append(f"{block.get('title') or ''} {block.get('body') or ''}")
+                    gherkin_corpus.append(local_gherkin[-1])
+                    if key in seen_blocks:
+                        continue
+                    seen_blocks.add(key)
+                    unique.append(block)
+            gherkin_blob = re.sub(r"\s+", " ", " ".join([*gherkin_corpus, *local_gherkin]).lower())
             for block in extract_prose_observable_blocks(
                 story.get("description") or "",
                 ac,
@@ -1189,9 +1444,13 @@ def build_coverage_inventory(
                 )
             )
 
-        for story in sources:
-            _consume(story)
-        if children:
+        if functional:
+            for story in functional:
+                _consume(story)
+            if artifact.get("acceptance_criteria") or artifact.get("description"):
+                host = str(functional[0].get("key") or epic_key)
+                _consume(artifact, include_gherkin=False, story_key_override=host)
+        else:
             _consume(artifact)
         start = added_before
         kept_prefix = units[:start]
@@ -1238,6 +1497,15 @@ def materialize_coverage_units(
             continue
         candidate.covers = [unit.coverage_id]
         candidate.review_required = True
+        candidate.applicability = unit.applicability or "ejecutable"
+        candidate.applicability_reason = unit.applicability_reason
+        candidate.applied_rules = list(dict.fromkeys([*(candidate.applied_rules or []), *(unit.applied_rules or [])]))
+        if "then-tecnico-traducido" in candidate.applied_rules:
+            candidate.confidence = "medium"
+        if unit.normal_precondition:
+            candidate.precondition = normalize_precondition(
+                "; ".join(part for part in (unit.normal_precondition, candidate.precondition) if part)
+            )
         _append_materialized(out, candidate, stats, clf)
     return out
 
@@ -1251,6 +1519,18 @@ def candidates_from_jira_artifacts(
 ) -> list[GeneratedCaseCandidate]:
     stats = stats or GenerationStats()
     units = build_coverage_inventory(artifacts, rn_filename, stats=stats)
-    out = materialize_coverage_units(units, existing, duplicate_of, stats=stats)
+    from app.services.case_composer import (
+        attach_artifact_literals,
+        compose_inventory,
+        validate_composed_candidates,
+    )
+
+    out = attach_artifact_literals(compose_inventory(units, existing, duplicate_of), artifacts)
+    out = validate_composed_candidates(
+        out,
+        units,
+        fill_missing=lambda missing: compose_inventory(missing, existing, duplicate_of),
+    )
     out = apply_qc_rules(out, stats=stats)
-    return apply_executability_gate(out, units)
+    out = apply_executability_gate(out, units)
+    return quality_gate(out)

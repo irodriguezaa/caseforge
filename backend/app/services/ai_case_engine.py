@@ -27,12 +27,19 @@ from app.schemas.case_generation import (
     GenerateCasesResponse,
     GenerationStats,
 )
+from app.services.case_composer import (
+    attach_artifact_literals,
+    compose_inventory,
+    proposed_flows_for_llm,
+    validate_composed_candidates,
+)
 from app.services.gherkin_coverage import (
     build_coverage_inventory,
     extract_technical,
     materialize_coverage_units,
     sanitize_user_text,
 )
+from app.services.coverage_quality import quality_gate
 from app.services.executability import (
     apply_executability_gate,
     is_stable_generic_step,
@@ -137,31 +144,26 @@ Reglas HANDOFF (obligatorias):
     CoverageUnit es la fuente de cobertura. Cada TC DEBE declarar covered_unit_ids
     con los coverage_id que cubre. Una unidad no puede desaparecer sin explicación.
     covered_unit_ids no es solo trazabilidad: fija la evidencia que el TC debe representar.
-    El contenido del TC debe ser compatible con TODAS las units declaradas.
-    No declares una unit cubierta si el TC no representa su comportamiento.
-    AGRUPAR unidades SOLO si coinciden funcionalmente en: objetivo, acción del usuario,
-    condición, resultado observable y contexto. El mismo Expected NO es suficiente.
-    No merges solo porque el Expected sea parecido, exista el mismo PIN, la misma alerta,
-    o pertenezcan al mismo Scenario o al mismo Story.
-    Prohibido agrupar aunque compartan PIN, error, alerta, tooltip, pantalla, API o llave:
-    Grabar ≠ Cancelar; Grabar ≠ Eliminar; Reproducir ≠ Grabar;
-    Agregar favorito ≠ Eliminar favorito; Seleccionar ≠ Back.
-    Audio ≠ Subtítulo, salvo que ambas units sean la misma equivalencia funcional
-    (mismo cambio de pista/track y el mismo resultado observable).
-    Antes de devolver un TC agrupado, para cada id en covered_unit_ids comprueba:
-    ¿misma intención? ¿misma acción? ¿misma condición? ¿mismo resultado? ¿mismo contexto?
-    Si alguna respuesta es NO: separar.
-    Fidelidad de user_action: si la CoverageUnit tiene user_action explícito y no vacío,
-    el Test Step/When DEBE conservar semánticamente ESA acción.
-    No la sustituyas por otra acción del mismo Scenario/Gherkin.
-    No uses una acción posterior del escenario para representar una unit distinta.
-    Ejemplo: user_action = "Más Opciones" → When debe ser seleccionar Más Opciones.
-    NO: "selecciona Grabar" ni "selecciona Grabar o Cancelar".
-    Si user_action está vacío: NO inventes click, botón, menú, navegación, selección
-    ni solicitud. Solo usa una acción concreta si Scenario/Given/When/And/AC/Description
-    traen esa acción de forma explícita. Si no hay evidencia suficiente, usa exactamente:
-    "El usuario ingresa al flujo correspondiente."
-    Es preferible un Step genérico honesto a una acción inventada.
+    Hay dos operaciones distintas:
+    COMPOSICIÓN: unidades consecutivas del mismo flujo (el Given de B equivale a la
+    acción o al Then de A en la misma historia) se convierten en PASOS de un mismo caso,
+    aunque cambie la acción del usuario. Recibes "proposed_flows" como propuesta.
+    EQUIVALENCIA: dos unidades que verifican lo mismo (mismo resultado esperado
+    normalizado) se deduplican o se pliegan como Datos de prueba. Nunca unas
+    historias distintas. Nunca unes flujos de distintas EPCs.
+    Varios Then del mismo When = un paso con varios resultados.
+    Variantes de dato con el mismo esperado = un caso, variantes en Datos de prueba.
+    Variantes con esperado distinto = un caso por variante.
+    Cambia la precondición no alcanzable desde el flujo = caso separado.
+    Cambia la intención principal = caso separado.
+    Rama negativa recuperable (dato inválido → mensaje → reintento → éxito) = mismo caso.
+    Resultados excluyentes no recuperables = casos que pueden compartir pasos previos.
+    Prueba de bolsillo: si dos resultados se verifican en la misma ejecución, sin
+    cambiar configuración ni cuenta, van en el mismo caso.
+    Fidelidad de user_action: el paso usa esa acción, en infinitivo ("Seleccionar…").
+    NUNCA uses "El usuario ingresa al flujo correspondiente."
+    Si una unidad no tiene acción soportable, el caso queda pendiente de revisión QC
+    con el motivo; no inventes el paso.
     Expected = únicamente el resultado observable (Then/AC/observable_then) de las units.
     Expected NUNCA describe una acción del usuario.
     PROHIBIDO en Expected: "El usuario selecciona la opción.", "El usuario presiona...",
@@ -200,13 +202,11 @@ Casos de estudio (principios, no recetas inventadas):
 
 La fuente principal de QUÉ cubrir es coverage_inventory (unidades A/G).
 NO resumas el RN a un caso por fila de Funcionalidad.
-NO inventes un número objetivo de casos. El número es consecuencia de las unidades.
-Agrupa unidades solo si hay equivalencia funcional (objetivo + acción + condición +
-observable + contexto). Separa si cambia la acción del usuario aunque el Expected,
-el PIN, la alerta, el tooltip, la pantalla, la API o la llave coincidan.
-NO un caso por endpoint, HTTP status o Jira técnico.
-Cada candidato DEBE listar covered_unit_ids (coverage_id). Alias aceptado: covers.
-NO dejes unidades A/G sin covered_unit_ids.
+NO inventes un número objetivo de casos. El número es consecuencia de los flujos.
+Compón unidades consecutivas del mismo flujo como pasos. Equivalencia solo si
+verifican lo mismo. No un caso por endpoint, HTTP status o Jira técnico.
+Cada candidato DEBE listar covered_unit_ids. Cada paso DEBE listar
+steps[].covered_unit_ids. NO dejes unidades ejecutables sin cubrir.
 Las únicas fuentes permitidas para generar casos mediante LLM son coverage_inventory
 y la evidencia/tickets de FUNCIONALIDAD. Ignora NCO, TRI, QA Bugs y QC Bugs.
 """
@@ -218,7 +218,7 @@ Responde SOLO con un JSON de la forma:
   "description": string,
   "precondition": string|null,
   "requires_condition": boolean,
-  "steps":[{"step_number":int,"action":string,"expected_result":string,"test_data":string|null}],
+  "steps":[{"step_number":int,"action":string,"expected_result":string,"test_data":string|null,"covered_unit_ids":["COV-001"]}],
   "test_data": string|null,
   "related_functionality": string|null,
   "related_jira": string|null,
@@ -232,33 +232,15 @@ Responde SOLO con un JSON de la forma:
   "covered_unit_ids": ["COV-001"]
 }]}
 Sin markdown, sin texto fuera del JSON.
-No asignes test type Smoke/Regression. No inventes escenarios.
-covered_unit_ids es obligatorio: coverage_id de coverage_inventory cubiertos por ese caso.
-Alias aceptado: covers. Declara ambas solo si coinciden.
-Agrupa en covered_unit_ids SOLO unidades funcionalmente equivalentes
-(objetivo, acción del usuario, condición, resultado observable, contexto).
-El mismo Expected NO justifica el merge.
-Prohibido: Grabar≠Cancelar, Grabar≠Eliminar, Reproducir≠Grabar,
-Agregar favorito≠Eliminar favorito, Seleccionar≠Back.
-Audio≠Subtítulo salvo la misma equivalencia funcional de cambio de pista/track.
-No introduzcas API/status/JSON/endpoint en Step o Expected salvo observable
-explícito de la unit.
-No colapses unidades independientes porque compartan Funcionalidad, PIN, error,
-alerta, tooltip, pantalla, API o llave.
-Si user_action de la unidad es concreto, el Step debe conservar ESA acción,
-no otra del mismo Scenario. Ejemplo: "Más Opciones" no se cubre con Grabar/Cancelar.
-Si user_action está vacío, no inventes acción específica; usa
-"El usuario ingresa al flujo correspondiente." salvo When explícito en la evidencia.
-No declares covered_unit_ids si el Step no representa esa unit.
-Expected = observable de las unidades cubiertas. Nunca una acción del usuario
-("El usuario selecciona/presiona/navega/ingresa..."). Prohibido:
-"Se observa el comportamiento definido."
-API/status/JSON en Step o Expected solo si la unit lo exige como observable.
-Cada candidato debe conservar test_intent/condition de las unidades en covered_unit_ids:
-precondition, test_data o action deben permitir a QC distinguir ese escenario de
-otro parecido. related_functionality DEBE ser la key de Funcionalidad del RN (Technical Epic),
-nunca una Technical Story hija. related_jira puede ser la Story usada como evidencia.
-Nunca el summary del Epic/Story.
+Título: comportamiento + contexto, sin prefijos Validar/Verificar/Scenario.
+Paso: infinitivo de acción de usuario que avanza el flujo. Nunca
+"El usuario ingresa al flujo correspondiente."
+Resultado: lo que el tester ve. Textos de UI entre comillas de Jira se copian literales.
+Cada paso declara covered_unit_ids. Cada unidad ejecutable queda en al menos un paso.
+Usa proposed_flows como propuesta de composición; puedes ajustar redacción, no inventar acciones.
+Compón unidades consecutivas del mismo flujo como pasos. Equivalencia solo si el
+esperado normalizado es idéntico. No mezcles historias ni EPCs.
+related_functionality = key de la Technical Epic. related_jira = Story.
 """
 
 _METRICS_RE = re.compile(r"\bm[eé]tric|\banalytics\b|\bga4\b|\bfirebase\b|\bmdp\b", re.IGNORECASE)
@@ -629,11 +611,18 @@ def _parse_llm_candidates(payload: dict[str, Any], existing: list[dict[str, str]
             continue
         if _looks_like_metrics(candidate.name) and not candidate.related_functionality:
             continue
-        for step in candidate.steps:
+        raw_steps = item.get("steps") if isinstance(item.get("steps"), list) else []
+        for index, step in enumerate(candidate.steps):
             original = f"{step.action} {step.expected_result}"
             tech = extract_technical(original)
-            step.action = sanitize_user_text(step.action) or "El usuario completa el flujo funcional."
-            step.expected_result = sanitize_user_text(step.expected_result) or "Se observa el comportamiento declarado."
+            step.action = sanitize_user_text(step.action) or step.action
+            step.expected_result = sanitize_user_text(step.expected_result) or step.expected_result
+            if index < len(raw_steps) and isinstance(raw_steps[index], dict):
+                ids = raw_steps[index].get("covered_unit_ids") or raw_steps[index].get("covers") or []
+                if isinstance(ids, str):
+                    ids = [ids]
+                if isinstance(ids, list):
+                    step.covered_unit_ids = [str(cid).strip() for cid in ids if str(cid).strip()]
             if tech and not step.test_data:
                 step.test_data = tech
             if tech and not candidate.test_data:
@@ -1066,38 +1055,21 @@ def _llm_chat_body(
             "functionality": _functionality_tickets_for_llm(tickets),
         },
         "coverage_inventory": [unit.for_llm() for unit in inventory],
+        "proposed_flows": proposed_flows_for_llm(inventory),
         "functionality_jira_artifacts": _jira_artifacts_for_llm(jira_artifacts),
         "jira_dual_source_note": (
             "Jira crudo es contexto de Funcionalidad. La fuente de cobertura es coverage_inventory."
         ),
         "product_brief_field_note": "customfield_19094 es resumen; no es fuente única de casos.",
         "instruction": (
-            "Traduce coverage_inventory a casos ejecutables de usuario final. "
-            "Usa coverage_id, test_intent, condition, user_action, precondition y "
-            "observable_then de cada unidad. "
-            "QC debe entender qué condición prueba, qué hace y qué observa, y por qué "
-            "el caso es distinto de otro Scenario parecido. "
-            "Cada candidato debe incluir covered_unit_ids con coverage_id. "
-            "Agrupa unidades solo si son funcionalmente equivalentes "
-            "(objetivo, acción, condición, observable, contexto). "
-            "No agrupes Grabar con Cancelar, Grabar con Eliminar, Reproducir con Grabar, "
-            "Agregar favorito con Eliminar favorito, ni Seleccionar con Back. "
-            "Audio con Subtítulo solo si son el mismo cambio de pista/track. "
-            "API/status/JSON en Step o Expected solo si observable_then de la unit lo exige. "
-            "Conserva el user_action concreto de cada unit en el Step; no lo sustituyas "
-            "por otra acción del mismo Scenario (Más Opciones ≠ Grabar/Cancelar). "
-            "Si user_action está vacío, no inventes click/navegación; usa "
-            "'El usuario ingresa al flujo correspondiente.' "
-            "covered_unit_ids solo si el TC representa esas units. "
-            "Expected = observable, nunca una acción del usuario. "
-            "No uses 'Se observa el comportamiento definido.' "
-            "No resumas una Funcionalidad en un solo caso si hay varias unidades independientes. "
-            "related_functionality debe ser la key de Funcionalidad del RN (Technical Epic), "
-            "nunca una Technical Story hija. related_jira puede ser la Story. "
-            "Las únicas fuentes permitidas para generar casos mediante LLM son "
-            "coverage_inventory y la evidencia/tickets de FUNCIONALIDAD. "
-            "Ignora NCO, TRI, QA Bugs y QC Bugs. "
-            "No inventes tickets ni combinaciones. No casos de métricas ni proceso QA."
+            "Redacta casos como flujos ejecutables a partir de coverage_inventory y "
+            "proposed_flows. Composición: unidades consecutivas del mismo flujo son "
+            "pasos de un caso, aunque cambie la acción. Equivalencia: solo si el "
+            "esperado normalizado es idéntico. Pasos en infinitivo. Textos de UI "
+            "entre comillas se copian literales. Cada paso declara covered_unit_ids. "
+            "Nunca 'El usuario ingresa al flujo correspondiente.' "
+            "No mezcles historias ni EPCs. related_functionality es la Epic; "
+            "related_jira es la Story. Ignora NCO, TRI, QA Bugs y QC Bugs."
         ),
     }
     return {
@@ -1373,6 +1345,13 @@ def _from_llm(
     )
     before_fidelity = len(candidates)
     candidates = enforce_llm_unit_fidelity(candidates, inventory)
+    candidates = validate_composed_candidates(
+        candidates,
+        inventory,
+        fill_missing=lambda missing: compose_inventory(missing, existing, _duplicate_of),
+    )
+    for row in candidates:
+        row.generation_origin = row.generation_origin or "llm"
     _last_llm_meta.clear()
     _last_llm_meta.update(
         {
@@ -1531,14 +1510,15 @@ def generate_release_app_candidates(
             for unit in inventory
             if (unit.rn_key or "").upper() in allowed or (unit.jira_key or "").upper() in allowed
         ]
-    jira_candidates = materialize_coverage_units(
-        inventory, existing_cases, _duplicate_of, stats=stats
+    jira_candidates = attach_artifact_literals(
+        compose_inventory(inventory, existing_cases, _duplicate_of),
+        jira_artifacts,
     )
 
     engine = "evidence"
     candidates: list[GeneratedCaseCandidate] = []
     analysis_details: list[str] = []
-    if settings.openai_api_key and pdf_bytes and inventory:
+    if settings.openai_api_key and inventory:
         llm_tickets = {"functionality": list(parsed_tickets.get("functionality", []))}
         first_batches = partition_coverage_for_llm(
             inventory,
@@ -1612,8 +1592,8 @@ def generate_release_app_candidates(
                 len(still_missing),
                 [unit.coverage_id for unit in still_missing],
             )
-            filled = materialize_coverage_units(
-                still_missing, existing_cases, _duplicate_of, stats=stats
+            filled = compose_inventory(
+                still_missing, existing_cases, _duplicate_of
             )
             for row in filled:
                 row.review_required = True
@@ -1663,6 +1643,7 @@ def generate_release_app_candidates(
     candidates = _keep_scoped_candidates(candidates, allowed or None)
     candidates = apply_qc_rules(candidates, release_context=release_context, stats=stats)
     candidates = apply_executability_gate(candidates, inventory)
+    candidates = quality_gate(candidates)
     stamp_source_types(candidates)
     candidates = stamp_candidates(candidates, functionality_keys, jira_artifacts)
     covered = sorted(_covered_ids(candidates))
@@ -1681,7 +1662,7 @@ def generate_release_app_candidates(
     )
     if not analysis_present:
         message = "No hay análisis de RN asociado; no hay evidencia para proponer casos."
-    elif not pdf_bytes:
+    elif not pdf_bytes and not candidates:
         message = (
             "El PDF del RN no está almacenado. Vuelve a analizar el RN al crear la Release "
             "para poder generar candidatos."

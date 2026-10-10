@@ -724,9 +724,18 @@ def apply_qc_rules(
         )
         equiv = build_functional_equivalence_key(candidate)
         candidate.equivalence_key = equiv.value()
-        cluster_key = equiv.value()
-        if not (equiv.objective or equiv.observable):
-            cluster_key = f"unique:{id(candidate)}"
+        origin = candidate.generation_origin or ""
+        if origin in {"composed-flow", "llm", "coverage-fill"}:
+            seq = tuple(
+                (re.sub(r"\W+", " ", (step.action or "").lower()).strip(),
+                 re.sub(r"\W+", " ", (step.expected_result or "").lower()).strip())
+                for step in candidate.steps
+            )
+            cluster_key = f"{candidate.related_jira or ''}|{seq}"
+        else:
+            cluster_key = equiv.value()
+            if not (equiv.objective or equiv.observable):
+                cluster_key = f"unique:{id(candidate)}"
         kept.append((cluster_key, candidate))
 
     return _bucket_merge(kept, stats, count_consolidation=True)

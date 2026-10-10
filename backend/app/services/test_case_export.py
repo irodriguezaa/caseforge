@@ -43,6 +43,18 @@ _SOURCE_LABEL = {
 }
 
 
+def _is_na_ambiente(case: TestCase) -> bool:
+    return str(getattr(case, "applicability_reason", "") or "").startswith("na_ambiente")
+
+
+def _skip_zephyr(case: TestCase) -> bool:
+    reason = str(getattr(case, "applicability_reason", "") or "")
+    if reason.startswith("na_ambiente") or reason.startswith("quality-gate"):
+        return True
+    rules = getattr(case, "applied_rules", None) or []
+    return any(str(rule).startswith("quality-gate:") for rule in rules)
+
+
 def _source_label(value: str | None) -> str:
     text = (value or "").strip()
     if not text:
@@ -269,10 +281,12 @@ def build_test_cases_workbook(
 ) -> bytes:
     workbook = Workbook()
     ordered = sorted(cases, key=lambda case: (primary_epic_key(case).lower(), case.test_case_id or ""))
+    executable = [case for case in ordered if not _is_na_ambiente(case)]
+    na_ambiente = [case for case in ordered if _is_na_ambiente(case)]
     avance = workbook.active
     avance.title = "Avance"
     _style_header(avance, AVANCE_HEADERS, [18, 12, 14, 22, 12, 16])
-    progress = epic_progress_rows(ordered, scope_keys=scope_keys, coverage=coverage)
+    progress = epic_progress_rows(executable, scope_keys=scope_keys, coverage=coverage)
     total_cases = 0
     total_executed = 0
     total_hours = 0.0
@@ -348,6 +362,35 @@ def build_test_cases_workbook(
             cell = qc.cell(row_index, col, _excel_value(value))
             _style_cell(cell)
 
+    if na_ambiente:
+        na_sheet = workbook.create_sheet("No aplicables en ambiente")
+        _style_header(na_sheet, QC_HEADERS, [10, 42, 16, 12, 16, 14, 40, 40, 28, 22, 28, 32, 16, 18, 28, 12, 14, 14])
+        for row_index, case in enumerate(na_ambiente, start=2):
+            precondition, compact_data, _notes = split_stored_test_data(case.test_data)
+            values = [
+                case.test_case_id,
+                _display_case_name(case),
+                case.component,
+                _enum_value(case.priority),
+                _source_label(case.source_type),
+                _enum_value(case.status),
+                _steps_text(case, expected=False),
+                _steps_text(case, expected=True),
+                precondition,
+                compact_data,
+                case.evidence or "",
+                case.justification or "",
+                case.technical_epic or "",
+                case.technical_story or "",
+                case.scenario_origin or "",
+                case.confidence or "",
+                case.complexity or "",
+                case.applicability_reason or "",
+            ]
+            for col, value in enumerate(values, start=1):
+                cell = na_sheet.cell(row_index, col, _excel_value(value))
+                _style_cell(cell)
+
     zephyr = workbook.create_sheet("Zephyr")
     _style_header(
         zephyr,
@@ -356,6 +399,8 @@ def build_test_cases_workbook(
     )
     zephyr_row = 2
     for case in ordered:
+        if _skip_zephyr(case):
+            continue
         steps = sorted(case.steps, key=lambda item: item.step_number)
         if not steps:
             steps = [None]

@@ -13,6 +13,7 @@ class CandidateStep(BaseModel):
     action: str
     expected_result: str
     test_data: str | None = None
+    covered_unit_ids: list[str] = Field(default_factory=list)
 
 
 class CoverageUnit(BaseModel):
@@ -46,6 +47,9 @@ class CoverageUnit(BaseModel):
     user_action: str | None = None
     source_origin: str = "gherkin"
     batch_id: str | None = None
+    applicability: Literal["ejecutable", "na_ambiente"] | None = None
+    applicability_reason: str | None = None
+    applied_rules: list[str] = Field(default_factory=list)
 
     def for_llm(self) -> dict:
         return {
@@ -68,6 +72,8 @@ class CoverageUnit(BaseModel):
             "technical_group": self.technical_group,
             "traceability": self.traceability,
             "requires_condition": self.requires_condition,
+            "gherkin": (self.body or "")[:1500],
+            "applicability": self.applicability,
         }
 
 
@@ -111,6 +117,7 @@ class GeneratedCaseCandidate(BaseModel):
     priority_reason: str | None = None
     ecosystem: str | None = None
     applicability_reason: str | None = None
+    applicability: Literal["ejecutable", "na_ambiente"] | None = None
     group_id: str | None = None
     interaction_points: list[str] = Field(default_factory=list)
     hn_source: str | None = None

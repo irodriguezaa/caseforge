@@ -196,7 +196,7 @@ def test_inventory_volume_and_roles_unchanged() -> None:
     scenarios = {unit.scenario for unit in units}
     assert "No se logra obtener una llave" in scenarios
     assert "La llave se encuentra vacía" in scenarios
-    assert len(units) == 8
+    assert len(units) == 9
     assert all(unit.role in {"A", "G"} for unit in units)
 
 

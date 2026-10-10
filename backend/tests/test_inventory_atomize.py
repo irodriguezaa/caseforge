@@ -176,7 +176,10 @@ def test_http_only_without_consequence_is_excluded() -> None:
         stats=stats,
     )
     assert units == []
-    assert any("HTTP/API" in row or "observable" in row.lower() for row in stats.inventory_exclusions)
+    assert any(
+        "HTTP/API" in row or "observable" in row.lower() or "efecto visible" in row.lower()
+        for row in stats.inventory_exclusions
+    )
 
 
 def test_api_with_observable_consequence_is_kept() -> None:

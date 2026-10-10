@@ -13,6 +13,7 @@ from app.schemas.case_generation import (
     CoverageUnit,
     GeneratedCaseCandidate,
 )
+from app.services.coverage_quality import normalize_precondition
 
 STABLE_GENERIC_STEP = "El usuario ingresa al flujo correspondiente."
 
@@ -45,7 +46,8 @@ _CUANDO_PREFIX = re.compile(r"^\s*cuando\s+", re.I)
 _USER_ACTION = re.compile(
     r"^\s*(el )?usuario\b|"
     r"^\s*(selecciona|ingresa|abre|cierra|presiona|navega|visualiza|transacciona|"
-    r"reproduce|busca|completa|confirma|cancela|inicia sesi[oó]n|sale de)",
+    r"reproduce|busca|completa|confirma|cancela|inicia sesi[oó]n|sale de|"
+    r"da clic|hace clic|elige|pulsa)",
     re.IGNORECASE,
 )
 _STATE_OBSERVATION = re.compile(
@@ -177,29 +179,68 @@ def parse_scenario_clauses(body: str) -> dict[str, list[str]]:
         if not text:
             return
         if kind == "given":
-            if is_state_observation(text) or (is_user_action(text) is False and is_technical_action(text)):
-                if is_state_observation(text):
-                    expected.append(text)
-                else:
-                    technical.append(text)
-                    given.append(text)
-            else:
-                given.append(text)
+            given.append(text)
+            if is_technical_action(text) and not is_user_action(text):
+                technical.append(text)
         elif kind == "when":
-            if is_user_action(text):
+            if (
+                re.search(r"\b(GET|POST|PUT|PATCH|DELETE|HTTP)\b|/[a-z]|status\s*\d|\"\"\"|```", text, re.I)
+                and not is_user_action(text)
+            ):
+                technical.append(text)
+            elif is_user_action(text):
                 actions.append(text)
             elif is_state_observation(text):
                 expected.append(text)
             else:
                 technical.append(text)
         else:
+            text = re.sub(r"\s*\|.*$", "", text).strip(" :")
+            if not text:
+                return
             expected.append(text)
             if is_technical_action(text) and not is_state_observation(text) and not is_user_action(text):
                 technical.append(text)
 
-    for raw in (body or "").splitlines():
-        line = raw.strip()
-        if not line or line.startswith("#") or line.startswith("|"):
+    def _format_table(rows: list[list[str]]) -> str:
+        if len(rows) < 2:
+            return ""
+        headers = rows[0]
+        chunks: list[str] = []
+        for row in rows[1:]:
+            if not any(cell.strip() for cell in row):
+                continue
+            pairs = []
+            for index, header in enumerate(headers):
+                value = row[index] if index < len(row) else ""
+                if header and value:
+                    pairs.append(f"{header}: {value}")
+            if pairs:
+                chunks.append("; ".join(pairs))
+        return " ".join(chunks)
+
+    lines = [raw.strip() for raw in (body or "").splitlines()]
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        if not line or line.startswith("#"):
+            index += 1
+            continue
+        if line.startswith("|"):
+            rows: list[list[str]] = []
+            while index < len(lines) and lines[index].startswith("|"):
+                rows.append([cell.strip() for cell in lines[index].strip("|").split("|")])
+                index += 1
+            formatted = _format_table(rows)
+            if not formatted:
+                continue
+            if mode == "then":
+                if expected:
+                    expected[-1] = f"{expected[-1]} {formatted}".strip()
+                else:
+                    expected.append(formatted)
+            else:
+                technical.append(formatted)
             continue
         if _GIVEN.match(line):
             mode = "given"
@@ -212,6 +253,7 @@ def parse_scenario_clauses(body: str) -> dict[str, list[str]]:
             _accept("then", _strip_kw(_THEN, line))
         elif _AND.match(line):
             _accept(mode, _strip_kw(_AND, line))
+        index += 1
     return {
         "given": given,
         "actions": actions,
@@ -315,8 +357,12 @@ def step_needs_bac_fix(candidate: GeneratedCaseCandidate) -> bool:
 def _action_from_unit(unit: CoverageUnit) -> str:
     parsed = parse_scenario_clauses(unit.body or "")
     if parsed["actions"]:
-        action = parsed["actions"][0]
-        return action[0].upper() + action[1:] if action else STABLE_GENERIC_STEP
+        joined = " y ".join(dict.fromkeys(item.strip() for item in parsed["actions"] if item.strip()))
+        if joined:
+            return joined[0].upper() + joined[1:]
+    if unit.user_action and is_user_action(unit.user_action):
+        action = unit.user_action.strip()
+        return action[0].upper() + action[1:]
     return STABLE_GENERIC_STEP
 
 
@@ -511,6 +557,13 @@ def apply_executability_gate(
     by_id = {unit.coverage_id: unit for unit in inventory or []}
     out: list[GeneratedCaseCandidate] = []
     for candidate in candidates:
+        origin = candidate.generation_origin or ""
+        if origin in {"composed-flow", "llm"} or any(
+            str(rule).startswith("composed-flow") for rule in (candidate.applied_rules or [])
+        ):
+            candidate.precondition = normalize_precondition(candidate.precondition)
+            out.append(candidate)
+            continue
         units = [by_id[cid] for cid in (candidate.covers or []) if cid in by_id]
         if units:
             reconstruct_from_units(candidate, units)
@@ -522,5 +575,6 @@ def apply_executability_gate(
             apply_bac_to_candidate(candidate)
         elif not units:
             bind_condition_outside_step(candidate)
+        candidate.precondition = normalize_precondition(candidate.precondition)
         out.append(candidate)
     return out
