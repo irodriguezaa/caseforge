@@ -1544,7 +1544,10 @@ def generate_release_app_candidates(
     engine = "evidence"
     candidates: list[GeneratedCaseCandidate] = []
     analysis_details: list[str] = []
-    if settings.openai_api_key and inventory:
+    from app.services.scenario_cases import composition_mode as _composition_mode
+
+    scenario_llm = _composition_mode() == "scenario"
+    if settings.openai_api_key and inventory and not scenario_llm:
         llm_tickets = {"functionality": list(parsed_tickets.get("functionality", []))}
         first_batches = partition_coverage_for_llm(
             inventory,
@@ -1684,9 +1687,23 @@ def generate_release_app_candidates(
     candidates = apply_executability_gate(candidates, inventory)
     candidates = quality_gate(candidates)
     from app.services.scenario_cases import contextualize_duplicate_titles, fill_scenario_ledger
+    from app.services.scenario_llm import rewrite_scenario_candidates
 
     candidates = contextualize_duplicate_titles(candidates)
+    if scenario_llm and (settings.openai_api_key or "").strip() and candidates:
+        rewritten, rows = rewrite_scenario_candidates(candidates, inventory)
+        candidates = rewritten
+        stats.llm_batches = list(stats.llm_batches or []) + rows
+        if any((row.generation_origin or "") == "llm" for row in candidates):
+            engine = "llm" if engine == "evidence-jira" else f"{engine}+llm"
+        analysis_details.append(
+            f"LLM por escenario llamadas={len(rows)} ok={sum(1 for row in rows if row.get('ok'))} "
+            f"ms={sum(int(row.get('ms') or 0) for row in rows)} modelo={settings.openai_model}"
+        )
     fill_scenario_ledger(stats, inventory, candidates)
+    candidates = [
+        row for row in candidates if row.steps or (row.applicability or "") == "na_ambiente"
+    ]
     stamp_source_types(candidates)
     candidates = stamp_candidates(candidates, functionality_keys, jira_artifacts)
     covered = sorted(_covered_ids(candidates))
@@ -1697,6 +1714,7 @@ def generate_release_app_candidates(
         covered_ids=covered,
         candidates=candidates,
     )
+    coverage["scenario_ledger"] = list(stats.scenario_ledger)
     required = [unit.coverage_id for unit in inventory]
     uncovered = [cid for cid in required if cid not in set(covered)]
     message = (

@@ -219,7 +219,9 @@ def polish_expected(text: str | None, *, title: str | None = None) -> str:
         if title and _norm(part) == _norm(title):
             continue
         part = re.sub(r"\s+", " ", part).strip(" :;")
-        if part:
+        if part and not re.search(
+            r"se observa el comportamiento|comportamiento (definido|esperado)", part, re.I
+        ):
             chunks.append(part)
     visible = "; ".join(dict.fromkeys(chunks))
     quotes = _QUOTED.findall(text or "")

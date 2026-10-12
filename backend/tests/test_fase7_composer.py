@@ -101,7 +101,8 @@ Scenario: Estado interno
         if row.get("estado") == "pendiente de revisión QC"
     ]
     excluded = [row for row in stats.scenario_ledger if row.get("estado") == "excluido"]
-    assert pending or excluded
+    assert pending or any(row.get("estado") == "verificación técnica" for row in stats.scenario_ledger)
+    assert not excluded
     assert all(row.get("estado") for row in stats.scenario_ledger)
 
 
@@ -224,7 +225,7 @@ Scenario: Configuración remota vacía
         "caso ejecutable",
         "na_ambiente",
         "pendiente de revisión QC",
-        "excluido",
+        "verificación técnica",
     }
 
 

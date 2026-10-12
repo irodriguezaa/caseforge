@@ -6,9 +6,15 @@ Stories may feed Gherkin/analysis. They never become the visible EPC key.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from app.schemas.case_generation import CoverageUnit, GeneratedCaseCandidate
+
+_SCENARIO_MARK = re.compile(
+    r"^\s*(?:[-*]\s*)?(Scenario Outline|Scenario|Escenario esquemático|Escenario)\b",
+    re.IGNORECASE | re.MULTILINE,
+)
 
 ORPHAN_EPC = "Sin EPC"
 COVERAGE_STATUSES = ("sin_gherkin", "sin_casos", "parcial", "cubierta")
@@ -102,10 +108,19 @@ def resolve_rn_epic(
     return None
 
 
-def coverage_status(*, ag_total: int, ag_covered: int, tc_count: int) -> str:
+def coverage_status(
+    *,
+    ag_total: int,
+    ag_covered: int,
+    tc_count: int,
+    has_gherkin: bool = False,
+    error: str | None = None,
+) -> str:
+    if error:
+        return f"error: {error}"
     pending = max(0, int(ag_total) - int(ag_covered))
     if int(tc_count) <= 0 and int(ag_total) <= 0:
-        return "sin_gherkin"
+        return "sin_casos" if has_gherkin else "sin_gherkin"
     if int(tc_count) <= 0:
         return "sin_casos"
     if pending > 0:
@@ -186,6 +201,26 @@ def build_rn_scope_coverage(
         )
         if mapped:
             tcs_by_rn[mapped] = tcs_by_rn.get(mapped, 0) + 1
+    gherkin_by_rn: dict[str, bool] = {key: False for key in rn_keys}
+    for artifact in artifacts or []:
+        if not isinstance(artifact, dict):
+            continue
+        parent = normalize_key(artifact.get("key"))
+        texts = [str(artifact.get("description") or ""), str(artifact.get("acceptance_criteria") or "")]
+        for child in artifact.get("children") or []:
+            if isinstance(child, dict):
+                texts.append(str(child.get("description") or ""))
+                texts.append(str(child.get("acceptance_criteria") or ""))
+        blob = "\n".join(texts)
+        if parent in gherkin_by_rn and _SCENARIO_MARK.search(blob):
+            gherkin_by_rn[parent] = True
+        for child in artifact.get("children") or []:
+            if not isinstance(child, dict):
+                continue
+            mapped = mapping.get(normalize_key(child.get("key")))
+            child_blob = f"{child.get('description') or ''}\n{child.get('acceptance_criteria') or ''}"
+            if mapped in gherkin_by_rn and _SCENARIO_MARK.search(child_blob):
+                gherkin_by_rn[mapped] = True
     epics: list[dict[str, Any]] = []
     for key in rn_keys:
         units = units_by_rn.get(key) or []
@@ -204,6 +239,7 @@ def build_rn_scope_coverage(
                     ag_total=len(units),
                     ag_covered=len(covered_units),
                     tc_count=tc_count,
+                    has_gherkin=bool(gherkin_by_rn.get(key)),
                 ),
             }
         )

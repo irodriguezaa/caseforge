@@ -162,9 +162,10 @@ def bound_expected(name: str, current: str | None = None) -> str:
     if current and current.strip() and not is_generic_expected(current):
         return current.strip()
     clause = condition_clause(name)
-    if clause:
-        return f"Se observa el comportamiento definido para cuando {clause}."
-    return (current or "").strip()
+    if clause and not is_generic_expected(clause):
+        text = clause[0].upper() + clause[1:]
+        return text if text.endswith(".") else text + "."
+    return ""
 
 
 def parse_scenario_clauses(body: str) -> dict[str, list[str]]:

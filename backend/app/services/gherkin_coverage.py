@@ -49,7 +49,7 @@ from app.services.scenario_classifier import (
 )
 
 _SCENARIO_SPLIT = re.compile(
-    r"^\s*(Scenario Outline|Scenario|Escenario esquemático|Escenario)\s*:\s*(.+?)\s*$",
+    r"^\s*(?:[-*]\s*)?(Scenario Outline|Scenario|Escenario esquemático|Escenario)\s*:?\s*(.+?)\s*$",
     re.IGNORECASE | re.MULTILINE,
 )
 _EXAMPLES_SPLIT = re.compile(
@@ -250,6 +250,13 @@ _HTTP_API_LINE = re.compile(
     r"\bHTTP\b",
     re.IGNORECASE,
 )
+_TECH_THEN_ONLY = re.compile(
+    r"\b(se env[ií]a|se dispara|se registra|se reporta|se emite)\b.{0,60}\b(evento|m[eé]trica|telemetr)|"
+    r"\bse llama (al |un )?(servicio|api|endpoint)\b|"
+    r"\b(el servicio|el backend|el api)\b.{0,40}\b(responde|recibe|procesa|invoca)\b",
+    re.IGNORECASE,
+)
+TECH_VERIFY_MARK = "verificación técnica: requiere herramienta (logs/monitoreo)"
 _PURE_CONFIG_LINE = re.compile(
     r"feature flag|llave de configuraci[oó]n|module_version|"
     r"apa/metadata|objeto ['\"]default['\"]",
@@ -289,9 +296,9 @@ _TABLE_ATOM = re.compile(r"^.+:.+$")
 
 
 def _http_or_api_only(text: str) -> bool:
-    if _has_observable_consequence(text):
+    if _has_observable_consequence(text) or _INVENTORY_THEN_UX.search(text or "") or _PROSE_UX.search(text or ""):
         return False
-    return bool(_HTTP_API_LINE.search(text or ""))
+    return bool(_HTTP_API_LINE.search(text or "") or _TECH_THEN_ONLY.search(text or ""))
 
 
 def _pure_config_only(text: str) -> bool:
@@ -1201,24 +1208,13 @@ def _units_from_story_blocks(
         repaired.append((block, clf))
     classified = repaired
 
-    coverable = [(block, clf) for block, clf in classified if _is_coverable(clf)]
-    coverable = _merge_scroll_family(coverable)
-    coverable = _merge_key_degradation_family(coverable)
-    coverable_titles = {(block.get("title") or "") for block, _clf in coverable}
     for block, clf in classified:
-        title = str(block.get("title") or "")
-        if title in coverable_titles:
-            continue
-        motivo = (
-            "variante de soporte adjunta a la historia"
-            if clf.role == "B" or clf.qc_relevance == "QC_VARIANT"
-            else "no es escenario QC ejecutable"
-        )
-        _record_exclusion(stats, story_key, title, motivo)
-
-    for block, clf in coverable:
         title = block["title"]
         body = block["body"]
+        source_origin = str(block.get("source_origin") or "gherkin")
+        user_action = _pick_user_action(clf)
+        if source_origin != "gherkin" and not _is_coverable(clf):
+            continue
         if block.get("_qc_extra"):
             extra_support = "; ".join(
                 part for part in (extra_support, str(block["_qc_extra"])) if part
@@ -1228,24 +1224,63 @@ def _units_from_story_blocks(
         examples = block["examples"] if block["outline"] else []
         strategy = example_strategy(examples) if examples else "single"
         trace = f"RN={epic_key}; Story={story_key}; Scenario={title}"
-        source_origin = str(block.get("source_origin") or "gherkin")
-        user_action = _pick_user_action(clf)
         extra_rules = ["then-tecnico-traducido"] if block.get("_translated_then") else []
         na_kwargs: dict[str, str] = {}
-        if looks_like_invalid_lead(title):
-            _record_exclusion(stats, story_key, title, "título no es unidad QC")
+        blob = f"{title}\n{body}"
+        technical_then = _http_or_api_only(blob) or (
+            bool(clf.then) and all(_http_or_api_only(clause) for clause in clf.then)
+        )
+        if looks_like_invalid_lead(title) and source_origin != "gherkin":
             continue
         noise = _non_qc_inventory_reason(title, body, user_action, story=story)
-        if noise and not block.get("_translated_then"):
-            if _legend_template_off_surface(story, title, body) or _orphan_config_key(title, body):
-                extra_rules = list(dict.fromkeys([*extra_rules, "na-ambiente"]))
-                na_kwargs = {
-                    "applicability": "na_ambiente",
-                    "applicability_reason": f"na_ambiente: {noise}",
-                }
+        if noise and (
+            _legend_template_off_surface(story, title, body) or _orphan_config_key(title, body)
+        ):
+            extra_rules = list(dict.fromkeys([*extra_rules, "na-ambiente"]))
+            na_kwargs = {
+                "applicability": "na_ambiente",
+                "applicability_reason": f"na_ambiente: {noise}",
+            }
+        elif not _is_coverable(clf):
+            pick = _pick_translated_observable(blob, observable_pool)
+            notes = list(clf.technical_notes or [])
+            extra = extract_technical(blob)
+            if extra:
+                notes.append(extra)
+            if user_action and pick:
+                extra_rules.append("regresion-funcional")
+                clf = replace(
+                    clf,
+                    role="G",
+                    observable_then=list(clf.observable_then or [pick]),
+                    qc_observables=list(clf.qc_observables or [pick]),
+                    qc_relevance="QC_REGRESSION",
+                    technical_notes=notes + [TECH_VERIFY_MARK],
+                    qc_user_action=user_action,
+                )
+            elif user_action and technical_then:
+                extra_rules.append("verificacion-tecnica")
+                clf = replace(
+                    clf,
+                    role="G",
+                    qc_relevance="QC_REGRESSION",
+                    technical_notes=notes + [TECH_VERIFY_MARK],
+                    qc_user_action=user_action,
+                )
             else:
-                _record_exclusion(stats, story_key, title, noise)
-                continue
+                extra_rules.append("pendiente-qc:sin acción de usuario en Jira")
+                clf = replace(
+                    clf,
+                    role="G",
+                    technical_notes=notes,
+                )
+        elif technical_then and user_action:
+            extra_rules.append("regresion-funcional")
+            notes = list(clf.technical_notes or [])
+            extra = extract_technical(blob)
+            if extra:
+                notes.append(extra)
+            clf = replace(clf, technical_notes=notes + [TECH_VERIFY_MARK])
 
         if strategy == "group" and examples:
             extra = format_examples(examples)
@@ -1273,7 +1308,7 @@ def _units_from_story_blocks(
                     story_key=story_key,
                     rn_filename=rn_filename,
                     vocab=vocab,
-                    extra_test_data="; ".join(part for part in (extra, extra_support) if part) or None,
+                    extra_test_data=extra or None,
                     requires_condition=needs_story_condition,
                     strategy=strategy,
                     technical_group=tech_group,
@@ -1304,7 +1339,7 @@ def _units_from_story_blocks(
                         story_key=story_key,
                         rn_filename=rn_filename,
                         vocab=vocab,
-                        extra_test_data="; ".join(part for part in (extra, extra_support) if part) or None,
+                        extra_test_data=extra or None,
                         requires_condition=needs_story_condition,
                         strategy=strategy,
                         technical_group=f"outcome:{outcome}",
@@ -1336,7 +1371,7 @@ def _units_from_story_blocks(
                         story_key=story_key,
                         rn_filename=rn_filename,
                         vocab=vocab,
-                        extra_test_data="; ".join(part for part in (extra, extra_support) if part) or None,
+                        extra_test_data=extra or None,
                         requires_condition=needs_story_condition,
                         strategy=strategy,
                         technical_group=None,
@@ -1381,7 +1416,7 @@ def _units_from_story_blocks(
                     story_key=story_key,
                     rn_filename=rn_filename,
                     vocab=vocab,
-                    extra_test_data=extra_notes or extra_support,
+                    extra_test_data=format_examples(examples) if examples else None,
                     requires_condition=needs_story_condition,
                     strategy=strategy,
                     technical_group=None,
@@ -1413,7 +1448,7 @@ def _units_from_story_blocks(
                     story_key=story_key,
                     rn_filename=rn_filename,
                     vocab=vocab,
-                    extra_test_data=extra_notes,
+                    extra_test_data=format_examples(examples) if examples else None,
                     requires_condition=needs_story_condition,
                     strategy=strategy,
                     technical_group=None,
@@ -1600,4 +1635,4 @@ def candidates_from_jira_artifacts(
 
     out = contextualize_duplicate_titles(out)
     fill_scenario_ledger(stats, units, out)
-    return out
+    return [row for row in out if row.steps or (row.applicability or "") == "na_ambiente"]

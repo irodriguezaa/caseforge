@@ -102,6 +102,11 @@ def metrics(r, types, arts=None):
                 filler += 1
                 break
     for c in C:
+        m["(!) caso sin pasos"] += len(c.steps) == 0
+        m["(!) resultado genérico (Se observa el comportamiento…)"] += any(re.search(r"se observa el comportamiento|comportamiento (definido|esperado)", s_.expected_result or "", re.I) for s_ in c.steps)
+        m["(!) paso que es fila de tabla o medida (a: b: c / NNN x NNNpx)"] += any(re.search(r"\d+\s*x\s*\d+\s*px|:.*:.*:", s_.action or "", re.I) for s_ in c.steps)
+        m["(!) precondición con 'Feature' o API"] += bool(re.search(r"Feature\b|API|servicio \"|response\.", c.precondition or ""))
+    for c in C:
         m["(!) paso que no es acción del usuario (Given, título de escenario, regla)"] += any(
             not re.match(r"^\s*(el usuario\s+)?[a-záéíóúñ]+(ar|er|ir)\b", (s_.action or ""), re.I)
             or re.match(r"^\s*(el usuario\s+)?(est[aá]|se encuentra|tiene|cuenta con|desbloque[oó])\b", (s_.action or ""), re.I)
@@ -132,6 +137,12 @@ def metrics(r, types, arts=None):
         print("Escenarios de Jira:", dict(by_state), "total", len(ledger))
         pending = [row for row in ledger if row.get("estado") == "pendiente de revisión QC"]
         print("pendientes QC:", len(pending), f"({len(pending) * 100 // max(len(ledger), 1)}%)")
+        excluded = [row for row in ledger if row.get("estado") == "excluido"]
+        print("excluido:", len(excluded), f"({len(excluded) * 100 // max(len(ledger), 1)}%)")
+    details = list(getattr(r, "analysis_details", None) or [])
+    for line in details:
+        if "LLM" in line:
+            print(line)
     return m, missing
 
 

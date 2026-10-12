@@ -1188,7 +1188,12 @@ def export_release_test_cases(release_id: int, db: Session = Depends(get_db)) ->
     if analysis is not None and isinstance(analysis.raw_analysis, dict):
         coverage = analysis.raw_analysis.get("rn_scope_coverage")
     try:
-        payload = build_test_cases_workbook(cases, scope_keys=scope_keys, coverage=coverage)
+        ledger = None
+        if isinstance(coverage, dict):
+            ledger = coverage.get("scenario_ledger")
+        payload = build_test_cases_workbook(
+            cases, scope_keys=scope_keys, coverage=coverage, scenario_ledger=ledger
+        )
     except Exception as exc:
         raise HTTPException(
             status.HTTP_500_INTERNAL_SERVER_ERROR,

@@ -62,11 +62,18 @@ def _norm(text: str) -> str:
     return re.sub(r"\W+", " ", (text or "").lower()).strip()
 
 
+_FEATURE_LEAD = re.compile(r"^\s*Feature\s*:?\s*\d*\s*:?\s*", re.I)
+_PRE_TECH = re.compile(r"\b(API|servicio \"|response\.|endpoint|status code)\b", re.I)
+
+
 def normalize_precondition(text: str | None) -> str | None:
     parts = [re.sub(r"\s+", " ", part).strip(" .;") for part in (text or "").split(";") if part.strip()]
     unique: list[str] = []
     seen: set[str] = set()
     for part in parts:
+        part = _FEATURE_LEAD.sub("", part).strip(" :-")
+        if not part or _PRE_TECH.search(part):
+            continue
         key = _norm(part)
         if not key or key in seen:
             continue

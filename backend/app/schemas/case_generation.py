@@ -128,6 +128,7 @@ class GeneratedCaseCandidate(BaseModel):
     equivalence_key: str | None = None
     batch_id: str | None = None
     technical_reference: str | None = None
+    variant_table: str | None = None
 
 
 class GenerationStats(BaseModel):

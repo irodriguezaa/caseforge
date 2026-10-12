@@ -25,6 +25,8 @@ class Settings:
     qc_release_effort_factor: float = float(os.getenv("QC_RELEASE_EFFORT_FACTOR", "3.0"))
     qc_hours_per_day: float = float(os.getenv("QC_HOURS_PER_DAY", "6"))
     case_composition_mode: str = os.getenv("CASE_COMPOSITION_MODE", "scenario")
+    llm_scenario_concurrency: int = int(os.getenv("LLM_SCENARIO_CONCURRENCY", "8"))
+    llm_scenario_timeout: float = float(os.getenv("LLM_SCENARIO_TIMEOUT", "45"))
     # Outlook / Microsoft Graph (Calendario QC). MSAL login is not wired yet.
     ms_client_id: str = os.getenv("MS_CLIENT_ID", "")
     ms_client_secret: str = os.getenv("MS_CLIENT_SECRET", "")

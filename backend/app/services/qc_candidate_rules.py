@@ -673,6 +673,15 @@ def merge_candidates(group: list[GeneratedCaseCandidate]) -> GeneratedCaseCandid
         origin_release_name=primary.origin_release_name,
         related_origin_case_ids=list(primary.related_origin_case_ids or []),
         batch_id=primary.batch_id,
+        technical_reference="; ".join(
+            dict.fromkeys(
+                item.technical_reference
+                for item in same_epic
+                if item.technical_reference
+            )
+        )
+        or primary.technical_reference,
+        variant_table=primary.variant_table,
     )
 
 

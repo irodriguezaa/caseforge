@@ -22,6 +22,12 @@ from app.services.case_composer import (
 )
 from app.services.coverage_quality import normalize_precondition
 from app.services.executability import is_user_action
+from app.services.gherkin_coverage import TECH_VERIFY_MARK
+
+_EVENT_THEN = re.compile(
+    r"\b(se env[ií]a|se registra|se dispara|se reporta|se llama).{0,60}\b(evento|m[eé]trica|servicio|api|endpoint)\b",
+    re.I,
+)
 
 
 def composition_mode() -> str:
@@ -108,6 +114,48 @@ def _nav_action(clause: str) -> str:
     return ""
 
 
+def _variant_table(units: list[CoverageUnit], walked: list[tuple[str, str]]) -> str | None:
+    lines: list[str] = []
+    table_buf: list[str] = []
+    for kind, text in walked:
+        if kind == "table":
+            table_buf.append(text)
+            continue
+        if table_buf:
+            listed = _table_as_list(table_buf)
+            table_buf.clear()
+            if listed:
+                for part in listed.split("; "):
+                    if ":" in part:
+                        left, right = part.split(":", 1)
+                        lines.append(f"{left.strip()} | {right.strip()}")
+                    else:
+                        lines.append(f"{part} | {_unit_expected(units[0]) or ''}")
+    if table_buf:
+        listed = _table_as_list(table_buf)
+        if listed:
+            for part in listed.split("; "):
+                if ":" in part:
+                    left, right = part.split(":", 1)
+                    lines.append(f"{left.strip()} | {right.strip()}")
+    expected = _unit_expected(units[0]) or ""
+    for unit in units:
+        for chunk in re.split(r";\s*", unit.extra_test_data or ""):
+            chunk = chunk.strip()
+            chunk = re.sub(r"^Variantes técnicas[^:]+:\s*", "", chunk)
+            chunk = re.sub(r"^Example funcional explícito:\s*", "", chunk)
+            if not chunk or "=" not in chunk:
+                continue
+            left, right = chunk.split("=", 1)
+            if re.search(r"https?://|/services/|\b(GET|POST|PUT|PATCH|DELETE|HTTP)\b", chunk, re.I):
+                continue
+            lines.append(f"{left.strip()} | {right.strip() or expected}")
+    unique = list(dict.fromkeys(line for line in lines if line.strip(" |")))
+    if len(unique) < 2:
+        return None
+    return "Condición | Resultado esperado\n" + "\n".join(unique)
+
+
 def _examples_as_data(units: list[CoverageUnit]) -> str | None:
     parts: list[str] = []
     for unit in units:
@@ -151,6 +199,7 @@ def compose_scenario_units(units: list[CoverageUnit]) -> FlowDraft:
     pending_then: list[str] = []
     table_buf: list[str] = []
     covers = [unit.coverage_id for unit in units]
+    system_when = False
 
     def _flush_table() -> str:
         text = _table_as_list(table_buf)
@@ -158,6 +207,11 @@ def compose_scenario_units(units: list[CoverageUnit]) -> FlowDraft:
         return text
 
     def _attach_then(text: str) -> None:
+        if _TECH_RESULT.search(text or "") or _ENDPOINT.search(text or "") or _EVENT_THEN.search(text or ""):
+            tech.append(text)
+            if TECH_VERIFY_MARK not in tech:
+                tech.append(TECH_VERIFY_MARK)
+            return
         cleaned = polish_expected(text)
         if not cleaned:
             return
@@ -190,6 +244,7 @@ def compose_scenario_units(units: list[CoverageUnit]) -> FlowDraft:
             action = to_infinitive(text)
             if not is_tester_action(action) and not is_user_action(text):
                 tech.append(text)
+                system_when = True  # noqa: F841 - used after the walk
                 continue
             if not is_tester_action(action):
                 continue
@@ -227,18 +282,34 @@ def compose_scenario_units(units: list[CoverageUnit]) -> FlowDraft:
     if not any(is_tester_action(step.action) for step in steps):
         for unit in units:
             fallback = _nav_action(unit.user_action or "") or to_infinitive(unit.user_action or "")
-            if is_tester_action(fallback):
+            if is_tester_action(fallback) or is_user_action(unit.user_action or ""):
+                visible = merged_expected or polish_expected("; ".join(pending_then))
+                if not visible and any("regresion-funcional" in (unit.applied_rules or []) for unit in units):
+                    visible = polish_expected(primary.story_summary or primary.scenario)
                 steps.append(
                     CandidateStep(
                         step_number=1,
                         action=fallback,
-                        expected_result=merged_expected,
+                        expected_result=visible,
                         covered_unit_ids=list(covers),
                     )
                 )
                 break
+    if not any(is_tester_action(step.action) for step in steps) and (system_when or nav):
+        for action in list(dict.fromkeys(nav))[:1]:
+            steps.append(
+                CandidateStep(
+                    step_number=1,
+                    action=action,
+                    expected_result=merged_expected or polish_expected("; ".join(pending_then)),
+                    covered_unit_ids=list(covers),
+                )
+            )
+            break
     if not any(is_tester_action(step.action) for step in steps):
         pending = "sin acción de usuario en Jira"
+        if any("verificacion-tecnica" in (unit.applied_rules or []) for unit in units):
+            pending = "verificación técnica"
         steps = []
     for index, step in enumerate(steps, start=1):
         step.step_number = index
@@ -257,7 +328,13 @@ def compose_scenario_units(units: list[CoverageUnit]) -> FlowDraft:
         test_data=_examples_as_data(units),
         pending_reason=pending,
         evidence=primary.evidence or title,
-        applied_rules=["scenario-case"],
+        applied_rules=["scenario-case", *{
+            rule
+            for unit in units
+            for rule in (unit.applied_rules or [])
+            if rule in {"verificacion-tecnica", "regresion-funcional", "na-ambiente"}
+            or str(rule).startswith("pendiente-qc")
+        }],
         technical_reference="; ".join(tech_notes) or None,
     )
 
@@ -283,6 +360,8 @@ def compose_scenario_inventory(
         candidate.use_case_title = groups[key][0].story_summary
         if draft.technical_reference:
             candidate.technical_reference = draft.technical_reference
+        candidate.variant_table = _variant_table(groups[key], _walk_gwt(groups[key][0].body or ""))
+        candidate.applied_rules = list(dict.fromkeys([*(candidate.applied_rules or []), *(draft.applied_rules or [])]))
         out.append(candidate)
     return contextualize_duplicate_titles(out)
 
@@ -366,24 +445,36 @@ def fill_scenario_ledger(
         (str(row.get("story") or ""), str(row.get("scenario") or "")) for row in stats.scenario_ledger
     }
     for unit in inventory:
-        key = (unit.story_key or "", unit.scenario or "")
+        if (unit.source_origin or "gherkin") != "gherkin":
+            continue
+        scenario = re.sub(r"\s*\([^)]*\)\s*$", "", unit.scenario or "").strip()
+        key = (unit.story_key or "", scenario)
         if key in seen:
             continue
         seen.add(key)
         match = covered.get(unit.coverage_id)
-        if match is None:
-            estado, motivo, case_id = "excluido", "sin caso generado", ""
-        elif (match.applicability or "") == "na_ambiente":
+        rules = list(unit.applied_rules or []) + list((match.applied_rules if match else []) or [])
+        if (unit.applicability or "") == "na_ambiente" or (match and (match.applicability or "") == "na_ambiente"):
             estado, motivo, case_id = (
                 "na_ambiente",
-                match.applicability_reason or "na_ambiente",
-                match.name,
+                (match.applicability_reason if match else None) or unit.applicability_reason or "na_ambiente",
+                match.name if match else "",
             )
-        elif any(str(rule).startswith("pendiente-qc") for rule in (match.applied_rules or [])):
+        elif any(str(rule) == "verificacion-tecnica" for rule in rules) and (
+            match is None or not match.steps
+        ):
+            estado, motivo, case_id = (
+                "verificación técnica",
+                "Then técnico sin comportamiento visible en la historia",
+                match.name if match else "",
+            )
+        elif match is None or any(str(rule).startswith("pendiente-qc") for rule in rules) or (
+            match and not match.steps
+        ):
             estado, motivo, case_id = (
                 "pendiente de revisión QC",
-                match.applicability_reason or "sin acción de usuario en Jira",
-                match.name,
+                (match.applicability_reason if match else None) or "sin acción de usuario en Jira",
+                match.name if match else "",
             )
         else:
             estado, motivo, case_id = "caso ejecutable", "", match.name
@@ -391,7 +482,7 @@ def fill_scenario_ledger(
             {
                 "story": unit.story_key or "",
                 "epic": unit.artifact_key or "",
-                "scenario": unit.scenario,
+                "scenario": scenario,
                 "estado": estado,
                 "motivo": motivo,
                 "case_id": case_id,

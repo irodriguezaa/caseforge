@@ -62,6 +62,19 @@ def _source_label(value: str | None) -> str:
     return _SOURCE_LABEL.get(text, text)
 
 
+def split_stored_extras(raw: str | None) -> tuple[str, str]:
+    tech = ""
+    variants = ""
+    text = raw or ""
+    match = re.search(r"Referencia técnica:\s*(.+?)(?=\nVariantes:|\Z)", text, re.I | re.S)
+    if match:
+        tech = match.group(1).strip()
+    match = re.search(r"Variantes:\s*(.+)$", text, re.I | re.S)
+    if match:
+        variants = match.group(1).strip()
+    return tech, variants
+
+
 def split_stored_test_data(raw: str | None) -> tuple[str, str, str]:
     """Split the persisted test_data blob the same way the case page does."""
     text = (raw or "").strip()
@@ -188,6 +201,8 @@ QC_HEADERS = [
     "Confianza IA",
     "Complejidad",
     "Esfuerzo QC (h)",
+    "Referencia técnica",
+    "Variantes (condición → resultado)",
 ]
 
 # Matches the FLAT Zephyr layout that CaseForge already imports (see services/imports.py).
@@ -335,10 +350,11 @@ def build_test_cases_workbook(
     _style_header(
         qc,
         QC_HEADERS,
-        [10, 42, 16, 12, 16, 14, 40, 40, 28, 22, 28, 32, 16, 18, 28, 12, 14, 14],
+        [10, 42, 16, 12, 16, 14, 40, 40, 28, 22, 28, 32, 16, 18, 28, 12, 14, 14, 32, 36],
     )
     for row_index, case in enumerate(ordered, start=2):
         precondition, compact_data, _notes = split_stored_test_data(case.test_data)
+        tech, variants = split_stored_extras(case.test_data)
         values = [
             case.test_case_id,
             _display_case_name(case),
@@ -358,6 +374,8 @@ def build_test_cases_workbook(
             case.confidence or "",
             case.complexity or "",
             "" if case.estimation_hours is None else float(case.estimation_hours),
+            tech,
+            variants,
         ]
         for col, value in enumerate(values, start=1):
             cell = qc.cell(row_index, col, _excel_value(value))
@@ -365,7 +383,7 @@ def build_test_cases_workbook(
 
     if na_ambiente:
         na_sheet = workbook.create_sheet("No aplicables en ambiente")
-        _style_header(na_sheet, QC_HEADERS, [10, 42, 16, 12, 16, 14, 40, 40, 28, 22, 28, 32, 16, 18, 28, 12, 14, 14])
+        _style_header(na_sheet, QC_HEADERS, [10, 42, 16, 12, 16, 14, 40, 40, 28, 22, 28, 32, 16, 18, 28, 12, 14, 14, 32, 36])
         for row_index, case in enumerate(na_ambiente, start=2):
             precondition, compact_data, _notes = split_stored_test_data(case.test_data)
             values = [
