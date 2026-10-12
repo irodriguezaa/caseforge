@@ -49,7 +49,7 @@ from app.services.scenario_classifier import (
 )
 
 _SCENARIO_SPLIT = re.compile(
-    r"^\s*(Scenario Outline|Scenario|Escenario esquemático|Escenario)\s*:\s*(.+?)\s*$",
+    r"^\s*(?:[-*]\s*)?(Scenario Outline|Scenario|Escenario esquemático|Escenario)\s*:?\s*(.+?)\s*$",
     re.IGNORECASE | re.MULTILINE,
 )
 _EXAMPLES_SPLIT = re.compile(
@@ -124,7 +124,15 @@ def _fill_placeholders(
             if not value:
                 continue
             out = re.sub(rf"<{re.escape(str(key))}>", str(value), out, flags=re.I)
-    return re.sub(r"<([A-Za-zÁ-ú_][\wÁ-ú]*)>", r"\1", out)
+    def _leftover(match: re.Match[str]) -> str:
+        key = match.group(1)
+        for row in rows:
+            for name, value in row.items():
+                if str(name).lower() == key.lower() and str(value).strip():
+                    return str(value)
+        return ""
+
+    return re.sub(r"<([A-Za-zÁ-ú_][\wÁ-ú]*)>", _leftover, out)
 
 
 def _is_functional_source(item: dict[str, Any]) -> bool:
@@ -141,9 +149,6 @@ def _is_functional_source(item: dict[str, Any]) -> bool:
 
 def _story_context_precondition(story: dict[str, Any]) -> str | None:
     parts: list[str] = []
-    summary = (story.get("summary") or "").strip()
-    if summary.lower().startswith("feature"):
-        parts.append(summary)
     blob = f"{story.get('description') or ''}\n{story.get('acceptance_criteria') or ''}"
     match = _BACKGROUND.search(blob)
     if match:
@@ -230,7 +235,7 @@ _INVENTORY_THEN_UX = re.compile(
     r"cambio de audio|"
     r"se identifica el (audio|subt)|"
     r"d[ií]gitos|dashes|"
-    r"PIN de seguridad|favoritos|desbloquear|"
+    r"PIN de seguridad|favoritos|desbloquear|notificaci[oó]n|a[nñ]adid|"
     r"digitaci[oó]n|CH\+|primer acceso|"
     r"por default|por defecto|valor por defecto|"
     r"reflej|"
@@ -261,7 +266,7 @@ _PROSE_UX = re.compile(
     r"reflej|textos (y valores )?configurables|player vod|"
     r"se (muestra|visualiza|reproduce|pausa|oculta|restaura)|"
     r"banner|consentimiento|cookies|redirecci[oó]n|pol[ií]tica de cookies|"
-    r"\baceptar\b|versi[oó]n vigente",
+    r"\baceptar\b|versi[oó]n vigente|notificaci[oó]n|favoritos|a[nñ]adid",
     re.IGNORECASE,
 )
 _LEYENDA_KEY_UX = re.compile(
@@ -289,9 +294,14 @@ _TABLE_ATOM = re.compile(r"^.+:.+$")
 
 
 def _http_or_api_only(text: str) -> bool:
-    if _has_observable_consequence(text):
+    blob = text or ""
+    if (
+        _has_observable_consequence(blob)
+        or _INVENTORY_THEN_UX.search(blob)
+        or _PROSE_UX.search(blob)
+    ):
         return False
-    return bool(_HTTP_API_LINE.search(text or ""))
+    return bool(_HTTP_API_LINE.search(blob))
 
 
 def _pure_config_only(text: str) -> bool:
@@ -1273,7 +1283,7 @@ def _units_from_story_blocks(
                     story_key=story_key,
                     rn_filename=rn_filename,
                     vocab=vocab,
-                    extra_test_data="; ".join(part for part in (extra, extra_support) if part) or None,
+                    extra_test_data=extra or None,
                     requires_condition=needs_story_condition,
                     strategy=strategy,
                     technical_group=tech_group,
@@ -1304,7 +1314,7 @@ def _units_from_story_blocks(
                         story_key=story_key,
                         rn_filename=rn_filename,
                         vocab=vocab,
-                        extra_test_data="; ".join(part for part in (extra, extra_support) if part) or None,
+                        extra_test_data=extra or None,
                         requires_condition=needs_story_condition,
                         strategy=strategy,
                         technical_group=f"outcome:{outcome}",
@@ -1336,7 +1346,7 @@ def _units_from_story_blocks(
                         story_key=story_key,
                         rn_filename=rn_filename,
                         vocab=vocab,
-                        extra_test_data="; ".join(part for part in (extra, extra_support) if part) or None,
+                        extra_test_data=extra or None,
                         requires_condition=needs_story_condition,
                         strategy=strategy,
                         technical_group=None,
@@ -1381,7 +1391,7 @@ def _units_from_story_blocks(
                     story_key=story_key,
                     rn_filename=rn_filename,
                     vocab=vocab,
-                    extra_test_data=extra_notes or extra_support,
+                    extra_test_data=None,
                     requires_condition=needs_story_condition,
                     strategy=strategy,
                     technical_group=None,
@@ -1413,7 +1423,7 @@ def _units_from_story_blocks(
                     story_key=story_key,
                     rn_filename=rn_filename,
                     vocab=vocab,
-                    extra_test_data=extra_notes,
+                    extra_test_data=None,
                     requires_condition=needs_story_condition,
                     strategy=strategy,
                     technical_group=None,
@@ -1596,8 +1606,13 @@ def candidates_from_jira_artifacts(
     out = apply_qc_rules(out, stats=stats)
     out = apply_executability_gate(out, units)
     out = quality_gate(out)
-    from app.services.scenario_cases import contextualize_duplicate_titles, fill_scenario_ledger
+    from app.services.scenario_cases import (
+        contextualize_duplicate_titles,
+        fill_scenario_ledger,
+        finalize_scenario_candidates,
+    )
 
     out = contextualize_duplicate_titles(out)
+    out = finalize_scenario_candidates(out)
     fill_scenario_ledger(stats, units, out)
     return out

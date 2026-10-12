@@ -130,14 +130,24 @@ def quality_gate(candidates: list[GeneratedCaseCandidate]) -> list[GeneratedCase
             if suffix:
                 candidate.name = f"{candidate.name[:70]} {suffix}".strip()[:120]
             key = _norm(candidate.name)
-            n = 2
-            while key in used:
-                candidate.name = f"{candidate.name[:110]} ({n})".strip()[:120]
-                key = _norm(candidate.name)
-                n += 1
+            from app.services.scenario_cases import composition_mode
+
+            if composition_mode() != "scenario":
+                n = 2
+                while key in used:
+                    candidate.name = f"{candidate.name[:110]} ({n})".strip()[:120]
+                    key = _norm(candidate.name)
+                    n += 1
             used.add(key)
     for candidate in candidates:
         candidate.precondition = _PLACEHOLDER_TOKEN.sub(r"\1", normalize_precondition(candidate.precondition) or "") or None
+        cleaned_pre: list[str] = []
+        for part in re.split(r"\s*;\s*", candidate.precondition or ""):
+            part = re.sub(r"^\s*Feature\s*:?\s*\d*\s*:?\s*", "", part, flags=re.I).strip(" :-")
+            if not part or re.search(r"\bAPI\b|servicio \"|response\.", part):
+                continue
+            cleaned_pre.append(part)
+        candidate.precondition = "; ".join(dict.fromkeys(cleaned_pre)) or None
         candidate.test_data = _PLACEHOLDER_TOKEN.sub(r"\1", candidate.test_data or "") or candidate.test_data
         candidate.name = re.sub(
             r"\{/?code(?::[^}]*)?\}|\bh[1-6]\.\s*|\bEscenario\s*:",
@@ -166,6 +176,8 @@ def quality_gate(candidates: list[GeneratedCaseCandidate]) -> list[GeneratedCase
                         step.action = pattern.sub(replacement, step.action, count=1)
                         break
             step.expected_result = rewrite_expected(step.expected_result, candidate.name)
+            if re.search(r"se observa el comportamiento definido|comportamiento (definido|esperado)", step.expected_result or "", re.I):
+                step.expected_result = ""
             step.expected_result = re.sub(
                 r"https?://\S+|/(services|recordings|user|v\d+)/[^\s;]*|\b(GET|POST|PUT|PATCH|DELETE)\b|"
                 r"\bstatus codes?\b|se ejecuta el API[^\n.;]*|module_version\S*|`[^`]+`|"

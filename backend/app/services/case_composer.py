@@ -58,6 +58,10 @@ _3SG = (
     (re.compile(r"\btransacciona\b", re.I), "Transaccionar"),
     (re.compile(r"\brealiza\b", re.I), "Realizar"),
     (re.compile(r"\bentra\b", re.I), "Entrar"),
+    (re.compile(r"\bdigita\b", re.I), "Digitar"),
+    (re.compile(r"\baccede\b", re.I), "Acceder"),
+    (re.compile(r"\bagrega\b", re.I), "Agregar"),
+    (re.compile(r"\belimina\b", re.I), "Eliminar"),
 )
 _NEGATIVE = re.compile(r"inv[aá]lid|error|mensaje|rechaz|no se (muestra|permite)|incorrect|no es v[aá]lido", re.I)
 _SUCCESS = re.compile(r"\b(éxito|exito|correctamente|permite|se muestra el (comprobante|resultado)|confirma)\b", re.I)
@@ -191,6 +195,9 @@ def _unit_action(unit: CoverageUnit) -> str:
 
 def polish_expected(text: str | None, *, title: str | None = None) -> str:
     raw = rewrite_expected(text or "", title)
+    raw = re.sub(r"se observa el comportamiento definido[^\n.;]*", " ", raw, flags=re.I)
+    raw = re.sub(r"\b[Ll]lave\s*:\s*(\"\"|''|“”)?\s*", " ", raw)
+    raw = re.sub(r"\b[Ll]lave\s*:\s*\"?([^;\"]+)\"?", r"\1", raw)
     raw = _FORMAT_RESIDUE.sub(" ", raw)
     raw = re.sub(
         r"el (servicio|sistema|backend|frontend) (responde|consulta|solicita)[^\n.;]*?( y )?",
