@@ -159,6 +159,25 @@ def test_in_progress_apps_can_edit_planning_fields_and_recalculates_window(clien
     assert "filter=1" in body["jira_issue_filter"]
 
 
+def test_validation_scope_round_trips_and_keeps_historical_values(client) -> None:
+    created = _create_release(client, validation_type="Regresión completa")
+    assert created.status_code == 201
+    release_id = created.json()["id"]
+    assert created.json()["validation_type"] == "Regresión completa"
+
+    client.patch(f"/api/v1/releases/{release_id}", json={"status": "IN_PROGRESS"})
+    updated = client.patch(f"/api/v1/releases/{release_id}", json={"validation_type": "N/A"})
+    assert updated.status_code == 200
+    assert updated.json()["validation_type"] == "N/A"
+
+    historical = client.patch(
+        f"/api/v1/releases/{release_id}", json={"validation_type": "Exploratorio"}
+    )
+    assert historical.status_code == 200
+    assert historical.json()["validation_type"] == "Exploratorio"
+    assert client.get(f"/api/v1/releases/{release_id}").json()["validation_type"] == "Exploratorio"
+
+
 def test_draft_apps_cannot_edit_planning_fields(client) -> None:
     release_id = _create_release(client).json()["id"]
     response = client.patch(f"/api/v1/releases/{release_id}", json={"qc_resources": 3})

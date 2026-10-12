@@ -8,7 +8,8 @@ import { ReleaseAnalysisCard } from "@/app/components/ReleaseAnalysisCard";
 import { StatusBadge } from "@/app/components/StatusBadge";
 import { api, ApiRequestError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { DEVICE_OPTIONS, RELEASE_CLUSTER_OPTIONS, VALIDATION_TYPE_OPTIONS } from "@/lib/constants";
+import { ValidationScopeSelect, ValidationScopeSummary } from "@/app/components/ValidationScopeField";
+import { DEVICE_OPTIONS, RELEASE_CLUSTER_OPTIONS } from "@/lib/constants";
 import { calculateBusinessDays } from "@/lib/dateUtils";
 import type { DeliverableReleaseSummary, ReleaseAnalysis, ReleaseStatus, ReleaseType, ReleaseWithCounts } from "@/lib/types";
 
@@ -29,7 +30,7 @@ const emptyForm = {
   startDate: "",
   endDate: "",
   qcResources: 1,
-  validationType: "Smoke",
+  validationType: "Smoke Test",
   jiraIssueFilter: "",
   deliverableName: "",
   releaseType: "NUEVO" as ReleaseType,
@@ -569,18 +570,20 @@ export default function ReleasesPage(): React.ReactElement {
               />
             </div>
             <div className="form-field">
-              <label htmlFor="validationType">Regresivo (Tipo de validación)</label>
-              <select
+              <label htmlFor="validationType">Alcance de Validación</label>
+              <ValidationScopeSelect
                 id="validationType"
+                helpId="validationType-help"
                 value={form.validationType}
-                onChange={(e) => setForm({ ...form, validationType: e.target.value })}
-              >
-                {VALIDATION_TYPE_OPTIONS.map((vt) => (
-                  <option key={vt} value={vt}>
-                    {vt}
-                  </option>
-                ))}
-              </select>
+                onChange={(validationType) => setForm({ ...form, validationType })}
+              />
+            </div>
+            <div className="form-field full">
+              <ValidationScopeSummary
+                id="validationType-help"
+                value={form.validationType}
+                qcResources={form.qcResources}
+              />
             </div>
             <div className="form-field full">
               <label htmlFor="jiraIssueFilter">Filtro de issues Jira (URL, manual)</label>

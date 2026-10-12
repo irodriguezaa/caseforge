@@ -23,7 +23,8 @@ import {
   saveReleaseCaseFilters,
   type ColumnFilterSelection,
 } from "@/lib/releaseCaseFilters";
-import { BE_REGRESIVO_SCOPE_LABEL, OPERATIVA_DEVICE_OPTIONS, SHOW_QCO_ZEPHYR_PUBLISH, VALIDATION_TYPE_OPTIONS } from "@/lib/constants";
+import { ValidationScopeSelect, ValidationScopeSummary } from "@/app/components/ValidationScopeField";
+import { BE_REGRESIVO_SCOPE_LABEL, OPERATIVA_DEVICE_OPTIONS, SHOW_QCO_ZEPHYR_PUBLISH } from "@/lib/constants";
 import { calculateBusinessDays } from "@/lib/dateUtils";
 import { nextTestCaseId } from "@/lib/testCaseId";
 import { QC_ESTIMATION_TOOLTIP, QC_OPERATIVA_ESTIMATION_TOOLTIP, durationDays, estimateOperativaEffort, estimateReleaseEffortFromCases, estimateReleaseEffortLegacyCount, hoursByTechnicalEpic, progressByTechnicalEpic, rnScopeCoverage, rnScopeEpicKeys, stripDeviceFromCaseName } from "@/lib/qcEffort";
@@ -108,7 +109,7 @@ export default function ReleaseDetailPage(): React.ReactElement {
     startDate: "",
     endDate: "",
     qcResources: 1,
-    validationType: "Smoke",
+    validationType: "",
     jiraIssueFilter: "",
     description: "",
   });
@@ -162,7 +163,7 @@ export default function ReleaseDetailPage(): React.ReactElement {
       startDate: toDateInputValue(release.start_date),
       endDate: toDateInputValue(release.end_date),
       qcResources: release.qc_resources ?? 1,
-      validationType: release.validation_type ?? "Smoke",
+      validationType: release.validation_type ?? "",
       jiraIssueFilter: release.jira_issue_filter ?? "",
       description: release.description ?? "",
     });
@@ -182,7 +183,7 @@ export default function ReleaseDetailPage(): React.ReactElement {
         start_date: planningForm.startDate || null,
         end_date: planningForm.endDate || null,
         qc_resources: Math.max(1, Number(planningForm.qcResources) || 1),
-        validation_type: planningForm.validationType,
+        validation_type: planningForm.validationType.trim() || null,
         jira_issue_filter: planningForm.jiraIssueFilter.trim() || null,
         description: planningForm.description.trim() || null,
       });
@@ -662,28 +663,31 @@ export default function ReleaseDetailPage(): React.ReactElement {
                     )}
                   </div>
                   <div>
-                    <span className="muted" style={{ display: "block", fontSize: "11px", textTransform: "uppercase" }}>Tipo de validación</span>
+                    <span className="muted" style={{ display: "block", fontSize: "11px", textTransform: "uppercase" }}>Alcance de validación</span>
                     {editingPlanning && canEditAppsPlanning ? (
-                      <select
+                      <ValidationScopeSelect
+                        id="planning-validation-type"
+                        helpId="planning-validation-help"
                         value={planningForm.validationType}
-                        onChange={(e) => setPlanningForm({ ...planningForm, validationType: e.target.value })}
+                        onChange={(validationType) => setPlanningForm({ ...planningForm, validationType })}
                         style={{ marginTop: "4px" }}
-                      >
-                        {([planningForm.validationType, ...VALIDATION_TYPE_OPTIONS].filter(
-                          (value, index, all) => value && all.indexOf(value) === index,
-                        )).map((vt) => (
-                          <option key={vt} value={vt}>
-                            {vt}
-                          </option>
-                        ))}
-                      </select>
+                      />
                     ) : (
-                      <span style={{ fontWeight: 600 }}>{release.validation_type ?? "Smoke"}</span>
+                      <span style={{ fontWeight: 600 }}>{release.validation_type?.trim() || "—"}</span>
                     )}
                   </div>
                 </>
               )}
             </>
+          )}
+          {isApp && (
+            <div style={{ gridColumn: "1 / -1" }}>
+              <ValidationScopeSummary
+                id="planning-validation-help"
+                value={editingPlanning && canEditAppsPlanning ? planningForm.validationType : release.validation_type}
+                qcResources={editingPlanning && canEditAppsPlanning ? planningForm.qcResources : release.qc_resources}
+              />
+            </div>
           )}
           {(release.jira_issue_filter || canEditAppsPlanning) && !isBe && (
             <div style={{ gridColumn: "1 / -1" }}>
@@ -719,7 +723,7 @@ export default function ReleaseDetailPage(): React.ReactElement {
           )}
           {editingPlanning && canEditAppsPlanning && hasEngineCases && (
             <p className="muted" style={{ gridColumn: "1 / -1", margin: "4px 0 0", fontSize: "12px" }}>
-              Cambiar el tipo de validación o el filtro no regenera los Test Cases. La duración de abajo sí se actualiza con los recursos.
+              Cambiar el alcance de validación o el filtro no regenera los Test Cases. La duración de abajo sí se actualiza con los recursos.
             </p>
           )}
         </div>

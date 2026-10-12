@@ -42,8 +42,6 @@ export const OPERATIVA_DEVICE_OPTIONS = [
   "ADT",
   "STB",
 ] as const;
-export const VALIDATION_TYPE_OPTIONS = ["Completo", "Smoke", "Regresivo", "Funcional", "Exploratorio", "NA"] as const;
-
 export const BE_SWF_OPTIONS = ["BE Hitss", "BE Nubiral", "BE Neoris"] as const;
 export const BE_CLUSTER_TODOS = "Todos" as const;
 export const BE_CLUSTER_INDIVIDUAL = ["Global", "AUP", "CENAM", "Andina", "Dominicana"] as const;
