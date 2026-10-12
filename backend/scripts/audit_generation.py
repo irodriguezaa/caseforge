@@ -66,6 +66,23 @@ def jira_literals(arts):
     return lits
 
 
+def _stories_with_navigation(arts) -> set[str]:
+    keys: set[str] = set()
+    for epic in arts or []:
+        children = epic.get("children") or [epic]
+        for child in children:
+            blob = f"{child.get('description') or ''}\n{child.get('acceptance_criteria') or ''}"
+            head = re.split(r"(?im)^\s*(?:Scenario|Escenario)\b", blob, maxsplit=1)[0]
+            if re.search(
+                r"(?im)^\s*(?:Given|Dado que|Dado)\b.*\b(abre|abrir|ingresa|ingresar|navega|navegar|selecciona|seleccionar)\b",
+                head,
+            ):
+                key = str(child.get("key") or "").strip()
+                if key:
+                    keys.add(key)
+    return keys
+
+
 def run(path):
     arts, types, by = load(path)
     eng.fetch_artifacts_for_keys = lambda keys: [a for a in arts if a["key"] in keys]
@@ -102,6 +119,15 @@ def metrics(r, types, arts=None):
         m["(!) residuos markdown (``` / \"\"\" / __)"] += bool(re.search(r"```|\"\"\"|__", blob))
         m["(!) precondición con cláusula duplicada"] += len(pre) != len(set(pre))
         m["casos de 1 solo paso"] += len(c.steps) == 1
+    nav_stories = _stories_with_navigation(arts or [])
+    one_step_nav = 0
+    for c in C:
+        if len(c.steps) != 1:
+            continue
+        story_keys = [s.strip() for s in (c.related_jira or "").split("|") if s.strip()]
+        if any(key in nav_stories for key in story_keys):
+            one_step_nav += 1
+    m["casos de 1 paso con navegación en la Feature"] = one_step_nav
     filler = 0
     for c in C:
         exps = [norm(s.expected_result) for s in c.steps]

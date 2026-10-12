@@ -252,6 +252,34 @@ def merge_coverage_into_raw_analysis(raw_analysis: Any, coverage: dict[str, Any]
     return payload
 
 
+def merge_scenario_ledgers(previous: list[dict[str, Any]] | None, incoming: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    """Keep every EPC's scenarios. A new chunk replaces only the epics/stories it just wrote."""
+    prev = [row for row in (previous or []) if isinstance(row, dict)]
+    new = [row for row in (incoming or []) if isinstance(row, dict)]
+    if not new:
+        return prev
+    new_epics = {str(row.get("epic") or "").strip() for row in new if str(row.get("epic") or "").strip()}
+    new_stories = {str(row.get("story") or "").strip() for row in new if str(row.get("story") or "").strip()}
+    kept: list[dict[str, Any]] = []
+    for row in prev:
+        epic = str(row.get("epic") or "").strip()
+        story = str(row.get("story") or "").strip()
+        if epic and epic in new_epics:
+            continue
+        if story and story in new_stories:
+            continue
+        kept.append(row)
+    return kept + new
+
+
+def replace_scenario_ledger(raw_analysis: Any, rows: list[dict[str, Any]]) -> dict[str, Any]:
+    payload = dict(raw_analysis) if isinstance(raw_analysis, dict) else {}
+    coverage = dict(payload.get("rn_scope_coverage") or {})
+    coverage["scenario_ledger"] = list(rows)
+    payload["rn_scope_coverage"] = coverage
+    return payload
+
+
 def case_scope_key(
     *,
     technical_epic: Any = None,

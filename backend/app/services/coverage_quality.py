@@ -18,7 +18,7 @@ _USER_EXPECTED = re.compile(r"^\s*(el )?usuario\b", re.IGNORECASE)
 _GENERIC_ACTION = "el usuario ingresa al flujo correspondiente"
 _REMOTE_GIVEN = re.compile(
     r"(no se (logra |puede )?obtener|"
-    r"(vac[ií]a|inexistente|ausente|no (existe|se encuentra|est[aá] presente|est[aá] definida))|"
+    r"(vac[ií]a|inexistente|ausente|faltante|no (existe|se encuentra|est[aá] presente|est[aá] definida))|"
     r"(forzad[oa]|simulad[oa]|respuesta (fija|controlada)))",
     re.IGNORECASE,
 )
@@ -123,19 +123,25 @@ def quality_gate(candidates: list[GeneratedCaseCandidate]) -> list[GeneratedCase
     for rows in grouped.values():
         if len(rows) < 2:
             continue
+        scenario_rows = all(
+            (row.generation_origin or "") in {"scenario-case", "llm"}
+            or "scenario-case" in (row.applied_rules or [])
+            for row in rows
+        )
         used: set[str] = set()
         for candidate in rows:
-            ctx = ((candidate.precondition or "").split(";")[0] if candidate.precondition else "").strip()[:48]
-            action = (candidate.steps[0].action if candidate.steps else "")[:40]
-            expected = (
-                (candidate.steps[-1].expected_result or "").split(";")[0] if candidate.steps else ""
-            ).strip()[:40]
-            suffix = next(
-                (part for part in (ctx, action, expected) if part and part.lower() not in (candidate.name or "").lower()),
-                "",
-            )
-            if suffix:
-                candidate.name = f"{candidate.name[:70]} {suffix}".strip()[:120]
+            if not scenario_rows:
+                ctx = ((candidate.precondition or "").split(";")[0] if candidate.precondition else "").strip()[:48]
+                action = (candidate.steps[0].action if candidate.steps else "")[:40]
+                expected = (
+                    (candidate.steps[-1].expected_result or "").split(";")[0] if candidate.steps else ""
+                ).strip()[:40]
+                suffix = next(
+                    (part for part in (ctx, action, expected) if part and part.lower() not in (candidate.name or "").lower()),
+                    "",
+                )
+                if suffix:
+                    candidate.name = f"{candidate.name[:70]} {suffix}".strip()[:120]
             key = _norm(candidate.name)
             n = 2
             while key in used:
@@ -152,7 +158,12 @@ def quality_gate(candidates: list[GeneratedCaseCandidate]) -> list[GeneratedCase
             _PLACEHOLDER_TOKEN.sub(r"\1", candidate.name or ""),
             flags=re.I,
         )
-        candidate.name = re.sub(r"\s+", " ", candidate.name).strip()[:120]
+        candidate.name = re.sub(r"\s+", " ", candidate.name).strip()
+        if len(candidate.name) > 120:
+            clipped = candidate.name[:120]
+            if clipped[-1:] != " " and candidate.name[120:121] not in {"", " "}:
+                clipped = clipped.rsplit(" ", 1)[0] or clipped
+            candidate.name = clipped
         merged: list = []
         composed = (candidate.generation_origin or "") in {
             "composed-flow",
@@ -173,14 +184,18 @@ def quality_gate(candidates: list[GeneratedCaseCandidate]) -> list[GeneratedCase
                         step.action = pattern.sub(replacement, step.action, count=1)
                         break
             step.expected_result = rewrite_expected(step.expected_result, candidate.name)
-            step.expected_result = re.sub(
-                r"https?://\S+|/(services|recordings|user|v\d+)/[^\s;]*|\b(GET|POST|PUT|PATCH|DELETE)\b|"
-                r"\bstatus codes?\b|se ejecuta el API[^\n.;]*|module_version\S*|`[^`]+`|"
-                r'"/[^"]+"|"\d{3}"|[A-Z][A-Za-z]+_[A-Z][A-Za-z0-9_]+',
-                " ",
-                step.expected_result or "",
-                flags=re.I,
+            scenario_case = (candidate.generation_origin or "") in {"scenario-case", "llm"} or "scenario-case" in (
+                candidate.applied_rules or []
             )
+            if not scenario_case:
+                step.expected_result = re.sub(
+                    r"https?://\S+|/(services|recordings|user|v\d+)/[^\s;]*|\b(GET|POST|PUT|PATCH|DELETE)\b|"
+                    r"\bstatus codes?\b|se ejecuta el API[^\n.;]*|module_version\S*|`[^`]+`|"
+                    r'"/[^"]+"|"\d{3}"|[A-Z][A-Za-z]+_[A-Z][A-Za-z0-9_]+',
+                    " ",
+                    step.expected_result or "",
+                    flags=re.I,
+                )
             step.expected_result = re.sub(r"\s+", " ", step.expected_result).strip()
             same_action = merged and _norm(merged[-1].action) == _norm(step.action)
             same_cover = merged and list(merged[-1].covered_unit_ids or []) == list(step.covered_unit_ids or [])
@@ -189,9 +204,40 @@ def quality_gate(candidates: list[GeneratedCaseCandidate]) -> list[GeneratedCase
                 continue
             merged.append(step)
         candidate.steps = merged
+        from app.services.scenario_cases import lift_technical
+
+        scenario_case = (candidate.generation_origin or "") in {"scenario-case", "llm"} or "scenario-case" in (
+            candidate.applied_rules or []
+        )
+        if scenario_case:
+            lifted: list[str] = []
+            name, name_ids = lift_technical(candidate.name)
+            lifted.extend(name_ids)
+            if name:
+                candidate.name = name
+            pre, pre_ids = lift_technical(candidate.precondition)
+            lifted.extend(pre_ids)
+            candidate.precondition = pre or None
+            for step in candidate.steps:
+                action, action_ids = lift_technical(step.action)
+                expected, expected_ids = lift_technical(step.expected_result)
+                lifted.extend(action_ids)
+                lifted.extend(expected_ids)
+                if action:
+                    step.action = action
+                if expected:
+                    step.expected_result = expected
+            if lifted:
+                current = candidate.technical_reference or ""
+                extra = "; ".join(dict.fromkeys(lifted))
+                candidate.technical_reference = "; ".join(part for part in (current, extra) if part and extra not in current)
         for index, step in enumerate(candidate.steps, start=1):
             step.step_number = index
-            if _norm(step.expected_result) == _norm(candidate.name) and step.expected_result:
+            if (
+                not scenario_case
+                and _norm(step.expected_result) == _norm(candidate.name)
+                and step.expected_result
+            ):
                 action = (step.action or "")[:40]
                 if action and action.lower() not in (candidate.name or "").lower():
                     candidate.name = f"{(candidate.name or '')[:70]} {action}".strip()[:120]

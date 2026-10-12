@@ -15,7 +15,13 @@ from app.config import settings
 from app.schemas.case_generation import CandidateStep, CoverageUnit, GeneratedCaseCandidate
 from app.services.case_composer import _QUOTED
 from app.services.coverage_quality import normalize_precondition
-from app.services.scenario_cases import TECH_VERIFY_MARK, _walk_gwt, scenario_group_key
+from app.services.scenario_cases import (
+    TECH_VERIFY_MARK,
+    _navigation_steps,
+    _walk_gwt,
+    scenario_group_key,
+    visible_outcome,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -56,8 +62,14 @@ Plantilla del caso:
 - Acción: infinitivo (Seleccionar, Ingresar, Presionar, Completar). Una acción de usuario por paso.
 - Resultado: observable en pantalla. Prohibido "Se observa el comportamiento…", "Se verifica que…" de relleno.
 - Precondición: solo estados (sesión, perfil, contenido ya presente). Sin "Feature", sin API, sin endpoints.
-- Referencia técnica: APIs, eventos, status, nombres de llave. Nunca en el resultado del paso.
-- Datos de prueba: solo de ESTE escenario.
+- Referencia técnica: APIs, eventos, status, nombres de llave, identificadores con `_`, puntos o backticks. El identificador va completo, nunca recortado. Nunca en el título, la precondición, los pasos ni el resultado.
+- Datos de prueba: solo de ESTE escenario. Si falta un dato que Jira no da, escribe exactamente `Definir por QC: <qué dato se necesita>`. No inventes valores.
+- Textos entre comillas: solo si ese texto aparece literal en el Gherkin, la Feature o las tablas. No inventes textos.
+- Un Then que describe un estado (fue, queda, está) se redacta como estado, sin comillas y sin "Se muestra el mensaje".
+- Si el When es del usuario y el Then es un evento, el resultado es el comportamiento visible tomado del título, la Feature o la historia. El evento va en technical_reference con "verificación técnica: requiere herramienta (logs/monitoreo)".
+- La precondición solo lleva estados del usuario o del contenido. Inicialización de SDK, contexto técnico y el título de la Feature van en technical_reference.
+- Si el título se repite, distingue con " — " y una frase de hasta 6 palabras del título de la historia o de la Feature. Si no se repite, no agregues nada. No pegues la precondición.
+- Si el Background o un Given de la Feature describe cómo llegar (abrir, ingresar, navegar, seleccionar), el primer paso es esa navegación y su resultado es la pantalla a la que se llega.
 
 Textos de UI entre comillas: copia el literal exacto del Gherkin en la acción o en el resultado.
 Si ui_phrases trae textos de más de una palabra, inclúyelos en algún paso (acción o resultado).
@@ -136,11 +148,15 @@ def validate_llm_case(
     gherkin: str,
     sibling_data: list[str],
     own_data: str = "",
+    source: str = "",
 ) -> list[str]:
     reasons: list[str] = []
     if not llm.steps:
         return ["el caso no tiene pasos"]
     step_blob = " ".join(f"{step.action} {step.expected_result}" for step in llm.steps)
+    corpus = source or gherkin or ""
+    corpus_norm = _norm_text(corpus)
+    source_quotes = {item.strip() for item in re.findall(r'["“]([^"”\n]+)["”]', corpus)}
     for index, step in enumerate(llm.steps, start=1):
         if not _INFINITIVE.match(step.action or ""):
             reasons.append(f"el paso {index} no empieza con verbo en infinitivo")
@@ -158,6 +174,10 @@ def validate_llm_case(
             r"\W+", " ", (llm.name or "").lower()
         ).strip():
             reasons.append(f"el resultado del paso {index} copia el título")
+        reasons.extend(_visible_residue(f"{step.action} {step.expected_result}", corpus_norm, source_quotes))
+    reasons.extend(_visible_residue(llm.precondition or "", corpus_norm, source_quotes))
+    if _GLUED_TITLE.search(llm.name or "") and " — " not in (llm.name or ""):
+        reasons.append("el título pega dos frases sin separador")
     for quote in required_ui_literals(gherkin):
         if quote.lower() not in step_blob.lower():
             reasons.append(f'falta el texto literal "{quote}" en algún paso')
@@ -170,11 +190,166 @@ def validate_llm_case(
         if token in llm_data:
             reasons.append("datos de prueba de otro escenario")
             break
+    return list(dict.fromkeys(reasons))
+
+
+_ANY_QUOTE = re.compile(r'["“]([^"”\n]*)["”]')
+# Two phrases glued without " — ": a word and then a new sentence (El/La/Se…).
+# A proper noun ("Apple Pay", "pantalla Ticket") is not this pattern.
+_GLUED_TITLE = re.compile(r"[a-záéíóúñ]{3,}\s+(?=(?:El|La|Los|Las|Un|Una|Se)\s)")
+_MESSAGE_WRAP = re.compile(
+    r"\bse muestra el mensaje\s*[\"“]([^\"”\n]+)[\"”]",
+    re.I,
+)
+_CUT_TAIL = re.compile(
+    r"\s+(?!(?:el|la|los|las|un|una|de|del|al|en|con|por|para|que|si|no|se|su|"
+    r"sus|es|ya|o|y|a|lo|le|les|mi|tu|mas|más|sin|como|este|esta|eso|esa)\b)"
+    r"[a-záéíóúñ]{2,4}$",
+    re.I,
+)
+
+
+def _visible_residue(text: str, corpus_norm: str, source_quotes: set[str]) -> list[str]:
+    reasons: list[str] = []
+    if "=" in (text or ""):
+        reasons.append("un campo visible contiene '='")
+    if ". ." in (text or ""):
+        reasons.append("un campo visible contiene '. .'")
+    message = bool(re.search(r"se muestra el mensaje", text or "", re.I))
+    for quote in _ANY_QUOTE.findall(text or ""):
+        if not quote:
+            continue
+        if quote[:1] in " ." or quote[-1:] in " .":
+            reasons.append(f'comillas con resto "{quote}"')
+        if len(quote.strip()) <= 2:
+            reasons.append(f'texto entre comillas demasiado corto "{quote.strip()}"')
+        if _norm_text(quote) and _norm_text(quote) not in corpus_norm:
+            reasons.append(
+                f'el texto entre comillas "{quote.strip()}" no existe en el Gherkin, la Feature ni las tablas'
+            )
+        if message and quote.strip() not in source_quotes:
+            reasons.append(f'el resultado convierte un estado en el mensaje "{quote.strip()}"')
     return reasons
 
 
 def _norm_text(text: str) -> str:
     return re.sub(r"\W+", " ", (text or "").lower()).strip()
+
+
+def _repair_visible(text: str, corpus_norm: str, source_quotes: set[str]) -> str:
+    """Drop invented quotes and rewrite a state Then that was turned into a UI message."""
+
+    def _state(inner: str) -> str:
+        state = inner.strip(" .")
+        if not state:
+            return ""
+        return state[:1].upper() + state[1:] + ("" if state.endswith(".") else ".")
+
+    def _message(match: re.Match[str]) -> str:
+        inner = match.group(1).strip()
+        if inner in source_quotes:
+            return match.group(0)
+        if _norm_text(inner) and _norm_text(inner) in corpus_norm:
+            return _state(inner)
+        return ""
+
+    def _quote(match: re.Match[str]) -> str:
+        inner = (match.group(1) or "").strip(" .")
+        if len(inner) <= 2:
+            return ""
+        if inner in source_quotes or (_norm_text(inner) and _norm_text(inner) in corpus_norm):
+            return f'"{inner}"'
+        return ""
+
+    cleaned = _MESSAGE_WRAP.sub(_message, text or "")
+    cleaned = _ANY_QUOTE.sub(_quote, cleaned)
+    cleaned = cleaned.replace(". .", " ")
+    cleaned = re.sub(r"\s{2,}", " ", cleaned)
+    cleaned = re.sub(r"\s+([.;,])", r"\1", cleaned)
+    return cleaned.strip(" ;,")
+
+
+def _repair_llm_case(
+    llm: GeneratedCaseCandidate,
+    source: str,
+    unit: CoverageUnit | None = None,
+) -> None:
+    corpus_norm = _norm_text(source)
+    source_quotes = {item.strip() for item in re.findall(r'["“]([^"”\n]+)["”]', source or "")}
+    name = llm.name or ""
+    if " — " not in name:
+        match = _GLUED_TITLE.search(name)
+        if match:
+            name = _CUT_TAIL.sub("", name[: match.end()].strip()).strip()
+            llm.name = name
+    for step in llm.steps or []:
+        step.action = _repair_visible(step.action or "", corpus_norm, source_quotes)
+        step.expected_result = _repair_visible(step.expected_result or "", corpus_norm, source_quotes)
+    if llm.precondition:
+        llm.precondition = _repair_visible(llm.precondition, corpus_norm, source_quotes)
+    _repair_event_results(llm, unit)
+    _dedupe_consecutive_actions(llm)
+
+
+_EVENT_RESULT = re.compile(r"\b((?:no )?se emite|debe emitirse)\b", re.I)
+
+
+def _repair_event_results(llm: GeneratedCaseCandidate, unit: CoverageUnit | None) -> None:
+    if unit is None:
+        return
+    outcome = visible_outcome(getattr(unit, "scenario", None), getattr(unit, "story_summary", None))
+    lifted: list[str] = []
+    for step in llm.steps or []:
+        expected = step.expected_result or ""
+        if not _EVENT_RESULT.search(expected):
+            continue
+        lifted.append(expected.strip(" ;"))
+        if outcome:
+            step.expected_result = outcome
+    if not lifted:
+        return
+    current = [part.strip() for part in (llm.technical_reference or "").split(";") if part.strip()]
+    llm.technical_reference = "; ".join(dict.fromkeys([*current, *lifted, TECH_VERIFY_MARK]))
+
+
+def _dedupe_consecutive_actions(llm: GeneratedCaseCandidate) -> None:
+    kept: list[CandidateStep] = []
+    for step in llm.steps or []:
+        if kept and _norm_text(kept[-1].action or "") == _norm_text(step.action or ""):
+            extra = (step.expected_result or "").strip()
+            if extra and extra not in (kept[-1].expected_result or ""):
+                kept[-1].expected_result = "; ".join(
+                    part for part in (kept[-1].expected_result, extra) if part
+                )
+            continue
+        kept.append(step)
+    for index, step in enumerate(kept, start=1):
+        step.step_number = index
+    llm.steps = kept
+
+
+def _ensure_navigation(candidate: GeneratedCaseCandidate, unit: CoverageUnit | None) -> None:
+    if unit is None or not candidate.steps:
+        return
+    existing = {_norm_text(step.action or "") for step in candidate.steps}
+    prefix: list[CandidateStep] = []
+    for action, result in _navigation_steps(getattr(unit, "feature_background", None) or ""):
+        if _norm_text(action) in existing:
+            continue
+        prefix.append(
+            CandidateStep(
+                step_number=1,
+                action=action,
+                expected_result=result,
+                covered_unit_ids=list(candidate.covers or []),
+            )
+        )
+        existing.add(_norm_text(action))
+    if not prefix:
+        return
+    candidate.steps = [*prefix, *candidate.steps]
+    for index, step in enumerate(candidate.steps, start=1):
+        step.step_number = index
 
 
 def strip_filler_steps(candidate: GeneratedCaseCandidate) -> None:
@@ -195,6 +370,37 @@ def strip_filler_steps(candidate: GeneratedCaseCandidate) -> None:
         if part.strip() and not re.search(r"\b(API|servicio|endpoint|response\.)\b", part, re.I)
     )
     candidate.precondition = normalize_precondition(cleaned)
+
+
+def _lift_endpoints(candidate: GeneratedCaseCandidate) -> None:
+    lifted: list[str] = []
+    for step in candidate.steps or []:
+        text = step.expected_result or ""
+        if not _API.search(text):
+            continue
+        kept: list[str] = []
+        for part in re.split(r"(?<=[.;])\s+", text):
+            if _API.search(part):
+                lifted.append(part.strip(" ;"))
+            elif part.strip():
+                kept.append(part.strip())
+        step.expected_result = " ".join(kept).strip()
+    if lifted:
+        current = candidate.technical_reference or ""
+        candidate.technical_reference = "; ".join(part for part in [current, *lifted] if part)
+
+
+def _inject_required_literals(candidate: GeneratedCaseCandidate, gherkin: str) -> None:
+    if not candidate.steps:
+        return
+    blob = " ".join(f"{step.action} {step.expected_result}" for step in candidate.steps).lower()
+    missing = [quote for quote in required_ui_literals(gherkin) if quote.lower() not in blob]
+    if not missing:
+        return
+    last = candidate.steps[-1]
+    last.expected_result = (last.expected_result or "").rstrip(".") + ". " + " ".join(
+        f'Se muestra "{item}".' for item in missing[:6]
+    )
 
 
 def _inject_ui_phrases(candidate: GeneratedCaseCandidate, source: str) -> None:
@@ -442,9 +648,25 @@ def _rewrite_one(
             if llm is None:
                 reasons = ["la respuesta no es un JSON de caso"]
             else:
-                reasons = validate_llm_case(llm, gherkin, sibling_data, base.test_data or "")
+                source = "\n".join(
+                    part
+                    for part in (
+                        story_summary,
+                        background,
+                        gherkin,
+                        (unit.extra_test_data if unit else "") or "",
+                        base.test_data or "",
+                    )
+                    if part
+                )
+                _repair_llm_case(llm, source, unit)
+                strip_filler_steps(llm)
+                _lift_endpoints(llm)
+                _inject_required_literals(llm, gherkin)
+                reasons = validate_llm_case(llm, gherkin, sibling_data, base.test_data or "", source)
             if llm and not reasons:
                 accepted = _mark_accepted(llm)
+                _ensure_navigation(accepted, unit)
                 _inject_ui_phrases(accepted, f"{background}\n{gherkin}\n{unit.extra_test_data if unit else ''}")
                 meta["ok"] = True
                 meta["ms"] = int((time.perf_counter() - started) * 1000)

@@ -137,6 +137,106 @@ def _is_executed(case: TestCase) -> bool:
     return _enum_value(case.status) != "UNEXECUTED"
 
 
+def _ledger_epic(row: dict) -> str:
+    return str(row.get("epic") or "").strip()
+
+
+def parcial_estado(epic: str, ledger: list[dict] | None) -> str:
+    """parcial only when this EPC has QC-pending scenarios or an error, with the count."""
+    key = epic.strip().upper()
+    pending = 0
+    errors = 0
+    for row in ledger or []:
+        if not isinstance(row, dict):
+            continue
+        row_epic = _ledger_epic(row).upper()
+        if not row_epic or row_epic != key:
+            continue
+        estado = str(row.get("estado") or "")
+        if estado == "pendiente de revisión QC":
+            pending += 1
+        elif estado.lower().startswith("error"):
+            errors += 1
+    parts: list[str] = []
+    if pending:
+        parts.append(f"{pending} pendiente de revisión QC")
+    if errors:
+        parts.append(f"{errors} error")
+    if not parts:
+        return ""
+    return "parcial (" + ", ".join(parts) + ")"
+
+
+def _ledger_rows(cases: list[TestCase], scenario_ledger: list[dict] | None) -> list[dict]:
+    rows = [row for row in (scenario_ledger or []) if isinstance(row, dict)]
+    if rows:
+        return rows
+    built: list[dict] = []
+    for case in cases:
+        reason = str(getattr(case, "applicability_reason", "") or "")
+        if reason.startswith("na_ambiente"):
+            estado = "na_ambiente"
+        elif reason.startswith("pendiente") or "pendiente-qc" in reason:
+            estado = "pendiente de revisión QC"
+        else:
+            estado = "caso ejecutable"
+        built.append(
+            {
+                "story": getattr(case, "technical_story", None) or "",
+                "epic": primary_epic_key(case),
+                "scenario": getattr(case, "scenario_origin", None) or _display_case_name(case),
+                "estado": estado,
+                "case_id": case.test_case_id or "",
+                "motivo": reason,
+            }
+        )
+    return built
+
+
+def avance_rows_for_cases(
+    cases: list[TestCase],
+    ledger: list[dict] | None = None,
+    scope_keys: list[str] | None = None,
+) -> list[dict[str, object]]:
+    """One Avance row per EPC. Casos counts the same rows written on Test Cases."""
+    order: list[str] = []
+    seen: set[str] = set()
+    for key in scope_keys or []:
+        label = (key or "").strip()
+        if label and label not in seen:
+            seen.add(label)
+            order.append(label)
+    buckets: dict[str, dict[str, float]] = {
+        key: {"total": 0, "executed": 0, "hours": 0.0} for key in order
+    }
+    for case in cases:
+        key = primary_epic_key(case)
+        if key not in buckets:
+            buckets[key] = {"total": 0, "executed": 0, "hours": 0.0}
+            order.append(key)
+        buckets[key]["total"] += 1
+        if _is_executed(case):
+            buckets[key]["executed"] += 1
+        buckets[key]["hours"] += _case_hours(case)
+    rows: list[dict[str, object]] = []
+    for key in order:
+        stats = buckets[key]
+        total = int(stats["total"])
+        executed = int(stats["executed"])
+        percent = 0.0 if total == 0 else round(executed * 1000 / total) / 10
+        rows.append(
+            {
+                "key": key,
+                "total": total,
+                "executed": executed,
+                "percent": percent,
+                "hours": round(stats["hours"] * 10) / 10,
+                "estado": parcial_estado(key, ledger),
+            }
+        )
+    return rows
+
+
 def epic_progress_rows(
     cases: list[TestCase],
     scope_keys: list[str] | None = None,
@@ -297,12 +397,12 @@ def build_test_cases_workbook(
 ) -> bytes:
     workbook = Workbook()
     ordered = sorted(cases, key=lambda case: (primary_epic_key(case).lower(), case.test_case_id or ""))
-    executable = [case for case in ordered if not _is_na_ambiente(case)]
     na_ambiente = [case for case in ordered if _is_na_ambiente(case)]
+    ledger_rows = _ledger_rows(ordered, scenario_ledger)
     avance = workbook.active
     avance.title = "Avance"
-    _style_header(avance, AVANCE_HEADERS, [18, 12, 14, 22, 12, 16])
-    progress = epic_progress_rows(executable, scope_keys=scope_keys, coverage=coverage)
+    _style_header(avance, AVANCE_HEADERS, [18, 12, 14, 22, 12, 28])
+    progress = avance_rows_for_cases(ordered, ledger_rows, scope_keys=scope_keys)
     total_cases = 0
     total_executed = 0
     total_hours = 0.0
@@ -381,10 +481,18 @@ def build_test_cases_workbook(
             cell = qc.cell(row_index, col, _excel_value(value))
             _style_cell(cell)
 
-    if na_ambiente:
+    if na_ambiente or any(str(row.get("estado") or "") == "na_ambiente" for row in ledger_rows):
         na_sheet = workbook.create_sheet("No aplicables en ambiente")
         _style_header(na_sheet, QC_HEADERS, [10, 42, 16, 12, 16, 14, 40, 40, 28, 22, 28, 32, 16, 18, 28, 12, 14, 14, 32, 36])
-        for row_index, case in enumerate(na_ambiente, start=2):
+        covered: set[tuple[str, str]] = set()
+        next_row = 2
+        for case in na_ambiente:
+            covered.add(
+                (
+                    str(getattr(case, "technical_story", "") or "").strip().lower(),
+                    str(getattr(case, "scenario_origin", "") or _display_case_name(case)).strip().lower(),
+                )
+            )
             precondition, compact_data, _notes = split_stored_test_data(case.test_data)
             values = [
                 case.test_case_id,
@@ -407,8 +515,44 @@ def build_test_cases_workbook(
                 case.applicability_reason or "",
             ]
             for col, value in enumerate(values, start=1):
-                cell = na_sheet.cell(row_index, col, _excel_value(value))
+                cell = na_sheet.cell(next_row, col, _excel_value(value))
                 _style_cell(cell)
+            next_row += 1
+        for row in ledger_rows:
+            if str(row.get("estado") or "") != "na_ambiente":
+                continue
+            scenario = str(row.get("scenario") or "").strip()
+            story = str(row.get("story") or "").strip()
+            if not scenario:
+                continue
+            ident = (story.lower(), scenario.lower())
+            if ident in covered:
+                continue
+            covered.add(ident)
+            values = [
+                row.get("case_id") or "",
+                scenario,
+                row.get("epic") or "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                row.get("motivo") or "",
+                row.get("epic") or "",
+                story,
+                scenario,
+                "",
+                "",
+                row.get("motivo") or "na_ambiente",
+            ]
+            for col, value in enumerate(values, start=1):
+                cell = na_sheet.cell(next_row, col, _excel_value(value))
+                _style_cell(cell)
+            next_row += 1
 
     zephyr = workbook.create_sheet("Zephyr")
     _style_header(
@@ -445,25 +589,6 @@ def build_test_cases_workbook(
                 _style_cell(cell)
             zephyr_row += 1
 
-    ledger_rows = list(scenario_ledger or [])
-    if not ledger_rows:
-        for case in ordered:
-            reason = str(getattr(case, "applicability_reason", "") or "")
-            if reason.startswith("na_ambiente"):
-                estado = "na_ambiente"
-            elif reason.startswith("pendiente") or "pendiente-qc" in reason:
-                estado = "pendiente de revisión QC"
-            else:
-                estado = "caso ejecutable"
-            ledger_rows.append(
-                {
-                    "story": getattr(case, "technical_story", None) or "",
-                    "scenario": getattr(case, "scenario_origin", None) or _display_case_name(case),
-                    "estado": estado,
-                    "case_id": case.test_case_id or "",
-                    "motivo": reason,
-                }
-            )
     sheet = workbook.create_sheet("Escenarios de Jira")
     _style_header(sheet, ["Historia", "Escenario", "Estado", "ID del caso", "Motivo"], [16, 48, 24, 28, 40])
     for row_index, row in enumerate(ledger_rows, start=2):

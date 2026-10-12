@@ -12,6 +12,7 @@ from fastapi.responses import Response
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.auth import AuthUser, Role
 from app.db import get_db
@@ -62,7 +63,11 @@ from app.services.epc_paste import (
     damco_qa_qc_rows_were_not_stored,
     tickets_from_normalized_technical_epics,
 )
-from app.services.rn_epc_scope import rn_keys_from_normalized
+from app.services.rn_epc_scope import (
+    merge_scenario_ledgers,
+    replace_scenario_ledger,
+    rn_keys_from_normalized,
+)
 from app.services.jira_generation import fetch_issuetypes_for_keys, keep_technical_epic_keys
 from app.services.operativa_engine import ENGINE_VERSION as OPERATIVA_ENGINE, generate_operativa_from_matrix
 from app.services.operativa_engine.coverage_matrix import build_coverage_matrix
@@ -929,6 +934,9 @@ def _generate_cases_from_rn(
     if chunked and not scoped_key:
         if regenerate:
             delete_engine_cases(db, release.id)
+            if isinstance(analysis.raw_analysis, dict):
+                analysis.raw_analysis = replace_scenario_ledger(analysis.raw_analysis, [])
+                flag_modified(analysis, "raw_analysis")
             db.commit()
         return GenerateCasesResponse(
             status="CHUNK_PLAN",
@@ -1115,7 +1123,20 @@ def _generate_cases_from_rn(
         persisted_rows = persist_candidates(
             db, release.id, release.platform or "General", proposal.candidates
         )
-    sync_release_rn_epc_identity(db, release.id, analysis, proposal.rn_scope_coverage)
+    coverage_payload = proposal.rn_scope_coverage
+    if scoped_chunk and isinstance(coverage_payload, dict):
+        stored_rows: list = []
+        raw = analysis.raw_analysis if isinstance(analysis.raw_analysis, dict) else {}
+        stored = raw.get("rn_scope_coverage") if isinstance(raw, dict) else None
+        if isinstance(stored, dict) and isinstance(stored.get("scenario_ledger"), list):
+            stored_rows = list(stored["scenario_ledger"])
+        coverage_payload = dict(coverage_payload)
+        coverage_payload["scenario_ledger"] = merge_scenario_ledgers(
+            stored_rows,
+            coverage_payload.get("scenario_ledger"),
+        )
+        proposal.rn_scope_coverage = coverage_payload
+    sync_release_rn_epc_identity(db, release.id, analysis, coverage_payload)
     db.commit()
     for row in persisted_rows:
         db.refresh(row)

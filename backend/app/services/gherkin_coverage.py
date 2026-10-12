@@ -166,6 +166,22 @@ def _feature_preamble(story: dict[str, Any]) -> str:
     return before.strip()
 
 
+def _when_is_system(body: str) -> bool:
+    whens = re.findall(r"(?im)^\s*(?:When|Cuando)\s+(.+)$", body or "")
+    if not whens:
+        return False
+    return any(
+        re.search(
+            r"\b(procesa|procesar|decodifica|decodificar|parsea|parsear|reintenta|reintentar)\b|"
+            r"\b(el sistema|la aplicaci[oó]n|el servicio|el backend)\s+(env[ií]a|enviar|procesa|decodifica|parsea|reintenta)\b",
+            clause,
+            re.I,
+        )
+        and not is_user_action(clause)
+        for clause in whens
+    )
+
+
 def _pick_translated_observable(blob: str, pool: list[str]) -> str | None:
     tokens = set(re.findall(r"[A-Za-záéíóúñÁÉÍÓÚ]{4,}", (blob or "").lower()))
     best = None
@@ -1277,6 +1293,13 @@ def _units_from_story_blocks(
                     qc_relevance="QC_REGRESSION",
                     technical_notes=notes + [TECH_VERIFY_MARK],
                     qc_user_action=user_action,
+                )
+            elif _when_is_system(body) and not user_action and not pick:
+                extra_rules.append("verificacion-tecnica")
+                clf = replace(
+                    clf,
+                    role="G",
+                    technical_notes=notes,
                 )
             else:
                 extra_rules.append("pendiente-qc:sin acción de usuario en Jira")

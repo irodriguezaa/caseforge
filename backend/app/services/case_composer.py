@@ -1030,7 +1030,7 @@ def validate_composed_candidates(
             if units and (not is_tester_action(action)) and not is_stable_generic_step(action):
                 action = _unit_action(units[0]) or action
             expected = polish_expected(step.expected_result, title=candidate.name)
-            if units:
+            if units and (candidate.generation_origin or "") != "scenario-case":
                 source = _unit_expected(units[0])
                 if expected and source and not phrases_similar(expected, source) and not _QUOTED.search(expected):
                     expected = source
