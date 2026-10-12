@@ -188,6 +188,45 @@ def _when_is_system(body: str) -> bool:
     return not visible
 
 
+_VISIBLE_UI = re.compile(
+    r"\b(muestra|mostrar|pantalla|bot[oó]n|mensaje|men[uú]|modal|opci[oó]n|tooltip)\b",
+    re.I,
+)
+_EVENT_ONLY = re.compile(r"\b(se emite|debe emitirse|evento)\b", re.I)
+_GWT_LEAD = re.compile(
+    r"^(Given|Dado que|Dado|When|Cuando|Then|Entonces|And|Y|But|Pero)\s+",
+    re.I,
+)
+
+
+def _story_has_user_or_visible(story: dict[str, Any], blocks: list[dict[str, Any]]) -> bool:
+    """La historia describe una acción del usuario o un resultado que se puede ver."""
+    from app.services.scenario_cases import user_action_from_titles
+
+    titles = [feature_title_of(story), str(story.get("summary") or "")]
+    titles.extend(str(block.get("title") or "") for block in blocks)
+    if any(user_action_from_titles(title) for title in titles):
+        return True
+    for block in blocks:
+        kind = ""
+        for raw in str(block.get("body") or "").splitlines():
+            line = raw.strip()
+            if re.match(r"^(?:Given|Dado)\b", line, re.I):
+                kind = "given"
+            elif re.match(r"^(?:When|Cuando)\b", line, re.I):
+                kind = "when"
+            elif re.match(r"^(?:Then|Entonces)\b", line, re.I):
+                kind = "then"
+            elif not re.match(r"^(?:And|Y|But|Pero)\b", line, re.I):
+                continue
+            text = _GWT_LEAD.sub("", line).strip()
+            if is_user_action(text):
+                return True
+            if kind == "then" and _VISIBLE_UI.search(text) and not _EVENT_ONLY.search(text):
+                return True
+    return False
+
+
 def _pick_translated_observable(blob: str, pool: list[str]) -> str | None:
     tokens = set(re.findall(r"[A-Za-záéíóúñÁÉÍÓÚ]{4,}", (blob or "").lower()))
     best = None
@@ -1133,6 +1172,7 @@ def _units_from_story_blocks(
     seq_holder: list[int],
 ) -> list[CoverageUnit]:
     units: list[CoverageUnit] = []
+    story_functional = _story_has_user_or_visible(story, blocks)
     story_key = story.get("key") or epic_key
     story_context = _story_context_precondition(story)
     classified: list[tuple[dict[str, Any], ScenarioClassification]] = []
@@ -1299,6 +1339,23 @@ def _units_from_story_blocks(
                     qc_relevance="QC_REGRESSION",
                     technical_notes=notes + [TECH_VERIFY_MARK],
                     qc_user_action=user_action,
+                )
+            elif _when_is_system(body) and not user_action and story_functional:
+                from app.services.scenario_cases import user_action_from_titles
+
+                derived = user_action_from_titles(
+                    title,
+                    feature_title_of(story),
+                    story_summary,
+                )
+                if derived:
+                    user_action = derived
+                extra_rules.append("regresion-funcional")
+                clf = replace(
+                    clf,
+                    role="G",
+                    technical_notes=notes,
+                    qc_user_action=user_action or None,
                 )
             elif _when_is_system(body) and not user_action and not pick:
                 extra_rules.append("verificacion-tecnica")
@@ -1516,6 +1573,12 @@ def _units_from_story_blocks(
                 if mark not in notes:
                     notes.append(mark)
                 unit.technical_notes = notes
+    if story_functional:
+        for unit in units:
+            rules = list(unit.applied_rules or [])
+            if "historia-funcional" not in rules:
+                rules.append("historia-funcional")
+            unit.applied_rules = rules
     return units
 
 

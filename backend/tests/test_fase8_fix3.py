@@ -140,6 +140,42 @@ def test_r6_validator_rejects_a_technical_precondition() -> None:
     assert any("precondición" in reason for reason in reasons)
 
 
+def test_technical_when_in_a_functional_story_is_a_regression_case() -> None:
+    cases, stats = _cases(
+        """
+Feature: Solicitar el acceso para continuar
+  Scenario: Iniciar el registro del elemento
+    When se ejecuta el servicio /v1/items y responde con status code 200
+    Then el elemento queda registrado
+"""
+    )
+    case = next(row for row in cases if row.steps)
+    action = case.steps[-1].action.lower()
+    assert action.startswith("iniciar") or action.startswith("solicitar")
+    result = (case.steps[-1].expected_result or "").lower()
+    assert "registrado" in result
+    assert "status code" not in result
+    reference = (case.technical_reference or "").lower()
+    assert "/v1/items" in reference or "status code" in reference
+    assert not any(
+        row.get("estado") == "verificación técnica" and "registro del elemento" in (row.get("escenario") or "").lower()
+        for row in stats.scenario_ledger
+    )
+
+
+def test_story_without_user_action_or_visible_result_stays_technical() -> None:
+    cases, stats = _cases(
+        """
+Feature: Registro de parámetros
+  Scenario: Creación de parámetros
+    When se registran los parámetros en el panel
+    Then los parámetros quedan disponibles para el servicio
+"""
+    )
+    assert not any(row.steps for row in cases)
+    assert any(row.get("estado") == "verificación técnica" for row in stats.scenario_ledger)
+
+
 def test_r3_several_background_steps_compact_into_one_path() -> None:
     cases, _stats = _cases(
         """

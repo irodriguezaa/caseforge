@@ -351,6 +351,74 @@ def _short_phrase(text: str | None, limit: int = 6) -> str:
     return " ".join(words)
 
 
+# Infinitivos de reacción del sistema. No describen la acción del usuario.
+_SYSTEM_TITLE_VERB = re.compile(
+    r"^(?:procesar|inicializar|registrar|emitir|enviar|configurar|establecer|"
+    r"implementar|integrar|habilitar|obtener|reflejar|gestionar|considerar|"
+    r"cargar|agregar|definir|mapear|persistir|sincronizar|notificar|"
+    r"actualizar|ejecutar|invocar|retornar|devolver|aplicar|exponer|"
+    r"consumir|mantener|validar|verificar|observar|comprobar|asegurar|"
+    r"revisar|crear|tener|estar)$",
+    re.I,
+)
+_TITLE_INFINITIVE = re.compile(
+    r"\b([a-záéíóúñ]{3,}(?:ar|er|ir))\b((?:\s+\S+){0,10})",
+    re.I,
+)
+
+
+def _clean_heading(text: str | None) -> str:
+    raw = re.sub(r"^\s*feature\s*:?\s*", "", text or "", flags=re.I)
+    raw = re.sub(r"^\s*(?:feature\s+)?\d+\s*:\s*", "", raw, flags=re.I)
+    return raw.strip(" .:-")
+
+
+def user_action_from_titles(*texts: str | None) -> str:
+    """Acción del usuario descrita por el título del escenario o por la Feature."""
+    for text in texts:
+        cleaned = _clean_heading(text)
+        if not cleaned:
+            continue
+        direct = to_infinitive(cleaned)
+        first = re.sub(r"[^\wáéíóúñ]", "", (direct.split() or [""])[0], flags=re.I)
+        if is_tester_action(direct) and not _SYSTEM_TITLE_VERB.match(first):
+            words = direct.split()[:12]
+            while words and _DANGLING_WORD.match(words[-1].strip(".,;:")):
+                words.pop()
+            if words:
+                return " ".join(words)
+        for match in _TITLE_INFINITIVE.finditer(cleaned):
+            verb = match.group(1)
+            if _SYSTEM_TITLE_VERB.match(verb) or not is_user_action(verb):
+                continue
+            phrase = f"{verb}{match.group(2) or ''}"
+            phrase = re.split(r"\b(?:cuando|si|para que)\b", phrase, maxsplit=1, flags=re.I)[0]
+            action = to_infinitive(phrase.strip(" .,;:"))
+            if not is_tester_action(action):
+                continue
+            words = action.split()[:12]
+            while words and _DANGLING_WORD.match(words[-1].strip(".,;:")):
+                words.pop()
+            if words:
+                return " ".join(words)
+    return ""
+
+
+def _effect_from_thens(clauses: list[str]) -> str:
+    """Efecto que queda al sacar de un Then la API, el status y las llaves."""
+    kept: list[str] = []
+    for clause in clauses:
+        pieces = re.split(r"\s*;\s*|\s*,\s+|\s+y\s+", clause or "")
+        for piece in pieces:
+            cleaned = polish_expected(piece)
+            if not cleaned or _ENDPOINT.search(cleaned) or _TECH_RESULT.search(cleaned):
+                continue
+            if _EVENT_THEN.search(cleaned):
+                continue
+            kept.append(cleaned.rstrip("."))
+    return polish_expected("; ".join(dict.fromkeys(kept)))
+
+
 def compose_scenario_units(units: list[CoverageUnit]) -> FlowDraft:
     primary = units[0]
     evidence_body = (primary.evidence or "").split("\n", 1)
@@ -495,12 +563,77 @@ def compose_scenario_units(units: list[CoverageUnit]) -> FlowDraft:
     when_is_system = system_when or any(
         kind == "when" and _SYSTEM_WHEN.search(text) and not is_user_action(text) for kind, text in walked
     )
-    if when_is_system and not any(is_tester_action(step.action) for step in steps) and not visible_then:
+    functional_story = any("historia-funcional" in (unit.applied_rules or []) for unit in units)
+    all_na = all((unit.applicability or "") == "na_ambiente" for unit in units)
+    story_effect = ""
+    if functional_story and not all_na and (system_when or when_is_system):
+        feature = next(
+            (
+                str(note)[len("feature-title:") :]
+                for unit in units
+                for note in (unit.technical_notes or [])
+                if str(note).startswith("feature-title:")
+            ),
+            "",
+        )
+        action = user_action_from_titles(
+            primary.scenario or "",
+            feature,
+            primary.story_summary or "",
+        )
+        story_effect = _effect_from_thens([text for kind, text in walked if kind == "then"])
+        if not story_effect:
+            story_effect = polish_expected("; ".join(pending_then))
+        same = (
+            re.sub(r"\W+", " ", story_effect).strip().lower()
+            == re.sub(r"\W+", " ", action).strip().lower()
+        )
+        if is_tester_action(action) and story_effect and not same:
+            echo = (visible_outcome(primary.scenario) or "").strip().rstrip(".")
+            for step in steps:
+                current = (step.expected_result or "").strip().rstrip(".")
+                if echo and current.lower() == echo.lower():
+                    step.expected_result = ""
+            holder = next(
+                (step for step in steps if (step.action or "").strip().lower() == action.lower()),
+                None,
+            )
+            if holder is None:
+                steps.append(
+                    CandidateStep(
+                        step_number=1,
+                        action=action,
+                        expected_result=story_effect,
+                        covered_unit_ids=list(covers),
+                    )
+                )
+                for step in steps[:-1]:
+                    current = (step.expected_result or "").strip().rstrip(".")
+                    if current.lower() == story_effect.strip().rstrip(".").lower():
+                        step.expected_result = ""
+            elif not (holder.expected_result or "").strip():
+                holder.expected_result = story_effect
+            steps = [
+                step
+                for step in steps
+                if (step.expected_result or "").strip()
+                or (step.action or "").strip().lower() == action.lower()
+            ]
+            if pending == "sin acción de usuario en Jira":
+                pending = None
+    if (
+        not functional_story
+        and when_is_system
+        and not any(is_tester_action(step.action) for step in steps)
+        and not visible_then
+    ):
         pending = "verificación técnica"
         steps = []
     elif not any(is_tester_action(step.action) for step in steps):
         pending = "sin acción de usuario en Jira"
-        if any("verificacion-tecnica" in (unit.applied_rules or []) for unit in units):
+        if not functional_story and any(
+            "verificacion-tecnica" in (unit.applied_rules or []) for unit in units
+        ):
             pending = "verificación técnica"
         steps = []
     for action, result in _navigation_steps(primary.feature_background or ""):
@@ -520,7 +653,9 @@ def compose_scenario_units(units: list[CoverageUnit]) -> FlowDraft:
     original = primary.evidence or primary.body or ""
     if all((unit.applicability or "") == "na_ambiente" for unit in units):
         steps = []
-    elif _when_is_system(original) or _when_is_system(primary.body or ""):
+    elif not functional_story and (
+        _when_is_system(original) or _when_is_system(primary.body or "")
+    ):
         pending = "verificación técnica"
         steps = []
     for step in steps:
@@ -540,6 +675,8 @@ def compose_scenario_units(units: list[CoverageUnit]) -> FlowDraft:
                     tech.append(TECH_VERIFY_MARK)
     if any(is_tester_action(step.action) for step in steps):
         for step in steps:
+            if functional_story and story_effect and not _EVENT_THEN.search(story_effect):
+                continue
             if is_tester_action(step.action) and not (step.expected_result or "").strip():
                 outcome = visible_outcome(primary.scenario, primary.story_summary)
                 if outcome and any(_EVENT_THEN.search(item) or "evento" in item.lower() for item in tech):
@@ -584,6 +721,14 @@ def compose_scenario_units(units: list[CoverageUnit]) -> FlowDraft:
         if rule in {"verificacion-tecnica", "regresion-funcional", "na-ambiente"}
         or str(rule).startswith("pendiente-qc")
     }]
+    if (
+        functional_story
+        and story_effect
+        and any(is_tester_action(step.action) for step in steps)
+    ):
+        rules = [rule for rule in rules if "sin acción de usuario" not in str(rule)]
+        if pending == "sin acción de usuario en Jira":
+            pending = None
     if pending == "verificación técnica" and "verificacion-tecnica" not in rules:
         rules.append("verificacion-tecnica")
     return FlowDraft(
