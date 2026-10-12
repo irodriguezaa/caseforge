@@ -460,6 +460,34 @@ details.test-data-notes[open] summary::after { content: " (ocultar)"; }
 }
 .scope-note p { margin: 0 0 .4rem; }
 .scope-note p:last-child { margin-bottom: 0; }
+.matrix-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: .35rem 0; }
+.matrix-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  padding: 3px 8px;
+  background: var(--surface-1);
+}
+.matrix-chip button { border: 0; background: transparent; color: var(--text-muted); cursor: pointer; padding: 0 2px; }
+.matrix-related { color: var(--text-muted); }
+.matrix-summary-toggle {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+}
+.matrix-add { margin-top: .25rem; }
+.matrix-picker { margin-top: .45rem; border: 1px solid var(--border); border-radius: 8px; padding: .55rem; background: var(--bg); }
+.matrix-picker-group { margin: .45rem 0 0; }
+.matrix-picker-group b { display: block; margin-bottom: .2rem; color: var(--text-muted); font-size: 11px; text-transform: uppercase; }
+.matrix-picker-option { display: flex; justify-content: space-between; gap: 8px; width: 100%; text-align: left; margin-top: 2px; }
+.matrix-picker-option:disabled { opacity: .45; cursor: default; }
 input, select, textarea { background: var(--bg); border: 1px solid var(--border-strong); border-radius: 7px; color: var(--text); font: inherit; padding: .55rem .7rem; }
 input[type="date"] { color-scheme: light; }
 .choice-grid {

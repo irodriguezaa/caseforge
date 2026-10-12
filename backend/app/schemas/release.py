@@ -55,6 +55,8 @@ class ReleaseBase(BaseModel):
     execution_days: int | None = None
     validation_type: str | None = None
     jira_issue_filter: str | None = None
+    qc_matrix_touched_modules: list[str] | None = None
+    qc_matrix_template_values: dict[str, str] | None = None
 
 
 class ReleaseCreate(ReleaseBase):
@@ -80,6 +82,8 @@ class ReleaseUpdate(BaseModel):
     execution_days: int | None = None
     validation_type: str | None = None
     jira_issue_filter: str | None = None
+    qc_matrix_touched_modules: list[str] | None = None
+    qc_matrix_template_values: dict[str, str] | None = None
     # DRAFT-only per product decision -- enforced in the router, not here.
     deliverable_name: str | None = None
     release_type: ReleaseType | None = None
@@ -101,6 +105,9 @@ class ReleaseRead(ReleaseBase):
     swf: str | None = None
     regresivo_scope: str | None = None
     affected_component: str | None = None
+    qc_matrix_version_id: int | None = None
+    qc_matrix_touched_modules: list[str] | None = None
+    qc_matrix_template_values: dict[str, str] | None = None
     created_at: datetime
     updated_at: datetime
 

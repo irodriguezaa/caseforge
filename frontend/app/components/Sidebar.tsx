@@ -162,10 +162,10 @@ export function Sidebar(): React.ReactElement {
         )}
 
         {canSeeReleases && (
-        <span className="sidebar-link disabled" title="Próximamente">
+        <Link href="/matrices" className={`sidebar-link${pathname.startsWith("/matrices") ? " active" : ""}`}>
           <Bug size={16} strokeWidth={2} aria-hidden="true" />
           <span>Matrices QC</span>
-        </span>
+        </Link>
         )}
 
         {canSeeKpis && (

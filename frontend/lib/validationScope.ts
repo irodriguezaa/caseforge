@@ -4,9 +4,8 @@
  * No hay enum: un valor histórico (Completo, Smoke, Funcional, Exploratorio, NA, …)
  * se conserva y no se reescribe al catálogo nuevo.
  *
- * Integración pendiente con la matriz QC — no implementada:
- * el alcance debería elegir qué filas de la matriz del dispositivo, plataforma y producto
- * complementan los casos de CaseForge, comparando comportamiento y sin duplicar cobertura.
+ * La selección (2B) filtra la matriz publicada por dispositivo y alcance.
+ * La comparación con los casos del RN (2C) quedó fuera de alcance.
  * Pruebas Acotadas: conjunto específico del cambio.
  * Smoke Test: funcionalidades críticas y principales.
  * Regresivo: funcionalidades modificadas o relacionadas.

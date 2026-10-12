@@ -15,6 +15,24 @@ _lock = threading.Lock()
 _jobs: dict[int, dict[str, Any]] = {}
 
 
+def _persist_matrix_cases(release_id: int) -> None:
+    from app.models.release import Release
+    from app.services.qc_matrix_persist import persist_selected_matrix_cases
+
+    db = SessionLocal()
+    try:
+        release = db.get(Release, release_id)
+        if release is None:
+            return
+        persist_selected_matrix_cases(db, release)
+        db.commit()
+    except Exception:
+        logger.exception("matrix case persist failed release_id=%s", release_id)
+        db.rollback()
+    finally:
+        db.close()
+
+
 def get_job(release_id: int) -> dict[str, Any] | None:
     with _lock:
         job = _jobs.get(release_id)
@@ -78,6 +96,8 @@ def _run(release_id: int, regenerate: bool) -> None:
             keys=list(plan.functionality_keys or []),
         )
         if plan.status in {"ALREADY_GENERATED", "INCOMPLETE_ANALYSIS"}:
+            if plan.status == "ALREADY_GENERATED":
+                _persist_matrix_cases(release_id)
             _set_job(
                 release_id,
                 status="ERROR" if plan.status == "INCOMPLETE_ANALYSIS" else "DONE",
@@ -134,6 +154,8 @@ def _run(release_id: int, regenerate: bool) -> None:
             message += f" Sin casos: {', '.join(empty)}."
         if failed:
             message += f" Error: {', '.join(failed)}."
+        if not (keys and len(failed) == len(keys)):
+            _persist_matrix_cases(release_id)
         _set_job(
             release_id,
             status="ERROR" if keys and len(failed) == len(keys) else "DONE",

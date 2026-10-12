@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import Date, DateTime, Enum, ForeignKey, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.types import JSON
 
 from app.db import Base
 
@@ -14,6 +15,7 @@ if TYPE_CHECKING:
     from app.models.deliverable import Deliverable
     from app.models.epc import Epc
     from app.models.operativa_release import OperativaRelease
+    from app.models.qc_matrix import QcMatrixVersion
     from app.models.release_analysis import ReleaseAnalysis
     from app.models.test_case import TestCase
 
@@ -88,6 +90,14 @@ class Release(Base):
     be_release_id: Mapped[int | None] = mapped_column(
         ForeignKey("be_releases.id", ondelete="SET NULL"), nullable=True, unique=True
     )
+    # Version of the QC matrix this Release was built with. Publishing another version
+    # does not move existing Releases.
+    qc_matrix_version_id: Mapped[int | None] = mapped_column(
+        ForeignKey("qc_matrix_versions.id", ondelete="SET NULL"), nullable=True
+    )
+    # QC-corrected module keys for the matrix scope. Null means "use the suggestion".
+    qc_matrix_touched_modules: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    qc_matrix_template_values: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -114,3 +124,4 @@ class Release(Base):
     operativa_release: Mapped["OperativaRelease | None"] = relationship(back_populates="qc_release")
     included_epcs: Mapped[list["Epc"]] = relationship(back_populates="release")
     be_release: Mapped["BeRelease | None"] = relationship(back_populates="qc_release")
+    qc_matrix_version: Mapped["QcMatrixVersion | None"] = relationship(back_populates="releases")

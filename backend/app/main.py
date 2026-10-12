@@ -16,6 +16,7 @@ from app.routers.operational_windows import router as operational_windows_router
 from app.routers.be_release import router as be_release_router
 from app.routers.calendar import router as calendar_router
 from app.routers.operativa import router as operativa_router
+from app.routers.qc_matrices import router as qc_matrices_router
 from app.routers.qc_tickets import router as qc_tickets_router
 from app.routers.release_windows import router as release_windows_router
 from app.routers.releases import router as releases_router
@@ -85,6 +86,7 @@ app.include_router(be_release_router)
 app.include_router(release_windows_router)
 app.include_router(defects_router)
 app.include_router(qc_tickets_router)
+app.include_router(qc_matrices_router)
 app.include_router(dashboard_router)
 app.include_router(kpis_router)
 app.include_router(calendar_router)

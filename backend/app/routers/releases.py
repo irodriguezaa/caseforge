@@ -388,6 +388,10 @@ def create_release(payload: ReleaseCreate, db: Session = Depends(get_db)) -> Rel
         analysis_row = ReleaseAnalysis(release_id=release.id, **analysis_dict)
         db.add(analysis_row)
 
+    from app.services.qc_matrix_selection import pin_published_matrix
+
+    pin_published_matrix(db, release)
+
     try:
         db.commit()
     except IntegrityError as exc:
@@ -813,7 +817,7 @@ def generate_cases_from_rn(
                 return blocked
         return job_to_response(release_id, start_generation(release_id, regenerate))
     try:
-        return _generate_cases_from_rn(
+        result = _generate_cases_from_rn(
             release_id, regenerate, db, chunked=chunked, functionality_key=functionality_key
         )
     except HTTPException:
@@ -828,6 +832,22 @@ def generate_cases_from_rn(
                 "Espera a que qcpulse-backend-1 esté Healthy y reintenta."
             ),
         ) from None
+    _persist_matrix_after_generation(db, release_id, result.status)
+    return result
+
+
+def _persist_matrix_after_generation(db: Session, release_id: int, generation_status: str) -> None:
+    if generation_status in {"CHUNK_PLAN", "INCOMPLETE_ANALYSIS"}:
+        return
+    from app.services.qc_matrix_persist import persist_selected_matrix_cases
+
+    try:
+        release = get_release_or_404(release_id, db)
+        persist_selected_matrix_cases(db, release)
+        db.commit()
+    except Exception:
+        logger.exception("matrix case persist failed release_id=%s", release_id)
+        db.rollback()
 
 
 def _generate_cases_from_rn(

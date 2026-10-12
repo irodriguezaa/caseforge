@@ -23,6 +23,7 @@ import {
   saveReleaseCaseFilters,
   type ColumnFilterSelection,
 } from "@/lib/releaseCaseFilters";
+import { MatrixScopeEditor } from "@/app/components/MatrixScopeEditor";
 import { ValidationScopeSelect, ValidationScopeSummary } from "@/app/components/ValidationScopeField";
 import { BE_REGRESIVO_SCOPE_LABEL, OPERATIVA_DEVICE_OPTIONS, SHOW_QCO_ZEPHYR_PUBLISH } from "@/lib/constants";
 import { calculateBusinessDays } from "@/lib/dateUtils";
@@ -103,6 +104,7 @@ export default function ReleaseDetailPage(): React.ReactElement {
   const [exporting, setExporting] = useState(false);
   const [editingCase, setEditingCase] = useState<TestCase | null>(null);
   const [statusBusy, setStatusBusy] = useState(false);
+  const [caseTab, setCaseTab] = useState<"rn" | "matrix">("rn");
   const [editingPlanning, setEditingPlanning] = useState(false);
   const [planningBusy, setPlanningBusy] = useState(false);
   const [planningForm, setPlanningForm] = useState({
@@ -113,6 +115,7 @@ export default function ReleaseDetailPage(): React.ReactElement {
     jiraIssueFilter: "",
     description: "",
   });
+  const [matrixImpact, setMatrixImpact] = useState<{ caseCount: number; note: string; estimateInSection: boolean } | null>(null);
 
   const load = (): void => {
     setLoadError(null);
@@ -341,6 +344,19 @@ export default function ReleaseDetailPage(): React.ReactElement {
     }
   };
 
+  const matrixCases = useMemo(
+    () => testCases.filter((row) => row.source_type === "qc_matrix"),
+    [testCases],
+  );
+  const rnCases = useMemo(
+    () => testCases.filter((row) => row.source_type !== "qc_matrix"),
+    [testCases],
+  );
+  const matrixTabLabel = matrixScopeLabel(release);
+  useEffect(() => {
+    if (!matrixTabLabel) setCaseTab("rn");
+  }, [matrixTabLabel]);
+  const scopedCases = caseTab === "matrix" ? matrixCases : rnCases;
   const deviceOptions = useMemo(() => {
     const labels = new Set<string>();
     for (const row of testCases) {
@@ -352,20 +368,20 @@ export default function ReleaseDetailPage(): React.ReactElement {
     return [...labels].sort((a, b) => a.localeCompare(b, "es"));
   }, [testCases]);
   const componentOptions = useMemo(
-    () => uniqueSorted(testCases.map((row) => componentLabel(row))),
-    [testCases],
+    () => uniqueSorted(scopedCases.map((row) => componentLabel(row))),
+    [scopedCases],
   );
   const storyOptions = useMemo(
-    () => uniqueSorted(testCases.map((row) => storyLabel(row))),
-    [testCases],
+    () => uniqueSorted(scopedCases.map((row) => storyLabel(row))),
+    [scopedCases],
   );
   const priorityOptions = useMemo(
-    () => uniqueSorted(testCases.map((row) => row.priority)),
-    [testCases],
+    () => uniqueSorted(scopedCases.map((row) => row.priority)),
+    [scopedCases],
   );
   const statusOptions = useMemo(
-    () => uniqueSorted(testCases.map((row) => row.status)),
-    [testCases],
+    () => uniqueSorted(scopedCases.map((row) => row.status)),
+    [scopedCases],
   );
 
   useEffect(() => {
@@ -415,7 +431,7 @@ export default function ReleaseDetailPage(): React.ReactElement {
     const stories = storyFilter === null ? null : new Set(storyFilter);
     const priorities = priorityFilter === null ? null : new Set(priorityFilter);
     const statuses = statusFilter === null ? null : new Set(statusFilter);
-    return testCases.filter((row) => {
+    return scopedCases.filter((row) => {
       if (deviceFilter && (row.device || "").trim() !== deviceFilter) {
         return false;
       }
@@ -433,7 +449,7 @@ export default function ReleaseDetailPage(): React.ReactElement {
       }
       return true;
     });
-  }, [testCases, deviceFilter, componentFilter, storyFilter, priorityFilter, statusFilter]);
+  }, [scopedCases, deviceFilter, componentFilter, storyFilter, priorityFilter, statusFilter]);
   const rnEpicKeys = useMemo(() => rnScopeEpicKeys(analysis), [analysis]);
   const rnCoverage = useMemo(() => rnScopeCoverage(analysis), [analysis]);
   const epicHours = useMemo(
@@ -686,6 +702,28 @@ export default function ReleaseDetailPage(): React.ReactElement {
                 id="planning-validation-help"
                 value={editingPlanning && canEditAppsPlanning ? planningForm.validationType : release.validation_type}
                 qcResources={editingPlanning && canEditAppsPlanning ? planningForm.qcResources : release.qc_resources}
+                matrixCaseCount={matrixImpact?.caseCount}
+                matrixNote={matrixImpact?.note}
+                hideEstimate={matrixImpact?.estimateInSection === true}
+              />
+              <MatrixScopeEditor
+                variant="summary"
+                platform={release.platform}
+                cluster={release.cluster}
+                validationType={
+                  editingPlanning && canEditAppsPlanning
+                    ? planningForm.validationType
+                    : (release.validation_type ?? "")
+                }
+                rawAnalysis={analysis?.raw_analysis}
+                releaseId={release.id}
+                touchedModules={release.qc_matrix_touched_modules ?? null}
+                templateValues={release.qc_matrix_template_values ?? null}
+                qcResources={editingPlanning && canEditAppsPlanning ? planningForm.qcResources : release.qc_resources}
+                readOnly
+                onTouchedModules={() => undefined}
+                onTemplateValues={() => undefined}
+                onPreview={setMatrixImpact}
               />
             </div>
           )}
@@ -833,9 +871,24 @@ export default function ReleaseDetailPage(): React.ReactElement {
       </div>
       )}
 
+      {isApp ? <CaseProgressSummary title="Total de la Release" rows={testCases} /> : null}
+      {matrixTabLabel ? (
+        <div className="tabnav" role="tablist">
+          <button type="button" role="tab" className={caseTab === "rn" ? "active" : ""} onClick={() => setCaseTab("rn")}>
+            Alcance (RN/EPC)
+          </button>
+          <button type="button" role="tab" className={caseTab === "matrix" ? "active" : ""} onClick={() => setCaseTab("matrix")}>
+            {matrixTabLabel}
+          </button>
+        </div>
+      ) : null}
+
       {/* Test Cases Section */}
       <div className="section-header">
-        <h2>Test Cases ({visibleCases.length}{deviceFilter || tableFiltersOn ? ` / ${testCases.length}` : ""})</h2>
+        <h2>
+          {caseTab === "matrix" && matrixTabLabel ? matrixTabLabel : "Test Cases"} ({visibleCases.length}
+          {deviceFilter || tableFiltersOn ? ` / ${scopedCases.length}` : ""})
+        </h2>
         <div className="form-actions" style={{ margin: 0 }}>
           {canLoadRn && (
           <button
@@ -897,7 +950,13 @@ export default function ReleaseDetailPage(): React.ReactElement {
         </div>
       </div>
 
-      {testCases.length > 0 && (
+      {isApp ? (
+        <CaseProgressSummary
+          title={caseTab === "matrix" && matrixTabLabel ? matrixTabLabel : "Alcance (RN/EPC)"}
+          rows={scopedCases}
+        />
+      ) : null}
+      {(isApp ? caseTab === "rn" && rnCases.length > 0 : testCases.length > 0) && (
         <>
           {(isOperativa || isBe) && deviceOptions.length > 0 && (
             <div className="form-actions" style={{ marginBottom: "10px", alignItems: "center" }}>
@@ -983,8 +1042,8 @@ export default function ReleaseDetailPage(): React.ReactElement {
             </div>
           ))}
         </div>
-        {isApp && <EpicHoursPanel items={epicHours} fileName={release.name} />}
-        {isApp && <EpicProgressPanel rows={epicProgress} />}
+        {isApp && caseTab === "rn" && <EpicHoursPanel items={epicHours} fileName={release.name} />}
+        {isApp && caseTab === "rn" && <EpicProgressPanel rows={epicProgress} />}
         </>
       )}
 
@@ -1166,7 +1225,13 @@ export default function ReleaseDetailPage(): React.ReactElement {
               <td className={testCase.step_count ? "steps" : "steps muted"} title={`${testCase.step_count ?? 0} pasos`}>
                 {testCase.step_count ?? 0}
               </td>
-              {isApp ? <td>{formatRnSourceType(testCase.source_type)}</td> : null}
+              {isApp ? (
+                <td>
+                  {testCase.source_type === "qc_matrix"
+                    ? (release.validation_type?.trim() || "—")
+                    : formatRnSourceType(testCase.source_type)}
+                </td>
+              ) : null}
               {isApp ? (
                 <td onClick={(e) => e.stopPropagation()}>
                   <JiraKeyText value={testCase.component || testCase.technical_epic} />
@@ -1255,6 +1320,47 @@ export default function ReleaseDetailPage(): React.ReactElement {
           }}
         />
       )}
+    </div>
+  );
+}
+
+const MATRIX_SCOPE_LABELS = new Set([
+  "Pruebas Acotadas",
+  "Smoke Test",
+  "Regresivo",
+  "No Afectación",
+  "Regresión completa",
+]);
+
+function matrixScopeLabel(release: Release | null): string | null {
+  if (!release || release.be_release_id || release.operativa_release_id) return null;
+  const label = (release.validation_type || "").trim();
+  return MATRIX_SCOPE_LABELS.has(label) ? label : null;
+}
+
+function CaseProgressSummary({ title, rows }: { title: string; rows: TestCase[] }): React.ReactElement {
+  const executed = rows.filter((row) => row.status !== "UNEXECUTED").length;
+  const pass = rows.filter((row) => row.status === "PASS").length;
+  const fail = rows.filter((row) => row.status === "FAIL").length;
+  const percent = rows.length === 0 ? 0 : Math.round((executed / rows.length) * 100);
+  const stats = [
+    { label: "Total", value: String(rows.length) },
+    { label: "Ejecutados", value: String(executed) },
+    { label: "% avance", value: `${percent}%` },
+    { label: "Pass", value: String(pass) },
+    { label: "Fail", value: String(fail) },
+  ];
+  return (
+    <div style={{ marginBottom: "12px" }}>
+      <div style={{ fontSize: "12px", fontWeight: 650, marginBottom: "6px" }}>{title}</div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: "8px" }}>
+        {stats.map((stat) => (
+          <div key={stat.label} style={{ background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: "8px", padding: "8px 12px" }}>
+            <div style={{ fontSize: "10.5px", textTransform: "uppercase", letterSpacing: ".04em", color: "var(--text-dim)" }}>{stat.label}</div>
+            <div style={{ fontSize: "18px", fontWeight: 700 }}>{stat.value}</div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

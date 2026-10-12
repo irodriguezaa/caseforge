@@ -34,6 +34,9 @@ import type {
   PublishCasesResponse,
   QcCalendarDayResponse,
   QcCalendarWeekResponse,
+  QcMatrixDetail,
+  QcMatrixPreview,
+  QcMatrixSummary,
   SprintTestingOptions,
   SprintTestingRead,
   Release,
@@ -149,6 +152,8 @@ export interface ReleaseInput {
   execution_days?: number | null;
   validation_type?: string | null;
   jira_issue_filter?: string | null;
+  qc_matrix_touched_modules?: string[] | null;
+  qc_matrix_template_values?: Record<string, string> | null;
   analysis_data?: ReleaseAnalysis | null;
   deliverable_name?: string | null;
   release_type?: ReleaseType | null;
@@ -603,4 +608,40 @@ export const api = {
   getDeliverable: (id: number) => request<DeliverableWithMetrics>(`/api/deliverables/${id}`),
   listDeliverableReleases: (id: number) =>
     request<DeliverableReleaseSummary[]>(`/api/deliverables/${id}/releases`),
+
+  listQcMatrices: () => request<QcMatrixSummary[]>("/api/qc-matrices"),
+  getQcMatrix: (id: number) => request<QcMatrixDetail>(`/api/qc-matrices/${id}`),
+  publishQcMatrix: (id: number) =>
+    request<QcMatrixSummary>(`/api/qc-matrices/${id}/publish`, { method: "POST" }),
+  previewQcMatrix: (payload: {
+    platform?: string;
+    validation_type?: string | null;
+    touched_modules?: string[] | null;
+    template_values?: Record<string, string> | null;
+    raw_analysis?: Record<string, unknown> | null;
+    release_id?: number | null;
+  }) => request<QcMatrixPreview>("/api/qc-matrices/preview", { method: "POST", body: JSON.stringify(payload) }),
+  saveQcMatrixSelection: (
+    releaseId: number,
+    touchedModules: string[] | null,
+    templateValues?: Record<string, string> | null,
+  ) =>
+    request<QcMatrixPreview>(`/api/qc-matrices/releases/${releaseId}/selection`, {
+      method: "POST",
+      body: JSON.stringify({ touched_modules: touchedModules, template_values: templateValues ?? null }),
+    }),
+  importQcMatrix: async (file: File): Promise<QcMatrixSummary> => {
+    const formData = new FormData();
+    formData.append("file", file);
+    const response = await fetch(apiUrl("/api/qc-matrices/import"), {
+      method: "POST",
+      body: formData,
+      cache: "no-store",
+    });
+    const body = (await response.json().catch(() => ({}))) as QcMatrixSummary & ApiError;
+    if (!response.ok) {
+      throw new ApiRequestError(response.status, body?.detail ?? body?.message ?? "No se pudo importar la matriz.");
+    }
+    return body;
+  },
 };

@@ -8,6 +8,7 @@ import { ReleaseAnalysisCard } from "@/app/components/ReleaseAnalysisCard";
 import { StatusBadge } from "@/app/components/StatusBadge";
 import { api, ApiRequestError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { MatrixScopeEditor } from "@/app/components/MatrixScopeEditor";
 import { ValidationScopeSelect, ValidationScopeSummary } from "@/app/components/ValidationScopeField";
 import { DEVICE_OPTIONS, RELEASE_CLUSTER_OPTIONS } from "@/lib/constants";
 import { calculateBusinessDays } from "@/lib/dateUtils";
@@ -74,6 +75,9 @@ export default function ReleasesPage(): React.ReactElement {
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [analysisResult, setAnalysisResult] = useState<ReleaseAnalysis | null>(null);
   const [generateMessage, setGenerateMessage] = useState<string | null>(null);
+  const [matrixTouched, setMatrixTouched] = useState<string[] | null>(null);
+  const [matrixTemplates, setMatrixTemplates] = useState<Record<string, string> | null>(null);
+  const [matrixImpact, setMatrixImpact] = useState<{ caseCount: number; note: string; estimateInSection: boolean } | null>(null);
 
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
@@ -225,6 +229,8 @@ export default function ReleasesPage(): React.ReactElement {
         execution_days: businessDays,
         validation_type: form.validationType,
         jira_issue_filter: form.jiraIssueFilter || null,
+        qc_matrix_touched_modules: matrixTouched,
+        qc_matrix_template_values: matrixTemplates,
         analysis_data: analysisResult || undefined,
         deliverable_name: form.deliverableName || null,
         release_type: form.releaseType,
@@ -249,6 +255,9 @@ export default function ReleasesPage(): React.ReactElement {
       }
 
       setForm(emptyForm);
+      setMatrixTouched(null);
+      setMatrixTemplates(null);
+      setMatrixImpact(null);
       setPdfFile(null);
       setEpcText("");
       setRnSource("with_rn");
@@ -583,6 +592,21 @@ export default function ReleasesPage(): React.ReactElement {
                 id="validationType-help"
                 value={form.validationType}
                 qcResources={form.qcResources}
+                matrixCaseCount={matrixImpact?.caseCount}
+                matrixNote={matrixImpact?.note}
+                hideEstimate={matrixImpact?.estimateInSection === true}
+              />
+              <MatrixScopeEditor
+                platform={form.platform}
+                cluster={form.cluster}
+                validationType={form.validationType}
+                rawAnalysis={analysisResult?.raw_analysis}
+                touchedModules={matrixTouched}
+                templateValues={matrixTemplates}
+                qcResources={form.qcResources}
+                onTouchedModules={setMatrixTouched}
+                onTemplateValues={setMatrixTemplates}
+                onPreview={setMatrixImpact}
               />
             </div>
             <div className="form-field full">

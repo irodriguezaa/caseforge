@@ -254,6 +254,9 @@ export interface Release {
   execution_days?: number | null;
   validation_type?: string | null;
   jira_issue_filter?: string | null;
+  qc_matrix_version_id?: number | null;
+  qc_matrix_touched_modules?: string[] | null;
+  qc_matrix_template_values?: Record<string, string> | null;
   deliverable_id: number | null;
   release_type: ReleaseType | null;
   parent_release_id: number | null;
@@ -806,6 +809,68 @@ export interface SprintTestingProgramMetrics {
   closed_total: number;
   unclassified: Record<string, number>;
   consistency_ok: boolean;
+}
+
+export interface QcMatrixSummary {
+  id: number;
+  code: string;
+  version: string;
+  name: string;
+  status: string;
+  generated_on: string | null;
+  published_at: string | null;
+  published_by: string | null;
+  module_count: number;
+  device_count: number;
+  case_count: number;
+}
+
+export interface QcMatrixPreview {
+  platform: string;
+  device_code: string;
+  matrix_code: string;
+  matrix_version_id: number | null;
+  matrix_version: string;
+  region: string;
+  validation_type: string;
+  suggested_modules: string[];
+  suggestions?: { module_key: string; matched_words: string[] }[];
+  touched_modules: string[];
+  related_modules: string[];
+  payment_methods_mx: string[];
+  transactions_included: boolean;
+  providers_applied?: string[];
+  case_count: number;
+  note: string;
+  impact_summary?: string;
+  show_module_selector?: boolean;
+  modules: {
+    module_key: string;
+    group_name: string;
+    name: string;
+    description: string;
+    related: string[];
+    device_case_count?: number;
+  }[];
+  cases?: { module_key?: string; pending_templates: string[]; title?: string; provider?: string | null }[];
+}
+
+export interface QcMatrixDetail extends QcMatrixSummary {
+  modules: { module_key: string; group_name: string; name: string; description: string; related: string[] }[];
+  devices: { code: string; label: string; screen: string; mdp_mx: string[]; mdp_other_regions: string[] }[];
+  cases: {
+    id: number;
+    base_id: string | null;
+    module_key: string;
+    title: string;
+    steps: string;
+    expected: string;
+    severity: string;
+    smoke: boolean;
+    region: string | null;
+    platforms: string[];
+    platform_notes: Record<string, string>;
+  }[];
 }
 
 export interface SprintTestingRead {

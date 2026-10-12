@@ -6,6 +6,14 @@ from app.models.deliverable import Deliverable
 from app.models.epc import Epc, QcSuggestion
 from app.models.login_event import LoginEvent
 from app.models.operativa_release import OperativaRelease
+from app.models.qc_matrix import (
+    QcMatrixCase,
+    QcMatrixCaseDevice,
+    QcMatrixDevice,
+    QcMatrixModule,
+    QcMatrixModuleLink,
+    QcMatrixVersion,
+)
 from app.models.qc_ticket import QcTicket, QcTicketPriority, QcTicketSource, QcTicketView
 from app.models.release import Release, ReleaseStatus, ReleaseType
 from app.models.release_analysis import ReleaseAnalysis
@@ -24,6 +32,12 @@ __all__ = [
     "QcSuggestion",
     "LoginEvent",
     "OperativaRelease",
+    "QcMatrixCase",
+    "QcMatrixCaseDevice",
+    "QcMatrixDevice",
+    "QcMatrixModule",
+    "QcMatrixModuleLink",
+    "QcMatrixVersion",
     "QcTicket",
     "QcTicketPriority",
     "QcTicketSource",
