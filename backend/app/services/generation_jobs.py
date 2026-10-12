@@ -77,10 +77,10 @@ def _run(release_id: int, regenerate: bool) -> None:
             release_name=plan.release_name,
             keys=list(plan.functionality_keys or []),
         )
-        if plan.status == "ALREADY_GENERATED":
+        if plan.status in {"ALREADY_GENERATED", "INCOMPLETE_ANALYSIS"}:
             _set_job(
                 release_id,
-                status="DONE",
+                status="ERROR" if plan.status == "INCOMPLETE_ANALYSIS" else "DONE",
                 message=plan.message,
                 test_case_count=plan.test_case_count,
             )

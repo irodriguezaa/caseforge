@@ -1203,4 +1203,75 @@ def test_background_generate_reports_done(client, monkeypatch, tmp_path) -> None
     # así que esta lista no es la misma sesión. El criterio 6C es que el job termine en DONE.
 
 
+def _historical_analysis(*, qa_qc_issues_count: int, with_qa_qc_key: bool) -> dict:
+    normalized = {
+        "vendor": "damco",
+        "technical_epics": [{"id": "WEBCL-1", "title": "WEBCL-1: epic"}],
+        "nco": [{"id": "NCO-1", "title": "NCO-1"}],
+        "tri": [{"id": "TRI-1", "title": "TRI-1"}],
+    }
+    if with_qa_qc_key:
+        normalized["qa_qc"] = []
+    return {
+        "pdf_filename": "historico.pdf",
+        "qa_qc_issues_count": qa_qc_issues_count,
+        "raw_analysis": {"vendor": "damco", "normalized": normalized},
+    }
+
+
+def test_historical_damco_generation_asks_to_reanalyze_without_opening_pdf(client, monkeypatch) -> None:
+    def boom(*_args, **_kwargs):
+        raise AssertionError("generation must not reopen the PDF")
+
+    monkeypatch.setattr("app.routers.releases.read_release_note_pdf", boom)
+    monkeypatch.setattr("app.services.ai_case_engine._tickets_by_section", boom)
+    monkeypatch.setattr("app.services.release_note_analyzer.iter_rn_ticket_rows", boom)
+    created = client.post(
+        "/api/v1/releases",
+        json={
+            "name": "Historico generacion",
+            "version": "1.0.0",
+            "platform": "WEB",
+            "analysis_data": _historical_analysis(qa_qc_issues_count=2, with_qa_qc_key=False),
+        },
+    )
+    assert created.status_code == 201, created.text
+    release_id = created.json()["id"]
+    generated = client.post(f"/api/v1/releases/{release_id}/generate-cases")
+    assert generated.status_code == 200, generated.text
+    assert generated.json()["status"] == "INCOMPLETE_ANALYSIS"
+    assert "Vuelve a analizar" in generated.json()["message"]
+    background = client.post(f"/api/v1/releases/{release_id}/generate-cases?background=true")
+    assert background.status_code == 200, background.text
+    assert background.json()["status"] == "INCOMPLETE_ANALYSIS"
+
+    origin = client.post(
+        "/api/v1/releases",
+        json={
+            "name": "Origen historico",
+            "version": "1.0.0",
+            "platform": "WEB",
+            "deliverable_name": "WEB - Historico",
+            "analysis_data": _historical_analysis(qa_qc_issues_count=2, with_qa_qc_key=False),
+        },
+    )
+    assert origin.status_code == 201, origin.text
+    child = client.post(
+        "/api/v1/releases",
+        json={
+            "name": "Revalidacion nueva",
+            "version": "1.0.1",
+            "platform": "WEB",
+            "deliverable_name": "WEB - Historico",
+            "release_type": "REVALIDACION",
+            "parent_release_id": origin.json()["id"],
+            "analysis_data": _historical_analysis(qa_qc_issues_count=0, with_qa_qc_key=True),
+        },
+    )
+    assert child.status_code == 201, child.text
+    revalidated = client.post(f"/api/v1/releases/{child.json()['id']}/generate-cases")
+    assert revalidated.status_code == 200, revalidated.text
+    assert revalidated.json()["status"] == "INCOMPLETE_ANALYSIS"
+
+
 

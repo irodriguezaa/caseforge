@@ -117,6 +117,7 @@ class RnScopeExportRequest(BaseModel):
     raw_analysis: dict[str, Any] | None = None
     filename: str | None = None
     pdf_file_path: str | None = None
+    qa_qc_issues_count: int | None = None
 
 
 class AnalyzeEpcsRequest(BaseModel):

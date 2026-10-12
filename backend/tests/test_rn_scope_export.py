@@ -249,3 +249,126 @@ def test_keep_technical_epic_keys_drops_nco_webcl() -> None:
     assert dropped == ["WEBCL-450", "WEBCL-451", "WEBCL-2103", "WEBCL-2116"]
     open_kept, open_dropped = keep_technical_epic_keys(["WEBCL-450"], {})
     assert open_kept == ["WEBCL-450"] and open_dropped == []
+
+
+def _historical_damco_analysis(*, qa_qc_issues_count: int, include_qa_qc_key: bool) -> dict:
+    normalized = {
+        "vendor": "damco",
+        "technical_epics": [{"id": "WEBCL-1", "title": "WEBCL-1: epic"}],
+        "nco": [{"id": "NCO-1", "title": "NCO-1: nco"}],
+        "tri": [{"id": "TRI-1", "title": "TRI-1: tri"}],
+    }
+    if include_qa_qc_key:
+        normalized["qa_qc"] = []
+    return {
+        "pdf_filename": "historico.pdf",
+        "qa_qc_issues_count": qa_qc_issues_count,
+        "features_count": 1,
+        "nco_issues_count": 1,
+        "tri_issues_count": 1,
+        "raw_analysis": {"vendor": "damco", "normalized": normalized},
+    }
+
+
+def test_historical_damco_without_stored_qa_qc_asks_to_reanalyze(client, monkeypatch, tmp_path) -> None:
+    _store_dir(monkeypatch, tmp_path)
+
+    def boom(*_args, **_kwargs):
+        raise AssertionError("historical export must not reopen the PDF")
+
+    monkeypatch.setattr("app.routers.releases.read_release_note_pdf", boom)
+    monkeypatch.setattr("app.services.release_note_analyzer.iter_rn_ticket_rows", boom)
+    monkeypatch.setattr("app.services.tata_release_note_parser.parse_tata_release_note", boom)
+    created = client.post(
+        "/api/v1/releases",
+        json={
+            "name": "Historico QA",
+            "version": "1.0.0",
+            "platform": "WEB",
+            "analysis_data": _historical_damco_analysis(qa_qc_issues_count=2, include_qa_qc_key=False),
+        },
+    )
+    assert created.status_code == 201, created.text
+    exported = client.get(f"/api/v1/releases/{created.json()['id']}/rn-scope/export")
+    assert exported.status_code == 422
+    assert "Vuelve a analizar" in exported.json()["detail"]
+    posted = client.post(
+        "/api/v1/releases/rn-scope/export",
+        json={
+            "filename": "historico.pdf",
+            "qa_qc_issues_count": 2,
+            "raw_analysis": _historical_damco_analysis(qa_qc_issues_count=2, include_qa_qc_key=False)[
+                "raw_analysis"
+            ],
+        },
+    )
+    assert posted.status_code == 422
+    assert "No se vuelve a leer el PDF" in posted.json()["detail"]
+
+
+def test_empty_qa_qc_list_and_zero_count_still_export(client, monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr("app.services.rn_scope_export.fetch_scope_fields_for_keys", lambda _keys: {})
+    _store_dir(monkeypatch, tmp_path)
+    stored = client.post(
+        "/api/v1/releases",
+        json={
+            "name": "QA vacio",
+            "version": "1.0.0",
+            "platform": "WEB",
+            "analysis_data": _historical_damco_analysis(qa_qc_issues_count=0, include_qa_qc_key=True),
+        },
+    )
+    assert stored.status_code == 201, stored.text
+    empty_list = client.get(f"/api/v1/releases/{stored.json()['id']}/rn-scope/export")
+    assert empty_list.status_code == 200, empty_list.text
+    counted_zero = client.post(
+        "/api/v1/releases",
+        json={
+            "name": "QA contador cero",
+            "version": "1.0.0",
+            "platform": "WEB",
+            "analysis_data": _historical_damco_analysis(qa_qc_issues_count=0, include_qa_qc_key=False),
+        },
+    )
+    assert counted_zero.status_code == 201, counted_zero.text
+    response = client.get(f"/api/v1/releases/{counted_zero.json()['id']}/rn-scope/export")
+    assert response.status_code == 200, response.text
+
+
+def test_tata_without_qa_qc_key_keeps_incident_normalization(client, monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr("app.services.rn_scope_export.fetch_scope_fields_for_keys", lambda _keys: {})
+    _store_dir(monkeypatch, tmp_path)
+    raw_analysis = {
+        "vendor": "tata",
+        "normalized": {
+            "vendor": "tata",
+            "technical_epics": [{"id": "ATSCL-1", "title": "ATSCL-1: epic", "source_category": "TECHNICAL_EPIC"}],
+            "qa_bugs": [{"id": "ATSCL-2", "title": "ATSCL-2: qa", "source_category": "QA_BUG"}],
+            "incidents": [
+                {
+                    "id": "ATSCL-9",
+                    "title": "ATSCL-9: incidente",
+                    "source_category": "INCIDENT",
+                    "normalized_category": "TRI",
+                }
+            ],
+            "tri": [
+                {
+                    "id": "ATSCL-9",
+                    "title": "ATSCL-9: incidente",
+                    "source_category": "INCIDENT",
+                    "normalized_category": "TRI",
+                }
+            ],
+        },
+    }
+    response = client.post(
+        "/api/v1/releases/rn-scope/export",
+        json={"filename": "tata.pdf", "qa_qc_issues_count": 1, "raw_analysis": raw_analysis},
+    )
+    assert response.status_code == 200, response.text
+    book = load_workbook(BytesIO(response.content))
+    rows = list(book.active.iter_rows(min_row=2, values_only=True))
+    by_key = {row[0]: row[1] for row in rows}
+    assert by_key["ATSCL-2"] == "QA Bug"
+    assert by_key["ATSCL-9"] == "Incident / TRI"

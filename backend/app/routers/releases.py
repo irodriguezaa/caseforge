@@ -57,7 +57,9 @@ from app.services.case_persistence import (
     sync_release_rn_epc_identity,
 )
 from app.services.epc_paste import (
+    HISTORICAL_QA_QC_DETAIL,
     analyze_pasted_epcs,
+    damco_qa_qc_rows_were_not_stored,
     tickets_from_normalized_technical_epics,
 )
 from app.services.rn_epc_scope import rn_keys_from_normalized
@@ -277,6 +279,11 @@ def _require_normalized_analysis(raw_analysis: object) -> dict:
     return raw_analysis
 
 
+def _reject_unstored_damco_qa_qc(raw_analysis: dict, qa_qc_issues_count: int | None) -> None:
+    if damco_qa_qc_rows_were_not_stored(raw_analysis, qa_qc_issues_count):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=HISTORICAL_QA_QC_DETAIL)
+
+
 def _rn_scope_xlsx(raw_analysis: dict, raw_name: str) -> Response:
     try:
         payload = build_rn_scope_workbook_from_analysis(raw_analysis)
@@ -292,6 +299,7 @@ def _rn_scope_xlsx(raw_analysis: dict, raw_name: str) -> Response:
 def export_analyzed_rn_scope(body: RnScopeExportRequest) -> Response:
     """Excel of RN tickets after analyze-rn, before the Release exists."""
     raw_analysis = _require_normalized_analysis(body.raw_analysis)
+    _reject_unstored_damco_qa_qc(raw_analysis, body.qa_qc_issues_count)
     stem = (body.filename or "RN").rsplit(".", 1)[0]
     raw_name = f"Alcance_RN_{stem}.xlsx".replace(" ", "_")
     return _rn_scope_xlsx(raw_analysis, raw_name)
@@ -724,10 +732,10 @@ def _latest_analysis(db: Session, release_id: int) -> ReleaseAnalysis | None:
 
 def _deliverable_baseline_coverage(
     db: Session, release: Release
-) -> tuple[list[dict], dict[str, str], dict[str, str], dict[str, str]]:
+) -> tuple[list[dict], dict[str, str], dict[str, str], dict[str, str], bool]:
     """All Test Cases and prior RN cells from other Releases of the same Entregable."""
     if release.deliverable_id is None:
-        return [], {}, {}, {}
+        return [], {}, {}, {}, False
     siblings = list(
         db.execute(
             select(Release)
@@ -738,19 +746,48 @@ def _deliverable_baseline_coverage(
         .all()
     )
     if not siblings:
-        return [], {}, {}, {}
+        return [], {}, {}, {}, False
     sibling_ids = [row.id for row in siblings]
     cases = list(db.execute(select(TestCase).where(TestCase.release_id.in_(sibling_ids))).scalars().all())
     snapshot = [_test_case_coverage_snapshot(row) for row in cases]
     prior_functionality: dict[str, str] = {}
     prior_qa_qc: dict[str, str] = {}
     prior_nco: dict[str, str] = {}
+    omitted_qa_qc = False
     for sibling in siblings:
-        functionality, qa_qc, nco = _rn_cells_from_analysis(_latest_analysis(db, sibling.id))
+        prior = _latest_analysis(db, sibling.id)
+        if prior is not None and damco_qa_qc_rows_were_not_stored(
+            prior.raw_analysis, prior.qa_qc_issues_count
+        ):
+            omitted_qa_qc = True
+        functionality, qa_qc, nco = _rn_cells_from_analysis(prior)
         prior_functionality.update(functionality)
         prior_qa_qc.update(qa_qc)
         prior_nco.update(nco)
-    return snapshot, prior_functionality, prior_qa_qc, prior_nco
+    return snapshot, prior_functionality, prior_qa_qc, prior_nco, omitted_qa_qc
+
+
+def _incomplete_qa_qc_response(release: Release) -> GenerateCasesResponse:
+    return GenerateCasesResponse(
+        status="INCOMPLETE_ANALYSIS",
+        message=HISTORICAL_QA_QC_DETAIL,
+        release_id=release.id,
+        release_name=release.name,
+        validation_type=release.validation_type,
+        has_analysis=True,
+        engine="stored-analysis",
+        candidates=[],
+        persisted=False,
+    )
+
+
+def _current_qa_qc_block(db: Session, release: Release) -> GenerateCasesResponse | None:
+    analysis = _latest_analysis(db, release.id)
+    if analysis is None or not damco_qa_qc_rows_were_not_stored(
+        analysis.raw_analysis, analysis.qa_qc_issues_count
+    ):
+        return None
+    return _incomplete_qa_qc_response(release)
 
 
 @router.post("/{release_id}/generate-cases", response_model=GenerateCasesResponse)
@@ -764,7 +801,11 @@ def generate_cases_from_rn(
 ) -> GenerateCasesResponse:
     """Generate functional Test Cases: Apps from RN/Jira, Operativas from QC-selected BRFs."""
     if background and not (functionality_key or "").strip():
-        get_release_or_404(release_id, db)
+        release = get_release_or_404(release_id, db)
+        if release.be_release_id is None and release.operativa_release_id is None:
+            blocked = _current_qa_qc_block(db, release)
+            if blocked:
+                return blocked
         return job_to_response(release_id, start_generation(release_id, regenerate))
     try:
         return _generate_cases_from_rn(
@@ -813,6 +854,8 @@ def _generate_cases_from_rn(
             status.HTTP_404_NOT_FOUND,
             detail="No hay un RN asociado a esta Release. Analiza y crea la Release desde el PDF primero.",
         )
+    if damco_qa_qc_rows_were_not_stored(analysis.raw_analysis, analysis.qa_qc_issues_count):
+        return _incomplete_qa_qc_response(release)
 
     existing_engine = engine_cases_for_release(db, release.id)
     scoped_chunk = chunked and bool((functionality_key or "").strip())
@@ -932,9 +975,12 @@ def _generate_cases_from_rn(
             db.execute(select(TestCase).where(TestCase.release_id == release.parent_release_id)).scalars().all()
         )
         origin_snapshot = [_test_case_coverage_snapshot(row) for row in origin_rows]
-        prior_functionality, prior_qa_qc, prior_nco = _rn_cells_from_analysis(
-            _latest_analysis(db, release.parent_release_id)
-        )
+        origin_analysis = _latest_analysis(db, release.parent_release_id)
+        if origin_analysis is not None and damco_qa_qc_rows_were_not_stored(
+            origin_analysis.raw_analysis, origin_analysis.qa_qc_issues_count
+        ):
+            return _incomplete_qa_qc_response(release)
+        prior_functionality, prior_qa_qc, prior_nco = _rn_cells_from_analysis(origin_analysis)
         proposal = generate_revalidation_candidates(
             release_id=release.id,
             release_name=release.name,
@@ -952,9 +998,15 @@ def _generate_cases_from_rn(
             prior_nco_cells=prior_nco,
         )
     else:
-        baseline_cases, prior_functionality_cells, prior_qa_qc_cells, prior_nco_cells = (
-            _deliverable_baseline_coverage(db, release)
-        )
+        (
+            baseline_cases,
+            prior_functionality_cells,
+            prior_qa_qc_cells,
+            prior_nco_cells,
+            prior_omitted_qa_qc,
+        ) = _deliverable_baseline_coverage(db, release)
+        if baseline_cases and prior_omitted_qa_qc:
+            return _incomplete_qa_qc_response(release)
         existing_reference = [
             {
                 "test_case_id": row["test_case_id"],
@@ -1115,6 +1167,7 @@ def export_release_rn_scope(release_id: int, db: Session = Depends(get_db)) -> R
             detail="No hay un RN asociado a esta Release. Analiza y crea la Release desde el PDF primero.",
         )
     raw_analysis = _require_normalized_analysis(analysis.raw_analysis)
+    _reject_unstored_damco_qa_qc(raw_analysis, analysis.qa_qc_issues_count)
     label = release.name or analysis.pdf_filename or "Release"
     raw_name = f"Alcance_RN_{label}.xlsx".replace(" ", "_")
     return _rn_scope_xlsx(raw_analysis, raw_name)

@@ -62,6 +62,31 @@ def is_pasted_epcs_analysis(raw_analysis: Any) -> bool:
     return isinstance(raw_analysis, dict) and raw_analysis.get("source") == PASTED_SOURCE
 
 
+HISTORICAL_QA_QC_DETAIL = (
+    "Este análisis guardó el contador de QA/QC, pero no las filas. "
+    "Vuelve a analizar la Release Note para exportar, generar, revalidar o continuar el incremental. "
+    "No se vuelve a leer el PDF automáticamente."
+)
+
+
+def damco_qa_qc_rows_were_not_stored(raw_analysis: Any, qa_qc_issues_count: int | None) -> bool:
+    """DAMCO scope whose QA/QC counter is positive but whose rows were never stored.
+
+    A present ``qa_qc`` key, including an empty list, is a complete analysis.
+    Tata keeps QA/QC in ``qa_bugs`` and ``qc_bugs``. Pasted epics have no RN QA/QC table.
+    A recorded count of zero matches an absent list.
+    """
+    if is_pasted_epcs_analysis(raw_analysis) or not isinstance(raw_analysis, dict):
+        return False
+    vendor = str(raw_analysis.get("vendor") or "")
+    normalized = raw_analysis.get("normalized")
+    if isinstance(normalized, dict) and not vendor:
+        vendor = str(normalized.get("vendor") or "")
+    if vendor == "tata" or not isinstance(normalized, dict) or "qa_qc" in normalized:
+        return False
+    return qa_qc_issues_count != 0
+
+
 # Buckets the case engine and revalidation already consume. Tata QA/QC stays in
 # qa_bugs/qc_bugs and is not folded into qa_qc; that matches the PDF walker.
 _STORED_TICKET_BUCKETS = (

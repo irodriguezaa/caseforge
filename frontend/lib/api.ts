@@ -337,6 +337,7 @@ export const api = {
     pdfFilePath?: string | null;
     filename?: string | null;
     rawAnalysis?: Record<string, unknown> | null;
+    qaQcIssuesCount?: number | null;
     downloadName: string;
   }): Promise<void> => {
     let response: Response;
@@ -355,6 +356,7 @@ export const api = {
           body: JSON.stringify({
             filename: options.filename || undefined,
             raw_analysis: options.rawAnalysis ?? undefined,
+            qa_qc_issues_count: options.qaQcIssuesCount ?? undefined,
           }),
         });
       } else {

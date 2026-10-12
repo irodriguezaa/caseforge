@@ -12,6 +12,21 @@ function isPastedEpcsAnalysis(analysis: ReleaseAnalysis): boolean {
   return (analysis.raw_analysis as { source?: string } | undefined)?.source === "pasted_epcs";
 }
 
+function historicalDamcoQaQcMissing(analysis: ReleaseAnalysis): boolean {
+  if (isPastedEpcsAnalysis(analysis) || isTataAnalysis(analysis)) {
+    return false;
+  }
+  const raw = analysis.raw_analysis as { vendor?: string; normalized?: Record<string, unknown> } | undefined;
+  const normalized = raw?.normalized;
+  if (!normalized || typeof normalized !== "object" || raw?.vendor === "tata" || normalized.vendor === "tata") {
+    return false;
+  }
+  if ("qa_qc" in normalized) {
+    return false;
+  }
+  return analysis.qa_qc_issues_count > 0;
+}
+
 interface ReleaseAnalysisCardProps {
   analysis: ReleaseAnalysis;
   qcResources?: number | null;
@@ -37,6 +52,7 @@ export function ReleaseAnalysisCard({
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
   const pasted = isPastedEpcsAnalysis(analysis);
+  const historicalQaQc = historicalDamcoQaQcMissing(analysis);
   const storedScope = (analysis.raw_analysis as { normalized?: unknown } | undefined)?.normalized;
   const canExtract =
     !pasted &&
@@ -61,6 +77,7 @@ export function ReleaseAnalysisCard({
         pdfFilePath: analysis.pdf_file_path,
         filename: analysis.pdf_filename,
         rawAnalysis: analysis.raw_analysis,
+        qaQcIssuesCount: analysis.qa_qc_issues_count,
         downloadName: analysis.detected_name || analysis.pdf_filename || "RN",
       });
     } catch (err) {
@@ -176,6 +193,13 @@ export function ReleaseAnalysisCard({
           {pasted ? (
             <p className="muted" style={{ fontSize: "12px", margin: "8px 0 0" }}>
               Fuente: listado de Technical Epics (sin Release Note PDF).
+            </p>
+          ) : null}
+          {historicalQaQc ? (
+            <p className="error-text" style={{ margin: "8px 0 0" }}>
+              Este análisis guardó el contador de QA/QC ({analysis.qa_qc_issues_count}), pero no las filas.
+              Vuelve a analizar la Release Note para exportar, generar, revalidar o continuar el incremental.
+              No se vuelve a leer el PDF automáticamente.
             </p>
           ) : null}
           {exportError ? <p className="error-text" style={{ margin: "8px 0 0" }}>{exportError}</p> : null}
