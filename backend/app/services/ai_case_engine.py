@@ -375,8 +375,8 @@ def _candidate_from_functionality_ticket(
                 step_number=1,
                 action=STABLE_GENERIC_STEP,
                 expected_result=(
-                    f"Se muestra el resultado descrito en el RN ({summary[:180]}). "
-                    "Validación básica: el RN no describe un paso de usuario ni un resultado UI específico."
+                    f"Se observa el comportamiento definido para la funcionalidad descrita en el RN "
+                    f"({summary[:180]}). Validación básica: el RN no describe un paso de usuario ni un resultado UI específico."
                     if summary
                     else "Validación básica: el RN no describe un paso de usuario ni un resultado UI específico."
                 ),
@@ -1683,14 +1683,9 @@ def generate_release_app_candidates(
     candidates = apply_qc_rules(candidates, release_context=release_context, stats=stats)
     candidates = apply_executability_gate(candidates, inventory)
     candidates = quality_gate(candidates)
-    from app.services.scenario_cases import (
-        contextualize_duplicate_titles,
-        fill_scenario_ledger,
-        finalize_scenario_candidates,
-    )
+    from app.services.scenario_cases import contextualize_duplicate_titles, fill_scenario_ledger
 
     candidates = contextualize_duplicate_titles(candidates)
-    candidates = finalize_scenario_candidates(candidates)
     fill_scenario_ledger(stats, inventory, candidates)
     stamp_source_types(candidates)
     candidates = stamp_candidates(candidates, functionality_keys, jira_artifacts)

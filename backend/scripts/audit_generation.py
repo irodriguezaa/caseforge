@@ -102,11 +102,6 @@ def metrics(r, types, arts=None):
                 filler += 1
                 break
     for c in C:
-        m["(!) caso sin pasos"] += len(c.steps) == 0
-        m["(!) resultado genérico (Se observa el comportamiento…)"] += any(re.search(r"se observa el comportamiento|comportamiento (definido|esperado)", s_.expected_result or "", re.I) for s_ in c.steps)
-        m["(!) paso que es fila de tabla o medida (a: b: c / NNN x NNNpx)"] += any(re.search(r"\d+\s*x\s*\d+\s*px|:.*:.*:", s_.action or "", re.I) for s_ in c.steps)
-        m["(!) precondición con 'Feature' o API"] += bool(re.search(r"Feature\b|API|servicio \"|response\.", c.precondition or ""))
-    for c in C:
         m["(!) paso que no es acción del usuario (Given, título de escenario, regla)"] += any(
             not re.match(r"^\s*(el usuario\s+)?[a-záéíóúñ]+(ar|er|ir)\b", (s_.action or ""), re.I)
             or re.match(r"^\s*(el usuario\s+)?(est[aá]|se encuentra|tiene|cuenta con|desbloque[oó])\b", (s_.action or ""), re.I)

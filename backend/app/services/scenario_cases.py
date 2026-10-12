@@ -12,7 +12,6 @@ from app.services.case_composer import (
     _ENDPOINT,
     _QUOTED,
     _STATE_LEAD,
-    _USER_INFINITIVE,
     candidate_violates_writing_standard,
     draft_to_candidate,
     is_tester_action,
@@ -102,8 +101,6 @@ def _nav_action(clause: str) -> str:
     ):
         rest = re.sub(r"^\s*(el usuario\s+)?(visualiza|ve)\s+", "", clause, flags=re.I).strip()
         return f"Abrir {rest}".strip()
-    if re.match(r"^\s*(Validar|Verificar|Asegurar|Observar|Comprobar|Revisar)\b", inf, re.I):
-        return ""
     if is_tester_action(inf):
         return inf
     if is_user_action(clause) and not _STATE_LEAD.match(inf):
@@ -121,144 +118,12 @@ def _examples_as_data(units: list[CoverageUnit]) -> str | None:
                 continue
             if re.search(r"https?://|/services/|\b(GET|POST|PUT|PATCH|DELETE|HTTP)\b", chunk, re.I):
                 continue
-            if re.search(r"^\s*(el usuario|given|when|then|se muestra)\b", chunk, re.I):
-                continue
             chunk = re.sub(r"^Variantes técnicas[^:]+:\s*", "", chunk)
             chunk = re.sub(r"^Example funcional explícito:\s*", "", chunk)
             chunk = re.sub(r"^Códigos HTTP[^:]+:\s*", "", chunk)
             if chunk:
                 parts.append(chunk)
     return "; ".join(dict.fromkeys(parts)) or None
-
-
-_SCREEN = re.compile(
-    r"(pantalla[^\n.;]*|home[^\n.;]*|modal[^\n.;]*|panel[^\n.;]*|men[uú][^\n.;]*|"
-    r"gu[ií]a[^\n.;]*|detalle[^\n.;]*|tv en vivo|listado[^\n.;]*)",
-    re.I,
-)
-_GIVEN_ACTION = re.compile(
-    r"\b(accede|navega|ingresa|selecciona|abre|entra|visualiza|da clic|hace clic|digita|elige)\b",
-    re.I,
-)
-_SYSTEM_WHEN = re.compile(
-    r"\b(el sistema|el backend|el servicio|la aplicaci[oó]n|la informaci[oó]n es procesada|"
-    r"se procesa|se ejecuta el api|el fe solicita)\b",
-    re.I,
-)
-_TABLE_OR_MEASURE = re.compile(r"\d+\s*x\s*\d+\s*px|:.*:.*:", re.I)
-_PRE_TECH = re.compile(r"\b(API|servicio \"|response\.|endpoint|status code)\b", re.I)
-_FEATURE_LEAD = re.compile(r"^\s*Feature\s*:?\s*\d*\s*:?\s*", re.I)
-
-
-def _shown(text: str) -> str:
-    match = _SCREEN.search(text or "")
-    if match:
-        return f"Se muestra {match.group(1).strip()}"
-    return ""
-
-
-_REMOTE_KEY = re.compile(r"^\s*(ACEPTAR|OK|Back|CH\+|CH-)\s*$", re.I)
-
-
-def _is_user_when(text: str) -> bool:
-    raw = (text or "").strip()
-    if not raw:
-        return False
-    if _REMOTE_KEY.match(raw):
-        return True
-    if re.search(r"^\s*(el )?usuario\b", raw, re.I) and _GIVEN_ACTION.search(raw):
-        return True
-    inf = to_infinitive(raw)
-    if is_tester_action(inf):
-        return True
-    return bool(is_user_action(raw) and not _STATE_LEAD.match(inf))
-
-
-def _as_step_action(text: str) -> str:
-    raw = (text or "").strip()
-    if _REMOTE_KEY.match(raw):
-        return f"Seleccionar {raw}"
-    inf = to_infinitive(raw)
-    if _USER_INFINITIVE.match(inf or "") and not _STATE_LEAD.match(inf or ""):
-        return inf
-    quoted = _QUOTED.search(raw)
-    if quoted:
-        return f'Seleccionar "{quoted.group(1)}"'
-    if inf and not _USER_INFINITIVE.match(inf):
-        return f"Seleccionar {inf}"
-    return inf or raw
-
-
-def _clean_pre_clause(clause: str) -> tuple[str, str]:
-    raw = _FEATURE_LEAD.sub("", (clause or "").strip()).strip(" :-")
-    if not raw or re.match(r"^\d+\s*:", raw):
-        return "", ""
-    if _PRE_TECH.search(raw) or _TECH_RESULT.search(raw) or _ENDPOINT.search(raw):
-        return "", raw
-    return raw, ""
-
-
-def _dest(action: str) -> str:
-    return re.sub(
-        r"^\s*(Abrir|Ingresar|Entrar|Seleccionar|Navegar|Hacer clic|Visualizar|"
-        r"Reproducir|Acceder|Agregar)\s+"
-        r"(a |al |en |la |el |a la |a el )?",
-        "",
-        action or "",
-        flags=re.I,
-    ).strip()
-
-
-def _expand_nav(nav: list[str], destination: str, given_state: str, covers: list[str]) -> list[CandidateStep]:
-    unique = list(dict.fromkeys(nav))
-    filled: list[CandidateStep] = []
-    for index, action in enumerate(unique):
-        nxt = unique[index + 1] if index + 1 < len(unique) else destination
-        dest = _dest(action)
-        result = _shown(nxt) or _shown(dest) or given_state or (f"Se muestra {dest}" if dest else "")
-        filled.append(
-            CandidateStep(
-                step_number=index + 1,
-                action=_as_step_action(action),
-                expected_result=result,
-                covered_unit_ids=list(covers),
-            )
-        )
-    return filled
-
-
-def _compact_nav(nav: list[str], destination: str, given_state: str, covers: list[str]) -> list[CandidateStep]:
-    unique = list(dict.fromkeys(nav))
-    if not unique:
-        return []
-    if len(unique) == 1:
-        action = unique[0]
-        dest = _dest(action)
-        nxt_shown = _shown(destination)
-        result = nxt_shown or _shown(dest) or given_state or (f"Se muestra {dest}" if dest else "")
-        return [
-            CandidateStep(
-                step_number=1,
-                action=_as_step_action(action),
-                expected_result=result,
-                covered_unit_ids=list(covers),
-            )
-        ]
-    trail = " > ".join(_dest(action) or action for action in unique)
-    first = unique[0]
-    verb = (_as_step_action(first).split() or ["Navegar"])[0]
-    last = trail.split(">")[-1].strip()
-    result = given_state or _shown(destination) or _shown(trail)
-    if not result and last:
-        result = f"Se muestra {last}"
-    return [
-        CandidateStep(
-            step_number=1,
-            action=f"{verb} {trail}".strip(),
-            expected_result=result,
-            covered_unit_ids=list(covers),
-        )
-    ]
 
 
 def compose_scenario_units(units: list[CoverageUnit]) -> FlowDraft:
@@ -269,7 +134,6 @@ def compose_scenario_units(units: list[CoverageUnit]) -> FlowDraft:
     pre: list[str] = []
     tech: list[str] = []
     nav: list[str] = []
-    given_state = ""
     for unit in units:
         for clause in re.split(r"\s*;\s*", unit.normal_precondition or ""):
             clause = clause.strip()
@@ -278,20 +142,15 @@ def compose_scenario_units(units: list[CoverageUnit]) -> FlowDraft:
             action = _nav_action(clause)
             if action:
                 nav.append(action)
-                continue
-            cleaned, tech_bit = _clean_pre_clause(clause)
-            if tech_bit:
-                tech.append(tech_bit)
-            elif cleaned:
-                pre.append(cleaned)
-                if not given_state:
-                    given_state = _shown(cleaned) or cleaned
+            elif _TECH_RESULT.search(clause) or _ENDPOINT.search(clause):
+                tech.append(clause)
+            else:
+                pre.append(clause)
     pending = None
     steps: list[CandidateStep] = []
     pending_then: list[str] = []
     table_buf: list[str] = []
     covers = [unit.coverage_id for unit in units]
-    system_when = False
 
     def _flush_table() -> str:
         text = _table_as_list(table_buf)
@@ -321,41 +180,29 @@ def compose_scenario_units(units: list[CoverageUnit]) -> FlowDraft:
         for match in _TECH_RESULT.finditer(text):
             tech.append(match.group(0))
         if kind == "given":
-            action = _nav_action(text) if _GIVEN_ACTION.search(text) else ""
+            action = _nav_action(text)
             if action:
                 nav.append(action)
-            else:
-                cleaned, tech_bit = _clean_pre_clause(text)
-                if tech_bit:
-                    tech.append(tech_bit)
-                elif cleaned:
-                    pre.append(cleaned)
-                    if not given_state:
-                        given_state = _shown(cleaned) or cleaned
+            elif not (_TECH_RESULT.search(text) or _ENDPOINT.search(text)):
+                pre.append(text)
             continue
         if kind == "when":
-            if _TABLE_OR_MEASURE.search(text):
-                _attach_then(text)
-                continue
-            if _is_user_when(text):
-                action = _as_step_action(text)
-                if not is_tester_action(action):
-                    action = _as_step_action(_nav_action(text) or action)
-                expected = polish_expected("; ".join(pending_then)) if pending_then else ""
-                pending_then = []
-                steps.append(
-                    CandidateStep(
-                        step_number=len(steps) + 1,
-                        action=action,
-                        expected_result=expected,
-                        covered_unit_ids=list(covers),
-                    )
-                )
-                continue
-            if _SYSTEM_WHEN.search(text) or not is_user_action(text):
+            action = to_infinitive(text)
+            if not is_tester_action(action) and not is_user_action(text):
                 tech.append(text)
-                system_when = True
                 continue
+            if not is_tester_action(action):
+                continue
+            expected = polish_expected("; ".join(pending_then)) if pending_then else ""
+            pending_then = []
+            steps.append(
+                CandidateStep(
+                    step_number=len(steps) + 1,
+                    action=action,
+                    expected_result=expected,
+                    covered_unit_ids=list(covers),
+                )
+            )
             continue
         if kind == "then":
             _attach_then(text)
@@ -363,70 +210,39 @@ def compose_scenario_units(units: list[CoverageUnit]) -> FlowDraft:
         listed = _flush_table()
         if listed:
             _attach_then(listed)
-    scenario_action = steps[0].action if steps else ""
-    filtered_nav = [
-        action for action in nav if all(action.lower() != (step.action or "").lower() for step in steps)
-    ]
-    if not steps and system_when and (filtered_nav or pending_then or nav):
-        source = filtered_nav or nav
-        named = any(_shown(_dest(action)) or _SCREEN.search(action or "") for action in source)
-        nav_steps = (
-            _expand_nav(source, scenario_action or given_state, given_state, covers)
-            if named or len(source) <= 1
-            else _compact_nav(source, scenario_action or given_state, given_state, covers)
+    for action in reversed(list(dict.fromkeys(nav))):
+        if any(action.lower() == (step.action or "").lower() for step in steps):
+            continue
+        steps.insert(
+            0,
+            CandidateStep(step_number=1, action=action, expected_result="", covered_unit_ids=list(covers)),
         )
-        if nav_steps and pending_then:
-            nav_steps[-1].expected_result = polish_expected(
-                "; ".join(part for part in (nav_steps[-1].expected_result, *pending_then) if part)
-            )
-            pending_then = []
-        steps = nav_steps
-    else:
-        steps = _expand_nav(filtered_nav, scenario_action, given_state, covers) + steps
     merged_expected = polish_expected(
         "; ".join(dict.fromkeys(item for unit in units for item in (_unit_expected(unit),) if item))
     )
+    if steps and not steps[-1].expected_result and merged_expected:
+        steps[-1].expected_result = merged_expected
     if pending_then and steps:
         _attach_then("; ".join(pending_then))
-    elif pending_then and not steps:
-        pass
-    if steps and not steps[-1].expected_result:
-        steps[-1].expected_result = merged_expected or given_state
-    if not any(is_tester_action(step.action) or _is_user_when(step.action) for step in steps):
+    if not any(is_tester_action(step.action) for step in steps):
         for unit in units:
-            fallback = _as_step_action(
-                _nav_action(unit.user_action or "") or to_infinitive(unit.user_action or "")
-            )
-            if is_tester_action(fallback) or _is_user_when(unit.user_action or ""):
+            fallback = _nav_action(unit.user_action or "") or to_infinitive(unit.user_action or "")
+            if is_tester_action(fallback):
                 steps.append(
                     CandidateStep(
                         step_number=1,
                         action=fallback,
-                        expected_result=merged_expected or given_state,
+                        expected_result=merged_expected,
                         covered_unit_ids=list(covers),
                     )
                 )
                 break
-    if not steps:
+    if not any(is_tester_action(step.action) for step in steps):
         pending = "sin acción de usuario en Jira"
-    kept: list[CandidateStep] = []
-    for step in steps:
-        if _TABLE_OR_MEASURE.search(step.action or ""):
-            if kept:
-                kept[-1].expected_result = polish_expected(
-                    "; ".join(part for part in (kept[-1].expected_result, step.action) if part)
-                )
-            else:
-                pending_then.append(step.action)
-            continue
-        if not (step.expected_result or "").strip():
-            step.expected_result = given_state or merged_expected
-        step.action = _as_step_action(step.action or "")
-        step.expected_result = polish_expected(step.expected_result)
-        kept.append(step)
-    steps = kept
+        steps = []
     for index, step in enumerate(steps, start=1):
         step.step_number = index
+        step.expected_result = polish_expected(step.expected_result)
     title = strip_title_prefix(primary.scenario)[:120]
     tech_notes = list(
         dict.fromkeys([*tech, *(note for unit in units for note in (unit.technical_notes or []))])
@@ -480,34 +296,18 @@ def feature_context(candidate: GeneratedCaseCandidate) -> str:
 
 
 def contextualize_duplicate_titles(candidates: list[GeneratedCaseCandidate]) -> list[GeneratedCaseCandidate]:
-    def _group() -> dict[str, list[GeneratedCaseCandidate]]:
-        grouped: dict[str, list[GeneratedCaseCandidate]] = {}
-        for candidate in candidates:
-            normalized = re.sub(r"\W+", " ", (candidate.name or "").lower()).strip()
-            grouped.setdefault(normalized, []).append(candidate)
-        return grouped
-
-    def _append(candidate: GeneratedCaseCandidate, extra: str) -> None:
-        extra = re.sub(r"\s+", " ", extra or "").strip()[:48]
-        if extra and extra.lower() not in (candidate.name or "").lower():
-            candidate.name = f"{strip_title_prefix(candidate.name)[:80]} — {extra}".strip()[:120]
-
-    for rows in _group().values():
+    grouped: dict[str, list[GeneratedCaseCandidate]] = {}
+    for candidate in candidates:
+        epic = (candidate.related_functionality or "").split("|")[0].strip()
+        normalized = re.sub(r"\W+", " ", (candidate.name or "").lower()).strip()
+        grouped.setdefault(f"{epic}|{normalized}", []).append(candidate)
+    for rows in grouped.values():
         if len(rows) < 2:
             continue
         for candidate in rows:
-            extra = feature_context(candidate) or (
-                (candidate.precondition or "").split(";")[0].strip()[:48]
-            )
-            if not extra and candidate.steps:
-                extra = (candidate.steps[-1].expected_result or "")[:48]
-            _append(candidate, extra)
-    for rows in _group().values():
-        if len(rows) < 2:
-            continue
-        for candidate in rows:
-            extra = (candidate.related_jira or "").split("|")[0].strip()
-            _append(candidate, extra)
+            extra = feature_context(candidate)
+            if extra and extra.lower() not in (candidate.name or "").lower():
+                candidate.name = f"{strip_title_prefix(candidate.name)[:80]} — {extra}".strip()[:120]
     return candidates
 
 
@@ -553,28 +353,6 @@ def align_llm_to_deterministic(
     return out
 
 
-def finalize_scenario_candidates(candidates: list[GeneratedCaseCandidate]) -> list[GeneratedCaseCandidate]:
-    out: list[GeneratedCaseCandidate] = []
-    for candidate in candidates:
-        for step in candidate.steps:
-            expected = (step.expected_result or "").strip()
-            if re.search(r"se observa el comportamiento definido|comportamiento (definido|esperado)", expected, re.I):
-                expected = ""
-            if not expected:
-                dest = re.sub(
-                    r"^\s*(Abrir|Ingresar|Entrar|Seleccionar|Navegar|Hacer clic|Visualizar)\s+",
-                    "",
-                    step.action or "",
-                    flags=re.I,
-                ).strip()
-                expected = f"Se muestra {dest}" if dest else "Se muestra el estado de partida"
-            step.expected_result = expected
-        if not candidate.steps:
-            continue
-        out.append(candidate)
-    return out
-
-
 def fill_scenario_ledger(
     stats: GenerationStats,
     inventory: list[CoverageUnit],
@@ -594,16 +372,7 @@ def fill_scenario_ledger(
         seen.add(key)
         match = covered.get(unit.coverage_id)
         if match is None:
-            if (unit.user_action or "").strip() or any(
-                str(rule).startswith("pendiente-qc") for rule in (unit.applied_rules or [])
-            ):
-                estado, motivo, case_id = (
-                    "pendiente de revisión QC",
-                    "sin acción de usuario ejecutable",
-                    "",
-                )
-            else:
-                estado, motivo, case_id = "excluido", "sin caso generado", ""
+            estado, motivo, case_id = "excluido", "sin caso generado", ""
         elif (match.applicability or "") == "na_ambiente":
             estado, motivo, case_id = (
                 "na_ambiente",

@@ -23,8 +23,7 @@ _GENERIC_EXPECTED = re.compile(
     r"se muestra un mensaje$|"
     r"la operaci[oó]n contin[uú]a correctamente|"
     r"el flujo funciona correctamente|"
-    r"se observa el (resultado|comportamiento) (declarado|esperado|definido)|"
-    r"se observa el comportamiento definido para cuando|"
+    r"se observa el (resultado|comportamiento) (declarado|esperado)(?! para)|"
     r"observa el resultado en la interfaz|"
     r"sin condiciones no evidenciadas",
     re.IGNORECASE,
@@ -161,10 +160,11 @@ def bound_user_action(_name: str = "", original: str | None = None) -> str:
 
 def bound_expected(name: str, current: str | None = None) -> str:
     if current and current.strip() and not is_generic_expected(current):
-        if re.search(r"se observa el comportamiento definido", current, re.I):
-            return ""
         return current.strip()
-    return ""
+    clause = condition_clause(name)
+    if clause:
+        return f"Se observa el comportamiento definido para cuando {clause}."
+    return (current or "").strip()
 
 
 def parse_scenario_clauses(body: str) -> dict[str, list[str]]:
