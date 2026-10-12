@@ -49,6 +49,7 @@ class CoverageUnit(BaseModel):
     batch_id: str | None = None
     scenario_group: str | None = None
     story_summary: str | None = None
+    feature_background: str | None = None
     applicability: Literal["ejecutable", "na_ambiente"] | None = None
     applicability_reason: str | None = None
     applied_rules: list[str] = Field(default_factory=list)

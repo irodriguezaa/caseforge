@@ -167,3 +167,104 @@ Scenario Outline: Elegir plan
     table = cases[0].variant_table or ""
     assert "Condición" in table
     assert "A" in table or "plan" in (cases[0].test_data or "").lower()
+
+
+def test_f2_validator_requires_ui_literals_not_endpoints() -> None:
+    from app.schemas.case_generation import CandidateStep, GeneratedCaseCandidate
+    from app.services.scenario_llm import required_ui_literals, validate_llm_case
+
+    gherkin = """
+Scenario: Guardar ficha
+  When el usuario selecciona "Guardar"
+  Then se muestra "Ficha guardada"
+  And el servicio responde en "/catalog/v1/cards"
+  And se envía el flag "saveCard =true"
+"""
+    literals = required_ui_literals(gherkin)
+    assert "Guardar" in literals
+    assert "Ficha guardada" in literals
+    assert not any("/catalog" in item for item in literals)
+    assert not any("=" in item for item in literals)
+    tech_gherkin = gherkin + '\n  And el servicio responde "200"\n  And el header "Authorization" es válido\n'
+    tech_lits = required_ui_literals(tech_gherkin)
+    assert "200" not in tech_lits
+    assert "Authorization" not in tech_lits
+
+    valid = GeneratedCaseCandidate(
+        name="Guardar ficha",
+        description="",
+        evidence=gherkin,
+        justification="test",
+        steps=[
+            CandidateStep(
+                step_number=1,
+                action='Seleccionar "Guardar"',
+                expected_result='Se muestra "Ficha guardada".',
+            )
+        ],
+    )
+    assert validate_llm_case(valid, gherkin, []) == []
+
+    missing = GeneratedCaseCandidate(
+        name="Guardar ficha",
+        description="",
+        evidence=gherkin,
+        justification="test",
+        steps=[
+            CandidateStep(
+                step_number=1,
+                action="Seleccionar confirmar",
+                expected_result="Se muestra el comprobante.",
+            )
+        ],
+    )
+    reasons = validate_llm_case(missing, gherkin, [])
+    assert any("Guardar" in reason or "Ficha guardada" in reason for reason in reasons)
+
+    with_api = GeneratedCaseCandidate(
+        name="Guardar ficha",
+        description="",
+        evidence=gherkin,
+        justification="test",
+        steps=[
+            CandidateStep(
+                step_number=1,
+                action='Seleccionar "Guardar"',
+                expected_result='Se muestra "Ficha guardada" y POST "/catalog/v1/cards".',
+            )
+        ],
+    )
+    assert any("endpoint" in reason for reason in validate_llm_case(with_api, gherkin, []))
+
+
+def test_f1_pending_and_tech_with_user_when_are_llm_eligible() -> None:
+    from app.services.gherkin_coverage import build_coverage_inventory
+    from app.services.scenario_llm import _llm_eligible
+
+    pending = """
+Scenario: Flag interno
+  When el backend marca el flag
+  Then el servicio queda en estado interno
+"""
+    tech_user = """
+Scenario: Registrar métrica al confirmar
+  When el usuario selecciona Confirmar
+  Then se envía un evento de checkout
+"""
+    stats = GenerationStats()
+    units = build_coverage_inventory(
+        _artifacts(
+            ("EPC-1", "ST-1", "Feature pago", pending),
+            ("EPC-1", "ST-2", "Feature checkout", tech_user),
+        ),
+        "rn.pdf",
+        stats=stats,
+    )
+    gherkin_units = [unit for unit in units if (unit.source_origin or "gherkin") == "gherkin"]
+    assert gherkin_units
+    assert any(_llm_eligible(unit) for unit in gherkin_units)
+    pending_units = [
+        unit for unit in gherkin_units if any(str(rule).startswith("pendiente-qc") for rule in (unit.applied_rules or []))
+    ]
+    assert pending_units
+    assert all(_llm_eligible(unit) for unit in pending_units)

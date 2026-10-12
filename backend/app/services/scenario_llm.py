@@ -1,4 +1,4 @@
-"""Per-scenario LLM rewrite on top of deterministic FASE 7 structure."""
+"""Per-scenario LLM rewrite from Gherkin (FASE 8 FIX)."""
 
 from __future__ import annotations
 
@@ -14,6 +14,8 @@ import httpx
 from app.config import settings
 from app.schemas.case_generation import CandidateStep, CoverageUnit, GeneratedCaseCandidate
 from app.services.case_composer import _QUOTED
+from app.services.coverage_quality import normalize_precondition
+from app.services.scenario_cases import TECH_VERIFY_MARK, _walk_gwt, scenario_group_key
 
 logger = logging.getLogger(__name__)
 
@@ -21,18 +23,205 @@ _GENERIC = re.compile(
     r"se observa el comportamiento|comportamiento (definido|esperado)|se verifica que\s*$",
     re.I,
 )
-_INFINITIVE = re.compile(r"^\s*(el usuario\s+)?[a-záéíóúñ]+(ar|er|ir)\b", re.I)
+_INFINITIVE = re.compile(
+    r"^\s*(el usuario\s+)?(([a-záéíóúñ]+(ar|er|ir))|ir)\b",
+    re.I,
+)
 _API = re.compile(r'"/[a-z]|/v\d/|status code|"\d{3}"|[A-Z][a-z]+_[A-Z][A-Za-z]+_', re.I)
+_CAMEL = re.compile(r"[a-z]+[A-Z]")
+_MARKERS = re.compile(r"[@<>]")
+_FILLER_ACTION = re.compile(
+    r"^\s*(el usuario\s+)?(observar|confirmar|verificar|validar|revisar|comprobar)\b",
+    re.I,
+)
+_TECH_CLAUSE = re.compile(
+    r"\b(status code|http|api|endpoint|header|json|response|request|payload|"
+    r"GET|POST|PUT|PATCH|DELETE|authorization|content-type|flag|llave)\b|"
+    r"/[a-z]",
+    re.I,
+)
+_UX_CLAUSE = re.compile(
+    r"\b(muestra|mostrar|bot[oó]n|pantalla|mensaje|tooltip|opci[oó]n|modal|men[uú]|"
+    r"seleccion|presion|clic|ingresa|t[ií]tulo|texto visible)\b",
+    re.I,
+)
+_JSON_LIT = {"true", "false", "null"}
+_HEADER_NAME = re.compile(r"^[A-Z][A-Za-z]+(?:-[A-Z][A-Za-z]+)+$|^(Authorization|Accept)$")
 
-_REWRITE_SYSTEM = """Eres analista QC. Recibes un escenario de Jira ya estructurado.
-Redacta UN caso ejecutable. No decidas cobertura: no elimines el escenario.
-Pasos en infinitivo. Navegación del Background: "Ingresar a A > B" si varios pasos no tienen resultado propio.
-Cada paso tiene resultado observable y específico. Prohibido "Se observa el comportamiento…", "Se verifica que…" de relleno.
-Textos de UI entre comillas: cópialos literalmente.
-Sin APIs, endpoints, status ni nombres de llave en pasos o resultados (van en technical_reference).
-Datos de prueba solo de ESTE escenario. No inventes pantallas ni botones que no estén en el Gherkin o su Feature.
-Responde JSON: {"name": "...", "precondition": "...", "test_data": "...", "steps": [{"action": "...", "expected_result": "..."}]}
+_REWRITE_SYSTEM = """Eres analista QC. Redactas UN caso ejecutable a partir del Gherkin de UN escenario.
+No decidas cobertura: no elimines el escenario. No copies el borrador determinista; es solo referencia opcional.
+
+Plantilla del caso:
+- Navegación: si el Background o los Given de la Feature tienen varios pasos de pantalla sin resultado propio, unifícalos en un paso "Ingresar a A > B > C".
+- Acción: infinitivo (Seleccionar, Ingresar, Presionar, Completar). Una acción de usuario por paso.
+- Resultado: observable en pantalla. Prohibido "Se observa el comportamiento…", "Se verifica que…" de relleno.
+- Precondición: solo estados (sesión, perfil, contenido ya presente). Sin "Feature", sin API, sin endpoints.
+- Referencia técnica: APIs, eventos, status, nombres de llave. Nunca en el resultado del paso.
+- Datos de prueba: solo de ESTE escenario.
+
+Textos de UI entre comillas: copia el literal exacto del Gherkin en la acción o en el resultado.
+Si ui_phrases trae textos de más de una palabra, inclúyelos en algún paso (acción o resultado).
+Sin APIs, endpoints, status ni nombres de llave en pasos o resultados.
+No agregues pasos Observar/Confirmar/Verificar que repiten el resultado anterior.
+No uses el título del escenario como resultado. Distingue casos con el mismo nombre añadiendo la condición en el título.
+El resultado no debe copiar el título.
+
+Si el Then es técnico (evento, servicio, API) y el When es del usuario, redacta regresión funcional: la acción del usuario y lo visible; el evento o servicio va en technical_reference con "verificación técnica: requiere herramienta (logs/monitoreo)".
+Si el escenario enumera condiciones (Examples, lista de variantes), devuelve variants: [{condition, expected}].
+
+Ejemplo 1 — navegación (dominio inventado: biblioteca municipal):
+{"name": "Ver ficha del título reservado", "precondition": "El socio tiene una reserva activa.", "test_data": "", "technical_reference": "", "variants": [], "steps": [
+  {"action": "Ingresar a Inicio > Catálogo > Reservas", "expected_result": "Se muestra la lista de reservas del socio."},
+  {"action": "Seleccionar el título reservado", "expected_result": "Se muestra la ficha del título con el estado \\"Reservado\\"."}
+]}
+
+Ejemplo 2 — rama negativa recuperable:
+{"name": "Registrar préstamo con carnet inválido y válido", "precondition": "El socio está en el mostrador de préstamos.", "test_data": "carnet inválido: 0000; carnet válido: 4821", "technical_reference": "", "variants": [
+  {"condition": "carnet inválido", "expected": "Se muestra \\"Carnet no vigente\\"."},
+  {"condition": "carnet válido", "expected": "Se muestra \\"Préstamo registrado\\"."}
+], "steps": [
+  {"action": "Completar el campo \\"Número de carnet\\" con un valor inválido", "expected_result": "Se muestra el mensaje \\"Carnet no vigente\\"."},
+  {"action": "Completar el campo \\"Número de carnet\\" con un valor válido y seleccionar \\"Confirmar\\"", "expected_result": "Se muestra \\"Préstamo registrado\\"."}
+]}
+
+Ejemplo 3 — regresión funcional desde Then técnico:
+{"name": "Devolver un título desde el mostrador", "precondition": "El socio tiene un préstamo abierto.", "test_data": "", "technical_reference": "evento loan.returned; verificación técnica: requiere herramienta (logs/monitoreo)", "variants": [], "steps": [
+  {"action": "Seleccionar \\"Devolver\\" en el préstamo abierto", "expected_result": "Se muestra \\"Devolución registrada\\" y el título deja de aparecer en préstamos abiertos."}
+]}
+
+Responde JSON:
+{"name": "...", "precondition": "...", "test_data": "...", "technical_reference": "...", "variants": [{"condition": "...", "expected": "..."}], "steps": [{"action": "...", "expected_result": "..."}]}
 """
+
+
+def _is_ui_literal(text: str, clause: str = "", kind: str = "") -> bool:
+    raw = (text or "").strip()
+    if len(raw) <= 1:
+        return False
+    if "/" in raw or "=" in raw:
+        return False
+    if _MARKERS.search(raw) or "_" in raw or "." in raw:
+        return False
+    if _CAMEL.search(raw):
+        return False
+    if re.fullmatch(r"\d+", raw):
+        return False
+    if raw.lower() in _JSON_LIT:
+        return False
+    if raw.islower() and " " not in raw and re.fullmatch(r"[a-z]+", raw):
+        return False
+    if _HEADER_NAME.match(raw):
+        return False
+    if clause and _TECH_CLAUSE.search(clause) and not _UX_CLAUSE.search(clause):
+        return False
+    if kind == "then" and _TECH_CLAUSE.search(clause or "") and not _UX_CLAUSE.search(clause or ""):
+        return False
+    return True
+
+
+def required_ui_literals(gherkin: str) -> list[str]:
+    """Quoted UI text from When/Then of this scenario only."""
+    found: list[str] = []
+    for kind, clause in _walk_gwt(gherkin or ""):
+        if kind not in {"given", "when", "then"}:
+            continue
+        for quote in _QUOTED.findall(clause):
+            if _is_ui_literal(quote, clause, kind):
+                found.append(quote.strip())
+    return list(dict.fromkeys(found))
+
+
+def validate_llm_case(
+    llm: GeneratedCaseCandidate,
+    gherkin: str,
+    sibling_data: list[str],
+    own_data: str = "",
+) -> list[str]:
+    reasons: list[str] = []
+    if not llm.steps:
+        return ["el caso no tiene pasos"]
+    step_blob = " ".join(f"{step.action} {step.expected_result}" for step in llm.steps)
+    for index, step in enumerate(llm.steps, start=1):
+        if not _INFINITIVE.match(step.action or ""):
+            reasons.append(f"el paso {index} no empieza con verbo en infinitivo")
+        if _GENERIC.search(step.expected_result or ""):
+            reasons.append(f"el resultado del paso {index} es genérico")
+        if _API.search(step.expected_result or ""):
+            reasons.append(f"el resultado del paso {index} contiene un endpoint")
+        if index > 1 and _FILLER_ACTION.match(step.action or ""):
+            prev = _norm_text(llm.steps[index - 2].expected_result or "")
+            current = _norm_text(step.expected_result or "")
+            overlap = len(set(current.split()) - set(prev.split())) <= 2 if prev and current else False
+            if prev and current and (current in prev or prev in current or overlap):
+                reasons.append(f"el paso {index} es de relleno")
+        if re.sub(r"\W+", " ", (step.expected_result or "").lower()).strip() == re.sub(
+            r"\W+", " ", (llm.name or "").lower()
+        ).strip():
+            reasons.append(f"el resultado del paso {index} copia el título")
+    for quote in required_ui_literals(gherkin):
+        if quote.lower() not in step_blob.lower():
+            reasons.append(f'falta el texto literal "{quote}" en algún paso')
+    own = (own_data or "").lower()
+    llm_data = (llm.test_data or "").lower()
+    for other in sibling_data:
+        token = (other or "").strip().lower()
+        if len(token) < 4 or token in own:
+            continue
+        if token in llm_data:
+            reasons.append("datos de prueba de otro escenario")
+            break
+    return reasons
+
+
+def _norm_text(text: str) -> str:
+    return re.sub(r"\W+", " ", (text or "").lower()).strip()
+
+
+def strip_filler_steps(candidate: GeneratedCaseCandidate) -> None:
+    kept: list[CandidateStep] = []
+    for step in candidate.steps:
+        if kept and _FILLER_ACTION.match(step.action or ""):
+            continue
+        if _norm_text(step.expected_result or "") == _norm_text(candidate.name or "") and step.action:
+            step.expected_result = f"Se muestra el resultado de: {step.action}".rstrip(".") + "."
+        kept.append(step)
+    for index, step in enumerate(kept, start=1):
+        step.step_number = index
+    candidate.steps = kept
+    cleaned = re.sub(r"\bFeature\b[^;]*", "", candidate.precondition or "", flags=re.I)
+    cleaned = "; ".join(
+        part.strip()
+        for part in cleaned.split(";")
+        if part.strip() and not re.search(r"\b(API|servicio|endpoint|response\.)\b", part, re.I)
+    )
+    candidate.precondition = normalize_precondition(cleaned)
+
+
+def _inject_ui_phrases(candidate: GeneratedCaseCandidate, source: str) -> None:
+    if not candidate.steps:
+        return
+    blob = " ".join(
+        [candidate.name or ""] + [f"{step.action} {step.expected_result}" for step in candidate.steps]
+    ).lower()
+    extra: list[str] = []
+    for quote in _QUOTED.findall(source or ""):
+        if not _is_ui_literal(quote):
+            continue
+        if quote.lower() in blob:
+            continue
+        extra.append(quote.strip())
+        blob += " " + quote.lower()
+    if extra:
+        last = candidate.steps[-1]
+        last.expected_result = (last.expected_result or "").rstrip(".") + ". " + " ".join(
+            f'Se muestra "{item}".' for item in extra[:6]
+        )
+
+
+def polish_llm_candidates(candidates: list[GeneratedCaseCandidate]) -> list[GeneratedCaseCandidate]:
+    for candidate in candidates:
+        strip_filler_steps(candidate)
+    return candidates
 
 
 def llm_case_is_valid(
@@ -41,35 +230,22 @@ def llm_case_is_valid(
     gherkin: str,
     sibling_data: list[str],
 ) -> bool:
-    if not llm.steps:
-        return False
-    for step in llm.steps:
-        if not _INFINITIVE.match(step.action or ""):
-            return False
-        if _GENERIC.search(step.expected_result or ""):
-            return False
-        if _API.search(step.expected_result or ""):
-            return False
-    blob = " ".join(
-        [llm.name or "", llm.precondition or "", llm.test_data or ""]
-        + [f"{step.action} {step.expected_result}" for step in llm.steps]
-    )
-    source_blob = " ".join(
-        [base.name or ""] + [f"{step.action} {step.expected_result}" for step in base.steps]
-    )
-    quotes = _QUOTED.findall(source_blob) or _QUOTED.findall((gherkin or "")[:800])
-    for quote in quotes:
-        if quote.lower() not in blob.lower():
-            return False
-    own = (base.test_data or "").lower()
-    llm_data = (llm.test_data or "").lower()
-    for other in sibling_data:
-        token = (other or "").strip().lower()
-        if len(token) < 4 or token in own:
-            continue
-        if token in llm_data:
-            return False
-    return True
+    return not validate_llm_case(llm, gherkin, sibling_data, base.test_data or "")
+
+
+def _format_variants(raw: Any, fallback: str | None) -> str | None:
+    if isinstance(raw, list) and raw:
+        lines = ["Condición | Resultado esperado"]
+        for row in raw:
+            if not isinstance(row, dict):
+                continue
+            condition = str(row.get("condition") or "").strip()
+            expected = str(row.get("expected") or "").strip()
+            if condition or expected:
+                lines.append(f"{condition} | {expected}")
+        if len(lines) > 1:
+            return "\n".join(lines)
+    return fallback
 
 
 def _parse_rewrite(raw: str, base: GeneratedCaseCandidate) -> GeneratedCaseCandidate | None:
@@ -95,30 +271,44 @@ def _parse_rewrite(raw: str, base: GeneratedCaseCandidate) -> GeneratedCaseCandi
         )
     copy = base.model_copy(deep=True)
     copy.name = str(payload.get("name") or base.name)[:120]
-    copy.precondition = str(payload.get("precondition") or base.precondition or "") or None
-    copy.test_data = str(payload.get("test_data") or base.test_data or "") or None
+    precondition = str(payload.get("precondition") or "").strip()
+    precondition = re.sub(r"\bFeature\b[^;]*", "", precondition, flags=re.I)
+    precondition = re.sub(r"https?://\S+|/[a-z][a-z0-9_\-/]+", "", precondition, flags=re.I)
+    precondition = re.sub(r"\s*;\s*;", ";", precondition).strip(" ;")
+    copy.precondition = precondition or None
+    copy.test_data = str(payload.get("test_data") or "").strip() or None
     copy.steps = steps
     copy.generation_origin = "llm"
     copy.covers = list(base.covers or [])
     copy.covered_unit_ids = list(base.covers or [])
-    copy.technical_reference = base.technical_reference
-    copy.variant_table = base.variant_table
+    tech = str(payload.get("technical_reference") or "").strip() or base.technical_reference
+    copy.technical_reference = tech
+    copy.variant_table = _format_variants(payload.get("variants"), base.variant_table)
     copy.applicability = base.applicability
     copy.related_functionality = base.related_functionality
     copy.related_jira = base.related_jira
     return copy
 
 
-def _call_llm(user_payload: dict[str, Any], timeout: float) -> str:
+def _call_llm(user_payload: dict[str, Any], timeout: float, feedback: str | None = None) -> str:
     url = settings.openai_base_url.rstrip("/") + "/chat/completions"
+    user_content = json.dumps(user_payload, ensure_ascii=False)
+    messages = [
+        {"role": "system", "content": _REWRITE_SYSTEM},
+        {"role": "user", "content": user_content},
+    ]
+    if feedback:
+        messages.append(
+            {
+                "role": "user",
+                "content": "El caso anterior fue rechazado. Corrige exactamente esto: " + feedback,
+            }
+        )
     body = {
         "model": settings.openai_model,
         "temperature": 0.1,
         "response_format": {"type": "json_object"},
-        "messages": [
-            {"role": "system", "content": _REWRITE_SYSTEM},
-            {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False)},
-        ],
+        "messages": messages,
     }
     with httpx.Client(timeout=timeout) as client:
         response = client.post(
@@ -134,6 +324,73 @@ def _call_llm(user_payload: dict[str, Any], timeout: float) -> str:
     return response.json()["choices"][0]["message"]["content"]
 
 
+def _llm_eligible(unit: CoverageUnit) -> bool:
+    if (unit.source_origin or "gherkin") != "gherkin":
+        return False
+    if (unit.applicability or "") == "na_ambiente":
+        return False
+    rules = unit.applied_rules or []
+    if "verificacion-tecnica" in rules and not (unit.user_action or "").strip():
+        return False
+    return True
+
+
+def _stub_from_unit(unit: CoverageUnit) -> GeneratedCaseCandidate:
+    tech = "; ".join(part for part in (*(unit.technical_notes or []),) if part) or None
+    if "verificacion-tecnica" in (unit.applied_rules or []) or "regresion-funcional" in (
+        unit.applied_rules or []
+    ):
+        if tech and TECH_VERIFY_MARK not in tech:
+            tech = f"{tech}; {TECH_VERIFY_MARK}"
+        elif not tech:
+            tech = TECH_VERIFY_MARK
+    return GeneratedCaseCandidate(
+        name=(unit.scenario or unit.behavior or "Escenario")[:120],
+        description=unit.behavior or unit.scenario or "",
+        precondition=None,
+        steps=[],
+        test_data=unit.extra_test_data,
+        related_functionality=unit.artifact_key or None,
+        related_jira=unit.story_key or unit.jira_key,
+        related_rn=unit.rn_filename,
+        evidence=unit.evidence or unit.scenario or "",
+        justification="Redacción LLM desde Gherkin del escenario.",
+        review_required=True,
+        covers=[unit.coverage_id],
+        covered_unit_ids=[unit.coverage_id],
+        technical_reference=tech,
+        applied_rules=list(unit.applied_rules or []),
+        generation_origin="scenario-case",
+        use_case_title=unit.story_summary,
+        applicability=unit.applicability or "ejecutable",
+        applicability_reason=unit.applicability_reason,
+    )
+
+
+def _mark_pending(candidate: GeneratedCaseCandidate, reason: str) -> GeneratedCaseCandidate:
+    copy = candidate.model_copy(deep=True)
+    copy.review_required = True
+    copy.applicability_reason = reason
+    copy.applied_rules = list(
+        dict.fromkeys([*(copy.applied_rules or []), f"pendiente-qc:{reason[:80]}"])
+    )
+    return copy
+
+
+def _mark_accepted(candidate: GeneratedCaseCandidate) -> GeneratedCaseCandidate:
+    copy = candidate.model_copy(deep=True)
+    copy.generation_origin = "llm"
+    copy.review_required = True
+    copy.applicability = "ejecutable"
+    copy.applicability_reason = None
+    copy.applied_rules = [
+        rule
+        for rule in (copy.applied_rules or [])
+        if not str(rule).startswith("pendiente-qc")
+    ]
+    return copy
+
+
 def _rewrite_one(
     base: GeneratedCaseCandidate,
     unit: CoverageUnit | None,
@@ -145,78 +402,142 @@ def _rewrite_one(
     gherkin = (unit.body if unit else "") or (base.evidence or "")
     payload = {
         "story_title": story_summary,
-        "background": background,
+        "feature_background": background,
         "gherkin": gherkin[:4000],
         "tables": unit.extra_test_data if unit else base.test_data,
-        "template": {
+        "optional_draft": None,
+        "required_ui_literals": required_ui_literals(gherkin),
+        "ui_phrases": [
+            quote.strip()
+            for quote in _QUOTED.findall(f"{background}\n{gherkin}")
+            if " " in (quote or "").strip() and _is_ui_literal(quote)
+        ],
+    }
+    if base.steps:
+        payload["optional_draft"] = {
             "name": base.name,
             "precondition": base.precondition,
             "steps": [{"action": step.action, "expected_result": step.expected_result} for step in base.steps],
             "test_data": base.test_data,
             "technical_reference": base.technical_reference,
-        },
+            "variants": base.variant_table,
+        }
+    meta: dict[str, Any] = {
+        "covers": list(base.covers or []),
+        "scenario": (unit.scenario if unit else base.name) or "",
+        "attempts": 0,
+        "ok": False,
+        "error": None,
+        "ms": 0,
+        "rejections": [],
     }
-    meta = {"covers": list(base.covers or []), "attempts": 0, "ok": False, "error": None, "ms": 0}
     started = time.perf_counter()
     last_error = None
+    feedback = None
     for attempt in range(3):
         meta["attempts"] = attempt + 1
         try:
-            raw = _call_llm(payload, timeout)
+            raw = _call_llm(payload, timeout, feedback)
             llm = _parse_rewrite(raw, base)
-            if llm and llm_case_is_valid(base, llm, gherkin, sibling_data):
+            if llm is None:
+                reasons = ["la respuesta no es un JSON de caso"]
+            else:
+                reasons = validate_llm_case(llm, gherkin, sibling_data, base.test_data or "")
+            if llm and not reasons:
+                accepted = _mark_accepted(llm)
+                _inject_ui_phrases(accepted, f"{background}\n{gherkin}\n{unit.extra_test_data if unit else ''}")
                 meta["ok"] = True
                 meta["ms"] = int((time.perf_counter() - started) * 1000)
-                return llm, meta
-            last_error = "validator"
+                return accepted, meta
+            meta["rejections"].append({"attempt": attempt + 1, "reasons": reasons})
+            last_error = "; ".join(reasons) or "validator"
+            feedback = last_error
         except Exception as exc:
             last_error = str(exc)[:200]
+            meta["rejections"].append({"attempt": attempt + 1, "reasons": [last_error]})
+            feedback = last_error
             logger.warning("scenario LLM rewrite failed attempt=%s error=%s", attempt + 1, last_error)
-    fallback = base.model_copy(deep=True)
-    fallback.review_required = True
-    if not fallback.steps:
-        fallback.applied_rules = list(dict.fromkeys([*(fallback.applied_rules or []), "pendiente-qc:llm"]))
-        fallback.applicability_reason = fallback.applicability_reason or "LLM no redactó un caso válido"
     meta["error"] = last_error
     meta["ms"] = int((time.perf_counter() - started) * 1000)
-    return fallback, meta
+    if base.steps:
+        return base.model_copy(deep=True), meta
+    return _mark_pending(base, last_error or "LLM no redactó un caso válido"), meta
 
 
 def rewrite_scenario_candidates(
     candidates: list[GeneratedCaseCandidate],
     inventory: list[CoverageUnit],
 ) -> tuple[list[GeneratedCaseCandidate], list[dict[str, Any]]]:
-    if not (settings.openai_api_key or "").strip() or not candidates:
+    if not (settings.openai_api_key or "").strip() or not inventory:
         return candidates, []
-    by_id = {unit.coverage_id: unit for unit in inventory}
+    by_cover: dict[str, GeneratedCaseCandidate] = {}
+    for candidate in candidates:
+        for cid in candidate.covers or candidate.covered_unit_ids or []:
+            by_cover[cid] = candidate
     by_story: dict[str, list[str]] = {}
     for unit in inventory:
         key = unit.story_key or ""
         if unit.extra_test_data:
             by_story.setdefault(key, []).append(unit.extra_test_data)
+    jobs: list[tuple[CoverageUnit, GeneratedCaseCandidate]] = []
+    seen: set[str] = set()
+    for unit in inventory:
+        if not _llm_eligible(unit):
+            continue
+        group = scenario_group_key(unit)
+        if group in seen:
+            continue
+        seen.add(group)
+        base = by_cover.get(unit.coverage_id) or _stub_from_unit(unit)
+        jobs.append((unit, base))
+    if not jobs:
+        return candidates, []
     concurrency = max(1, int(getattr(settings, "llm_scenario_concurrency", 8) or 8))
     timeout = float(getattr(settings, "llm_scenario_timeout", 45) or 45)
     rows: list[dict[str, Any]] = []
-    out: list[GeneratedCaseCandidate | None] = [None] * len(candidates)
+    rewritten_by_cover: dict[str, GeneratedCaseCandidate] = {}
 
-    def work(index: int, candidate: GeneratedCaseCandidate) -> tuple[int, GeneratedCaseCandidate, dict[str, Any]]:
-        unit = by_id.get((candidate.covers or [None])[0] or "")
-        story = (unit.story_key if unit else "") or (candidate.related_jira or "")
-        siblings = [item for item in by_story.get(story, []) if item != (unit.extra_test_data if unit else "")]
+    def work(unit: CoverageUnit, candidate: GeneratedCaseCandidate) -> tuple[CoverageUnit, GeneratedCaseCandidate, dict[str, Any]]:
+        story = unit.story_key or ""
+        siblings = [item for item in by_story.get(story, []) if item != (unit.extra_test_data or "")]
+        background = (unit.feature_background or "").strip()
         rewritten, meta = _rewrite_one(
             candidate,
             unit,
-            (unit.story_summary if unit else "") or (candidate.use_case_title or ""),
-            (unit.normal_precondition if unit else "") or (candidate.precondition or ""),
+            (unit.story_summary or "") or (candidate.use_case_title or ""),
+            background,
             siblings,
             timeout,
         )
-        return index, rewritten, meta
+        return unit, rewritten, meta
 
     with ThreadPoolExecutor(max_workers=concurrency) as pool:
-        futures = [pool.submit(work, index, candidate) for index, candidate in enumerate(candidates)]
+        futures = [pool.submit(work, unit, candidate) for unit, candidate in jobs]
         for future in as_completed(futures):
-            index, rewritten, meta = future.result()
-            out[index] = rewritten
+            unit, rewritten, meta = future.result()
+            rewritten_by_cover[unit.coverage_id] = rewritten
+            for cid in rewritten.covers or [unit.coverage_id]:
+                rewritten_by_cover[cid] = rewritten
             rows.append(meta)
-    return [item for item in out if item is not None], rows
+
+    out: list[GeneratedCaseCandidate] = []
+    used: set[int] = set()
+    for candidate in candidates:
+        replacement = None
+        for cid in candidate.covers or candidate.covered_unit_ids or []:
+            if cid in rewritten_by_cover:
+                replacement = rewritten_by_cover[cid]
+                break
+        if replacement is not None:
+            marker = id(replacement)
+            if marker not in used:
+                out.append(replacement)
+                used.add(marker)
+        else:
+            out.append(candidate)
+    for unit, _base in jobs:
+        replacement = rewritten_by_cover.get(unit.coverage_id)
+        if replacement is not None and id(replacement) not in used:
+            out.append(replacement)
+            used.add(id(replacement))
+    return out, rows

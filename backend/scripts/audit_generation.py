@@ -54,6 +54,14 @@ def jira_literals(arts):
                     continue
                 if re.search(r"[/_{}\[\]]", m):
                     continue
+                if re.match(r"id-\d+$", m, re.I):
+                    continue
+                if "." in m and " " not in m:
+                    continue
+                if re.fullmatch(r"<[^>]+>", m):
+                    continue
+                if " " not in m and len(m) >= 40:
+                    continue
                 lits.add(m)
     return lits
 
@@ -143,6 +151,11 @@ def metrics(r, types, arts=None):
     for line in details:
         if "LLM" in line:
             print(line)
+    batches = list((getattr(r, "generation_stats", None) and r.generation_stats.llm_batches) or [])
+    if batches:
+        sent = len(batches)
+        ok = sum(1 for row in batches if row.get("ok"))
+        print(f"LLM enviados={sent} aceptados={ok} tasa={ok * 100 // max(sent, 1)}%")
     return m, missing
 
 

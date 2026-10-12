@@ -454,12 +454,21 @@ def fill_scenario_ledger(
         seen.add(key)
         match = covered.get(unit.coverage_id)
         rules = list(unit.applied_rules or []) + list((match.applied_rules if match else []) or [])
+        case_pending = bool(
+            match
+            and (
+                not match.steps
+                or any(str(rule).startswith("pendiente-qc") for rule in (match.applied_rules or []))
+            )
+        )
         if (unit.applicability or "") == "na_ambiente" or (match and (match.applicability or "") == "na_ambiente"):
             estado, motivo, case_id = (
                 "na_ambiente",
                 (match.applicability_reason if match else None) or unit.applicability_reason or "na_ambiente",
                 match.name if match else "",
             )
+        elif match and match.steps and not case_pending:
+            estado, motivo, case_id = "caso ejecutable", "", match.name
         elif any(str(rule) == "verificacion-tecnica" for rule in rules) and (
             match is None or not match.steps
         ):
@@ -468,16 +477,14 @@ def fill_scenario_ledger(
                 "Then técnico sin comportamiento visible en la historia",
                 match.name if match else "",
             )
-        elif match is None or any(str(rule).startswith("pendiente-qc") for rule in rules) or (
-            match and not match.steps
-        ):
+        elif match is None or case_pending:
             estado, motivo, case_id = (
                 "pendiente de revisión QC",
                 (match.applicability_reason if match else None) or "sin acción de usuario en Jira",
                 match.name if match else "",
             )
         else:
-            estado, motivo, case_id = "caso ejecutable", "", match.name
+            estado, motivo, case_id = "caso ejecutable", "", match.name if match else ""
         stats.scenario_ledger.append(
             {
                 "story": unit.story_key or "",

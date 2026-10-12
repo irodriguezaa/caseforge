@@ -155,6 +155,17 @@ def _story_context_precondition(story: dict[str, Any]) -> str | None:
     return normalize_precondition("; ".join(parts))
 
 
+def _feature_preamble(story: dict[str, Any]) -> str:
+    """Background and Given clauses before the first Scenario of the story."""
+    blob = gherkin_source_text(
+        f"{story.get('description') or ''}\n{story.get('acceptance_criteria') or ''}"
+    ) or f"{story.get('description') or ''}\n{story.get('acceptance_criteria') or ''}"
+    match = _SCENARIO_SPLIT.search(blob)
+    before = blob[: match.start()] if match else blob
+    before = re.sub(r"^\s*Feature\s*:.*$", "", before, flags=re.IGNORECASE | re.MULTILINE)
+    return before.strip()
+
+
 def _pick_translated_observable(blob: str, pool: list[str]) -> str | None:
     tokens = set(re.findall(r"[A-Za-záéíóúñÁÉÍÓÚ]{4,}", (blob or "").lower()))
     best = None
@@ -1463,6 +1474,10 @@ def _units_from_story_blocks(
                     examples=block.get("examples") or examples,
                 )
             )
+    preamble = _feature_preamble(story)
+    if preamble:
+        for unit in units:
+            unit.feature_background = preamble
     return units
 
 
