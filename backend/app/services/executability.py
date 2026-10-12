@@ -45,6 +45,9 @@ _VALIDAR_PREFIX = re.compile(r"^\s*(validar( el comportamiento de la experiencia
 _CUANDO_PREFIX = re.compile(r"^\s*cuando\s+", re.I)
 _USER_ACTION = re.compile(
     r"^\s*(el )?usuario\b|"
+    r"^\s*(el usuario\s+)?"
+    r"(?!validar|verificar|observar|comprobar|asegurar|revisar|crear|est[aá]|tener)"
+    r"[a-záéíóúñ]+(ar|er|ir)\b|"
     r"^\s*(selecciona|ingresa|abre|cierra|presiona|navega|visualiza|transacciona|"
     r"reproduce|busca|completa|confirma|cancela|inicia sesi[oó]n|sale de|"
     r"da clic|hace clic|elige|pulsa)",
@@ -549,6 +552,46 @@ def apply_bac_to_candidate(candidate: GeneratedCaseCandidate) -> GeneratedCaseCa
     return candidate
 
 
+def _repair_composed_actions(
+    candidate: GeneratedCaseCandidate,
+    by_id: dict[str, CoverageUnit],
+) -> None:
+    """Keep multi-step composition; only restore a user action when the LLM left a generic or smuggled step."""
+    for step in candidate.steps:
+        action = (step.action or "").strip()
+        if (
+            action
+            and not is_stable_generic_step(action)
+            and not step_smuggles_condition(action)
+        ):
+            continue
+        units = [by_id[cid] for cid in (step.covered_unit_ids or candidate.covers or []) if cid in by_id]
+        restored = ""
+        for unit in units:
+            parsed = parse_scenario_clauses(unit.body or "")
+            for item in parsed.get("actions") or []:
+                if is_user_action(item) and not step_smuggles_condition(item):
+                    restored = item
+                    break
+            if restored:
+                break
+            if unit.user_action and is_user_action(unit.user_action) and not step_smuggles_condition(unit.user_action):
+                restored = unit.user_action
+                break
+        if restored:
+            step.action = restored
+        if units:
+            parsed = parse_scenario_clauses(units[0].body or "")
+            givens = "; ".join(parsed.get("given") or [])
+            if givens and givens not in (candidate.precondition or ""):
+                candidate.precondition = "; ".join(
+                    part for part in (candidate.precondition, givens) if part
+                )
+            expected = "; ".join(parsed.get("expected") or units[0].observable_then or [])
+            if expected and (not step.expected_result or is_generic_expected(step.expected_result)):
+                step.expected_result = expected
+
+
 def apply_executability_gate(
     candidates: list[GeneratedCaseCandidate],
     inventory: list[CoverageUnit] | None = None,
@@ -558,9 +601,10 @@ def apply_executability_gate(
     out: list[GeneratedCaseCandidate] = []
     for candidate in candidates:
         origin = candidate.generation_origin or ""
-        if origin in {"composed-flow", "llm"} or any(
+        if origin in {"composed-flow", "llm", "coverage-fill"} or any(
             str(rule).startswith("composed-flow") for rule in (candidate.applied_rules or [])
         ):
+            _repair_composed_actions(candidate, by_id)
             candidate.precondition = normalize_precondition(candidate.precondition)
             out.append(candidate)
             continue

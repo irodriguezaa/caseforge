@@ -14,14 +14,30 @@ from app.services.coverage_quality import normalize_precondition, rewrite_expect
 from app.services.executability import is_user_action, parse_scenario_clauses
 
 _GENERIC = re.compile(
-    r"^\s*(el usuario\s+)?ingresa al flujo correspondiente\.?\s*$",
+    r"^\s*(el usuario\s+)?ingres(a|ar)( al)? flujo correspondiente\.?\s*$",
     re.IGNORECASE,
 )
 _TITLE_PREFIX = re.compile(
-    r"^\s*(validar|verificar que|verificar|scenario outline|scenario|comprobar que|comprobar)\s*[:.]?\s*",
+    r"^\s*(validar|verificar que|verificar|scenario outline|scenario|comprobar que|"
+    r"comprobar|asegurar que|validaci[oó]n de|crear pantalla)\s*[:.]?\s*",
     re.IGNORECASE,
 )
+_FEATURE = re.compile(r"\bfeature\s*:?\s*", re.IGNORECASE)
+_FLOW_MARK = re.compile(r"\s*(\(flujo\s+\d+\)|\[[A-Z][A-Z0-9]+-\d+\])\s*", re.I)
 _USER = re.compile(r"^\s*(el )?usuario\s+", re.IGNORECASE)
+_USER_INFINITIVE = re.compile(
+    r"^\s*(el usuario\s+)?[a-záéíóúñ]+(ar|er|ir)\b",
+    re.IGNORECASE,
+)
+_STATE_LEAD = re.compile(
+    r"^\s*(el usuario\s+)?(est[aá]|se encuentra|tiene|cuenta con|desbloque[oó]|se muestra)\b",
+    re.IGNORECASE,
+)
+_NOT_A_STEP = re.compile(
+    r"^\s*(asegurar que|validaci[oó]n de|crear pantalla|rule\s*:|el espacio donde|"
+    r"no se logra|la llave se encuentra|pantalla de)\b",
+    re.IGNORECASE,
+)
 _3SG = (
     (re.compile(r"\bselecciona\b", re.I), "Seleccionar"),
     (re.compile(r"\bingresa( a| al|)\b", re.I), "Ingresar"),
@@ -39,30 +55,25 @@ _3SG = (
     (re.compile(r"\bbusca\b", re.I), "Buscar"),
     (re.compile(r"\bvisualiza\b", re.I), "Visualizar"),
 )
-_NEGATIVE = re.compile(r"inv[aá]lid|error|mensaje|rechaz|no se (muestra|permite)|incorrect", re.I)
-_SUCCESS = re.compile(r"\b(éxito|exito|correct|permite|se muestra|se inicia|confirma)\b", re.I)
+_NEGATIVE = re.compile(r"inv[aá]lid|error|mensaje|rechaz|no se (muestra|permite)|incorrect|no es v[aá]lido", re.I)
+_SUCCESS = re.compile(r"\b(éxito|exito|correctamente|permite|se muestra el (comprobante|resultado)|confirma)\b", re.I)
+_TECH_RESULT = re.compile(
+    r"https?://|/services/|/v\d+/|\b(GET|POST|PUT|PATCH|DELETE)\b|\bHTTP\b|"
+    r"\bstatus codes?\b|status code|\"\d{3}\"|"
+    r"`[^`]+`|"
+    r"\b[A-Za-z]+_[A-Za-z0-9_]+\b|"
+    r"apa/metadata|"
+    r"module_version",
+    re.IGNORECASE,
+)
+_KEY_VALUE = re.compile(r"\b[A-Za-z][A-Za-z0-9_]*:\s*(\"[^\"]+\"|[^\s;]+)")
+_ADF_NOISE = re.compile(r"\b(id-\d+|smartlink|mention)\b", re.IGNORECASE)
+_ENDPOINT = re.compile(r"https?://|/v\d+/|\b(GET|POST|PUT|PATCH|DELETE|HTTP)\b|status code", re.I)
+_PIPE_TABLE = re.compile(r"\|[^|\n]+\|")
+_QUOTED = re.compile(r'["\u201c]([^"\u201d\n]{2,80})["\u201d]')
 _STOP = {
-    "el",
-    "la",
-    "los",
-    "las",
-    "un",
-    "una",
-    "de",
-    "del",
-    "en",
-    "al",
-    "se",
-    "que",
-    "con",
-    "por",
-    "para",
-    "cuando",
-    "usuario",
-    "then",
-    "when",
-    "given",
-    "and",
+    "el", "la", "los", "las", "un", "una", "de", "del", "en", "al", "se", "que",
+    "con", "por", "para", "cuando", "usuario", "then", "when", "given", "and",
 }
 
 
@@ -105,7 +116,16 @@ def to_infinitive(action: str | None) -> str:
 def strip_title_prefix(name: str | None) -> str:
     out = (name or "").strip()
     out = _TITLE_PREFIX.sub("", out).strip()
-    return out[:250] or (name or "").strip()[:250]
+    out = _FEATURE.sub("", out).strip(" :-")
+    out = _FLOW_MARK.sub(" ", out)
+    return re.sub(r"\s+", " ", out).strip()[:120]
+
+
+def is_tester_action(action: str | None) -> bool:
+    raw = (action or "").strip()
+    if not raw or _GENERIC.match(raw) or _NOT_A_STEP.match(raw) or _STATE_LEAD.match(raw):
+        return False
+    return bool(_USER_INFINITIVE.match(raw))
 
 
 def _clauses(unit: CoverageUnit) -> dict[str, list[str]]:
@@ -121,20 +141,58 @@ def _unit_action(unit: CoverageUnit) -> str:
     parsed = _clauses(unit)
     for item in parsed.get("actions") or []:
         text = to_infinitive(item)
-        if text and not _GENERIC.match(text):
+        if text and is_tester_action(text):
             return text
     if unit.user_action:
         text = to_infinitive(unit.user_action)
-        if text and not _GENERIC.match(text):
+        if text and is_tester_action(text):
             return text
     return ""
+
+
+def polish_expected(text: str | None, *, title: str | None = None) -> str:
+    raw = rewrite_expected(text or "", title)
+    raw = re.sub(
+        r"el (servicio|sistema|backend|frontend) (responde|consulta|solicita)[^\n.;]*?( y )?",
+        "",
+        raw,
+        flags=re.I,
+    )
+    raw = re.sub(r"se ejecuta el API[^\n.;]*", " ", raw, flags=re.I)
+    raw = re.sub(r"se obtiene un(a respuesta)?[^\n.;]*status code[^\n.;]*", " ", raw, flags=re.I)
+    raw = re.sub(r'se debe realizar una nueva llamada al servicio[^\n.;]*', " ", raw, flags=re.I)
+    raw = re.sub(r'"/[^"]+"', " ", raw)
+    raw = re.sub(r"status code[^\n.;]*", " ", raw, flags=re.I)
+    raw = re.sub(r'"\d{3}"', " ", raw)
+    raw = _PIPE_TABLE.sub(" ", raw)
+    chunks: list[str] = []
+    for part in re.split(r"\s*;\s*", raw):
+        part = part.strip(" .;")
+        if not part:
+            continue
+        key_val = _KEY_VALUE.search(part)
+        if key_val and re.search(r"[A-Za-z]+_[A-Za-z0-9_]*\s*:", part):
+            value = key_val.group(1).strip().strip('"')
+            part = f'"{value}"' if value else ""
+        part = _TECH_RESULT.sub(" ", part)
+        part = _FLOW_MARK.sub(" ", part)
+        if title and _norm(part) == _norm(title):
+            continue
+        part = re.sub(r"\s+", " ", part).strip(" :;")
+        if part:
+            chunks.append(part)
+    visible = "; ".join(dict.fromkeys(chunks))
+    quotes = _QUOTED.findall(text or "")
+    for quote in quotes:
+        if quote.lower() not in visible.lower() and not re.search(r"[/_{}\[\]]", quote):
+            visible = f'{visible} "{quote}"'.strip() if visible else f'"{quote}"'
+    return visible
 
 
 def _unit_expected(unit: CoverageUnit) -> str:
     parsed = _clauses(unit)
     parts = [item for item in (parsed.get("expected") or []) if item.strip()]
-    blob = "; ".join(dict.fromkeys(parts))
-    return rewrite_expected(blob, unit.scenario)
+    return polish_expected("; ".join(dict.fromkeys(parts)) or unit.scenario)
 
 
 def _unit_given(unit: CoverageUnit) -> str:
@@ -143,25 +201,15 @@ def _unit_given(unit: CoverageUnit) -> str:
 
 
 def _follows(previous: CoverageUnit, nxt: CoverageUnit) -> bool:
+    """B follows A only when Given(B) describes the action or the Then of A."""
     if (previous.story_key or "") != (nxt.story_key or ""):
         return False
-    if _same_expected(previous, nxt) and phrases_similar(
-        _unit_action(previous) or previous.user_action, _unit_action(nxt) or nxt.user_action
-    ):
-        return True
     given = _unit_given(nxt)
     if not given:
-        return phrases_similar(previous.user_action, nxt.user_action) and phrases_similar(
-            _unit_expected(previous), _unit_expected(nxt)
-        ) is False
+        return False
     return any(
         phrases_similar(given, seed)
-        for seed in (
-            _unit_action(previous),
-            _unit_expected(previous),
-            previous.scenario,
-            previous.user_action,
-        )
+        for seed in (_unit_action(previous), _unit_expected(previous), previous.user_action)
         if seed
     )
 
@@ -172,9 +220,7 @@ def _exclusive_precondition(left: CoverageUnit, right: CoverageUnit) -> bool:
     )
     if not a or not b or a == b:
         return False
-    return (" no " in f" {a} ") != (" no " in f" {b} ") or (
-        ("sin " in a) != ("sin " in b)
-    )
+    return (" no " in f" {a} ") != (" no " in f" {b} ") or (("sin " in a) != ("sin " in b))
 
 
 def _recoverable(previous: CoverageUnit, nxt: CoverageUnit) -> bool:
@@ -184,9 +230,12 @@ def _recoverable(previous: CoverageUnit, nxt: CoverageUnit) -> bool:
 
 
 def _same_expected(left: CoverageUnit, right: CoverageUnit) -> bool:
-    return _norm(_unit_expected(left)) == _norm(_unit_expected(right)) and bool(
-        _norm(_unit_expected(left))
-    )
+    return _norm(_unit_expected(left)) == _norm(_unit_expected(right)) and bool(_norm(_unit_expected(left)))
+
+
+def _intent_verb(unit: CoverageUnit) -> str:
+    action = to_infinitive(_unit_action(unit) or unit.user_action or "")
+    return (action.split() or [""])[0].lower()
 
 
 @dataclass
@@ -207,117 +256,242 @@ def _group_same_when(units: list[CoverageUnit]) -> list[list[CoverageUnit]]:
     groups: list[list[CoverageUnit]] = []
     for unit in units:
         action = _norm(_unit_action(unit))
-        expected = _norm(_unit_expected(unit))
+        given = _norm(_unit_given(unit) or unit.normal_precondition)
         if groups:
-            last = groups[-1]
-            last_action = _norm(_unit_action(last[0]))
-            last_expected = _norm(_unit_expected(last[0]))
-            if action and action == last_action and expected == last_expected:
-                last.append(unit)
-                continue
-            if action and action == last_action and not _exclusive_precondition(last[0], unit):
-                last.append(unit)
+            last = groups[-1][0]
+            if action and action == _norm(_unit_action(last)) and given == _norm(
+                _unit_given(last) or last.normal_precondition
+            ):
+                groups[-1].append(unit)
                 continue
         groups.append([unit])
     return groups
 
 
+def _surface_from_units(units: list[CoverageUnit]) -> str | None:
+    blob = " ".join(f"{unit.body or ''} {unit.scenario or ''}" for unit in units)
+    quoted = _QUOTED.findall(blob)
+    for quote in quoted:
+        if re.search(r"[/_{}\[\]]", quote):
+            continue
+        if " " in quote or len(quote) > 4:
+            return quote
+    match = re.search(r"se muestra (?:la |el |los |las )?([^\n.;]{6,60})", blob, re.I)
+    if match:
+        return match.group(1).strip()
+    match = re.search(
+        r"\b(la tarjeta|el panel|la pantalla|la sección|la home|el modal)([^\n.;]{0,40})",
+        blob,
+        re.I,
+    )
+    if match:
+        return (match.group(1) + match.group(2)).strip()
+    match = re.search(
+        r"\b(home|banner|modal|panel|men[uú]|detalle|resumen|listado|ficha)\b",
+        blob,
+        re.I,
+    )
+    if match:
+        return match.group(0)
+    return None
+
+
+def _split_exclusive_expected(expected: str) -> tuple[str | None, str]:
+    parts = [part.strip() for part in re.split(r"\s*;\s*", expected or "") if part.strip()]
+    if len(parts) < 2:
+        return None, expected
+    neg = [part for part in parts if _NEGATIVE.search(part)]
+    pos = [part for part in parts if part not in neg]
+    if neg and pos:
+        return "; ".join(neg), "; ".join(pos)
+    return None, expected
+
+
+def _clean_test_data(parts: list[str]) -> str | None:
+    data: list[str] = []
+    for raw in parts:
+        text = re.sub(r"\s+", " ", (raw or "").strip())
+        if not text:
+            continue
+        text = _ADF_NOISE.sub(" ", text)
+        text = re.sub(r"\s+", " ", text).strip(" ;")
+        if not text:
+            continue
+        data.append(text)
+    return "; ".join(dict.fromkeys(data)) or None
+
+
 def _draft_title(units: list[CoverageUnit]) -> str:
-    last = units[-1]
-    action = to_infinitive(_unit_action(units[0]) or units[0].user_action or "")
-    expected = strip_title_prefix(_unit_expected(last) or last.scenario or last.behavior)
-    ctx = strip_title_prefix((units[0].normal_precondition or "").split(";")[0] if units[0].normal_precondition else "")
-    pieces = [part for part in (action, expected) if part]
-    title = " — ".join(pieces) if action and expected and _norm(action) != _norm(expected) else expected
-    if ctx and _norm(ctx) not in _norm(title) and not ctx.lower().startswith("feature"):
-        title = f"{title} ({ctx})"
-    elif ctx.lower().startswith("feature") and ctx not in title:
-        title = f"{title} ({ctx[:80]})"
+    intent = _intent_verb(units[0])
+    quotes = [
+        quote
+        for unit in units
+        for quote in _QUOTED.findall(f"{unit.body or ''} {unit.scenario or ''} {_unit_action(unit)}")
+        if not re.search(r"[/_{}\[\]]", quote)
+    ]
+    visible = polish_expected(_unit_expected(units[-1]) or units[-1].scenario)
+    visible = re.sub(r'^se (muestra|visualiza)\s+', "", visible, flags=re.I)
+    visible = visible.split(";")[0].strip(' ."')[:70]
+    action_rest = " ".join(to_infinitive(_unit_action(units[0])).split()[1:]).strip()
+    if quotes:
+        title = f"{intent.capitalize() if intent else 'Usar'} \"{quotes[0]}\"".strip()
+        if visible and _norm(quotes[0]) not in _norm(visible):
+            title = f"{title} {visible}".strip()
+    elif intent:
+        parts = [intent.capitalize()]
+        if action_rest and _norm(action_rest) not in _norm(visible):
+            parts.append(action_rest)
+        if visible:
+            parts.append(visible)
+        title = " ".join(parts).strip()
+    else:
+        title = visible or strip_title_prefix(units[-1].behavior)
     title = strip_title_prefix(title)
-    if _norm(title) == _norm(expected) and action:
-        title = action
-    story = units[0].story_key or last.coverage_id
-    title = f"{title[:180]} [{story}]"
-    return title[:250]
+    if _norm(title) == _norm(_unit_expected(units[-1])):
+        rest = to_infinitive(_unit_action(units[0]))
+        title = rest[:120] if rest else (intent.capitalize() if intent else title)
+    return title[:120]
 
 
-def _draft_from_units(units: list[CoverageUnit]) -> FlowDraft:
+def _precondition_parts(units: list[CoverageUnit], step_actions: list[str]) -> str | None:
+    parts: list[str] = []
+    for unit in units:
+        for clause in re.split(r"\s*;\s*", _unit_given(unit) or ""):
+            clause = clause.strip()
+            if not clause or _FEATURE.search(clause):
+                continue
+            if is_user_action(clause) or any(phrases_similar(clause, action) for action in step_actions):
+                continue
+            parts.append(clause)
+        for clause in re.split(r"\s*;\s*", unit.normal_precondition or ""):
+            clause = clause.strip()
+            if not clause or _FEATURE.search(clause):
+                continue
+            parts.append(clause)
+    return normalize_precondition("; ".join(parts))
+
+
+def _draft_from_units(units: list[CoverageUnit], story_units: list[CoverageUnit] | None = None) -> FlowDraft:
     story = units[0].story_key or units[0].jira_key or ""
     epic = units[0].artifact_key or units[0].rn_key or ""
     groups = _group_same_when(units)
     steps: list[CandidateStep] = []
     pending = None
     extras: list[str] = []
-    pres: list[str] = []
-    first_given = _unit_given(units[0])
+    first = units[0]
+    first_given = _unit_given(first)
     for clause in [part.strip() for part in (first_given or "").split(";") if part.strip()]:
-        if is_user_action(clause) and not phrases_similar(clause, _unit_action(units[0])):
+        if is_user_action(clause) and not phrases_similar(clause, _unit_action(first)):
             steps.append(
                 CandidateStep(
                     step_number=1,
                     action=to_infinitive(clause),
-                    expected_result=rewrite_expected(_unit_expected(units[0]), units[0].scenario),
-                    covered_unit_ids=[units[0].coverage_id],
+                    expected_result=polish_expected(_unit_expected(first)),
+                    covered_unit_ids=[first.coverage_id],
                 )
             )
             break
-        pres.append(clause)
+    last_action_index = len(steps) - 1
     for group in groups:
         action = _unit_action(group[0])
-        expected = "; ".join(dict.fromkeys(_unit_expected(item) for item in group if _unit_expected(item)))
-        quoted = re.findall(
-            r'["\u201c]([^"\u201d\n]{2,80})["\u201d]',
-            " ".join(item.body or "" for item in group),
+        expected = polish_expected(
+            "; ".join(dict.fromkeys(_unit_expected(item) for item in group if _unit_expected(item)))
         )
-        for quote in quoted:
-            if quote.lower() not in (expected or "").lower() and quote.lower() not in (action or "").lower():
-                expected = f'{expected} "{quote}"'.strip() if expected else f'"{quote}"'
         covers = [item.coverage_id for item in group]
         extras.extend(item.extra_test_data or "" for item in group)
         extras.extend(note for item in group for note in (item.technical_notes or []))
-        pres.extend(filter(None, [_unit_given(item) for item in group]))
-        pres.extend(filter(None, [item.normal_precondition for item in group]))
+        extras.extend(
+            clause
+            for item in group
+            for clause in (_clauses(item).get("technical") or [])
+        )
+        extras.extend(
+            hit
+            for item in group
+            for hit in re.findall(
+                r"\b(?:GET|POST|PUT|PATCH|DELETE)\b(?:\s+\S+)?|/services/\S+|module_version\S*",
+                item.body or "",
+                flags=re.I,
+            )
+        )
+        quoted = [
+            quote
+            for item in group
+            for quote in _QUOTED.findall(item.body or "")
+            if not re.search(r"[/_{}\[\]]", quote)
+        ]
+        if action and quoted and quoted[0] not in action:
+            action = f'{action} "{quoted[0]}"'
         if not action:
-            pending = "sin acción de usuario soportable en las unidades cubiertas"
-            action = to_infinitive(group[0].scenario) or strip_title_prefix(group[0].behavior)
+            if last_action_index >= 0:
+                prev = steps[last_action_index]
+                prev.expected_result = polish_expected(
+                    "; ".join(part for part in (prev.expected_result, expected) if part)
+                )
+                prev.covered_unit_ids = list(dict.fromkeys([*(prev.covered_unit_ids or []), *covers]))
+                continue
+            surface = _surface_from_units(story_units or units)
+            if surface:
+                action = f'Abrir "{surface}"' if " " in surface or len(surface) < 40 else f"Abrir {surface}"
+            else:
+                pending = "sin acción de usuario soportable en las unidades cubiertas"
+                continue
+        neg, pos = _split_exclusive_expected(expected)
+        if neg and pos:
+            steps.append(
+                CandidateStep(
+                    step_number=len(steps) + 1,
+                    action=f"{action} con un dato inválido",
+                    expected_result=neg,
+                    covered_unit_ids=covers,
+                )
+            )
+            steps.append(
+                CandidateStep(
+                    step_number=len(steps) + 1,
+                    action=f"{action} con el dato válido",
+                    expected_result=pos,
+                    covered_unit_ids=covers,
+                )
+            )
+            last_action_index = len(steps) - 1
+            continue
         steps.append(
             CandidateStep(
                 step_number=len(steps) + 1,
                 action=action,
-                expected_result=expected or rewrite_expected(group[0].scenario),
+                expected_result=expected or polish_expected(group[0].scenario),
                 covered_unit_ids=covers,
             )
         )
-    precondition = normalize_precondition("; ".join(pres))
-    literals = []
-    for unit in units:
-        literals.extend(
-            f'"{quote}"'
-            for quote in re.findall(
-                r'["\u201c]([^"\u201d\n]{2,80})["\u201d]',
-                f"{unit.body or ''}\n{unit.evidence or ''}\n{unit.description or ''}",
+        last_action_index = len(steps) - 1
+    if not steps and pending:
+        steps.append(
+            CandidateStep(
+                step_number=1,
+                action="",
+                expected_result=polish_expected(_unit_expected(units[0])),
+                covered_unit_ids=[unit.coverage_id for unit in units],
             )
         )
-    extras.extend(literals)
-    test_data = "; ".join(dict.fromkeys(part for part in extras if part)) or None
-    evidence = " | ".join(dict.fromkeys((unit.evidence or "").split("\n", 1)[0] for unit in units))[:2000]
+    for index, step in enumerate(steps, start=1):
+        step.step_number = index
+        step.expected_result = polish_expected(step.expected_result)
+    cleaned = _clean_test_data(extras)
+    if cleaned and steps:
+        steps[0].test_data = cleaned
     return FlowDraft(
         story_key=story,
         epic_key=epic,
         units=units,
         title=_draft_title(units),
-        precondition=precondition,
+        precondition=_precondition_parts(units, [step.action for step in steps]),
         steps=steps,
-        test_data=test_data,
+        test_data=cleaned,
         pending_reason=pending,
-        evidence=evidence,
+        evidence=" | ".join(dict.fromkeys((unit.evidence or "").split("\n", 1)[0] for unit in units))[:2000],
         applied_rules=["composed-flow"],
     )
-
-
-def _intent_verb(unit: CoverageUnit) -> str:
-    action = to_infinitive(_unit_action(unit) or unit.user_action or "")
-    return (action.split() or [""])[0].lower()
 
 
 def compose_story_units(units: list[CoverageUnit]) -> list[FlowDraft]:
@@ -330,23 +504,25 @@ def compose_story_units(units: list[CoverageUnit]) -> list[FlowDraft]:
         if _exclusive_precondition(prev, nxt) and not _recoverable(prev, nxt):
             segments.append([nxt])
             continue
-        if _follows(prev, nxt) or _recoverable(prev, nxt) or _same_expected(prev, nxt):
+        if _recoverable(prev, nxt) or _follows(prev, nxt):
+            segments[-1].append(nxt)
+            continue
+        same_when = _norm(_unit_action(prev)) == _norm(_unit_action(nxt)) and bool(_norm(_unit_action(prev)))
+        same_given = _norm(_unit_given(prev) or prev.normal_precondition) == _norm(
+            _unit_given(nxt) or nxt.normal_precondition
+        )
+        if same_when and same_given and (_same_expected(prev, nxt) or not (_unit_expected(prev) and _unit_expected(nxt))):
             segments[-1].append(nxt)
             continue
         prev_intent, next_intent = _intent_verb(prev), _intent_verb(nxt)
-        if prev_intent and next_intent and prev_intent != next_intent and not phrases_similar(
-            _unit_expected(prev), _unit_given(nxt)
-        ):
+        if prev_intent and next_intent and prev_intent != next_intent:
             segments.append([nxt])
             continue
-        segments[-1].append(nxt)
-    drafts = [_draft_from_units(segment) for segment in segments]
-    if len(drafts) > 1:
-        for index, draft in enumerate(drafts, start=1):
-            marker = f"flujo {index}"
-            if marker not in (draft.title or "").lower():
-                draft.title = f"{draft.title} ({marker})"[:250]
-    return drafts
+        if _same_expected(prev, nxt) and prev_intent != next_intent:
+            segments.append([nxt])
+            continue
+        segments.append([nxt])
+    return [_draft_from_units(segment, story_units=ordered) for segment in segments]
 
 
 def draft_to_candidate(
@@ -355,12 +531,14 @@ def draft_to_candidate(
     duplicate_of,
 ) -> GeneratedCaseCandidate:
     covers = [unit.coverage_id for unit in draft.units]
-    review = True
     rules = list(draft.applied_rules)
     if draft.pending_reason:
         rules.append(f"pendiente-qc:{draft.pending_reason}")
+    applicability = "na_ambiente" if draft.units and all(
+        (unit.applicability or "ejecutable") == "na_ambiente" for unit in draft.units
+    ) else "ejecutable"
     return GeneratedCaseCandidate(
-        name=draft.title,
+        name=draft.title[:120],
         description=draft.title,
         precondition=draft.precondition,
         steps=draft.steps,
@@ -371,61 +549,19 @@ def draft_to_candidate(
         evidence=draft.evidence or draft.title,
         justification="Flujo compuesto a partir de CoverageUnits de la misma historia.",
         possible_duplicate_of=duplicate_of(draft.title, draft.story_key, existing),
-        review_required=review,
+        review_required=True,
         covers=covers,
         covered_unit_ids=covers,
-        applicability=draft.units[0].applicability if draft.units else "ejecutable",
-        applicability_reason=draft.pending_reason or (
-            draft.units[0].applicability_reason if draft.units else None
+        applicability=applicability,
+        applicability_reason=(
+            draft.units[0].applicability_reason if applicability == "na_ambiente" else draft.pending_reason
         ),
         applied_rules=rules,
         generation_origin="composed-flow",
         source_type="functionality",
         confidence="medium" if draft.pending_reason else "high",
+        requires_condition=any(bool(unit.requires_condition) for unit in draft.units),
     )
-
-
-def attach_artifact_literals(
-    candidates: list[GeneratedCaseCandidate],
-    artifacts: list[dict] | None,
-) -> list[GeneratedCaseCandidate]:
-    if not artifacts:
-        return candidates
-    quotes_by_story: dict[str, list[str]] = {}
-    for art in artifacts:
-        nodes = [art, *(art.get("children") or [])]
-        for node in nodes:
-            key = str(node.get("key") or "")
-            blob = f"{node.get('description') or ''}\n{node.get('acceptance_criteria') or ''}"
-            found = [
-                f'"{quote}"'
-                for quote in re.findall(r'["\u201c]([^"\u201d\n]{2,80})["\u201d]', blob)
-                if not re.search(r"[/_{}\[\]]", quote)
-            ]
-            if key and found:
-                quotes_by_story.setdefault(key, []).extend(found)
-        epic_key = str(art.get("key") or "")
-        child_quotes = []
-        for child in art.get("children") or []:
-            child_quotes.extend(quotes_by_story.get(str(child.get("key") or ""), []))
-        if epic_key:
-            quotes_by_story.setdefault(epic_key, []).extend(child_quotes)
-    for candidate in candidates:
-        keys = [
-            part.strip()
-            for part in (
-                f"{candidate.related_jira or ''}|{candidate.related_functionality or ''}"
-            ).split("|")
-            if part.strip()
-        ]
-        extras: list[str] = []
-        for key in keys:
-            extras.extend(quotes_by_story.get(key, []))
-        if extras:
-            candidate.test_data = "; ".join(
-                dict.fromkeys(part for part in [candidate.test_data, *extras] if part)
-            )
-    return candidates
 
 
 def compose_inventory(
@@ -448,13 +584,22 @@ def compose_inventory(
     for key in order:
         for draft in compose_story_units(by_story[key]):
             out.append(draft_to_candidate(draft, existing, duplicate_of))
+    seen_na: dict[str, GeneratedCaseCandidate] = {}
     for unit in na_units:
-        draft = _draft_from_units([unit])
-        draft.pending_reason = draft.pending_reason or (
-            unit.applicability_reason or "na_ambiente"
-        )
+        fingerprint = _norm(f"{unit.scenario} {_unit_expected(unit)}")
+        if fingerprint in seen_na:
+            current = seen_na[fingerprint]
+            stories = list(dict.fromkeys(
+                [*(current.related_jira or "").split(" | "), unit.story_key or unit.jira_key or ""]
+            ))
+            current.related_jira = " | ".join(part for part in stories if part)
+            current.covers = list(dict.fromkeys([*(current.covers or []), unit.coverage_id]))
+            current.covered_unit_ids = list(current.covers)
+            continue
+        draft = _draft_from_units([unit], story_units=[unit])
         candidate = draft_to_candidate(draft, existing, duplicate_of)
         candidate.applicability = "na_ambiente"
+        seen_na[fingerprint] = candidate
         out.append(candidate)
     return out
 
@@ -488,8 +633,19 @@ def proposed_flows_for_llm(units: list[CoverageUnit]) -> list[dict[str, Any]]:
     return rows
 
 
-def _observable_blob(unit: CoverageUnit) -> str:
-    return _norm(" ".join([*(unit.observable_then or []), _unit_expected(unit), unit.scenario]))
+def candidate_violates_writing_standard(candidate: GeneratedCaseCandidate) -> bool:
+    if len(candidate.name or "") > 150:
+        return True
+    if _ADF_NOISE.search(candidate.test_data or ""):
+        return True
+    for step in candidate.steps:
+        if step.action and not is_tester_action(step.action):
+            return True
+        if _TECH_RESULT.search(step.expected_result or ""):
+            return True
+        if _norm(step.expected_result) == _norm(candidate.name):
+            return True
+    return False
 
 
 def validate_composed_candidates(
@@ -498,7 +654,6 @@ def validate_composed_candidates(
     *,
     fill_missing,
 ) -> list[GeneratedCaseCandidate]:
-    """Reject or repair LLM/fallback cases against inventory and the writing standard."""
     by_id = {unit.coverage_id: unit for unit in inventory}
     executable_ids = {
         unit.coverage_id
@@ -507,41 +662,33 @@ def validate_composed_candidates(
     }
     repaired: list[GeneratedCaseCandidate] = []
     covered: set[str] = set()
+    rejected: list[CoverageUnit] = []
     for candidate in candidates:
-        stories = {((by_id.get(cid).story_key if by_id.get(cid) else None) or "") for cid in (candidate.covers or candidate.covered_unit_ids or [])}
+        stories = {
+            ((by_id.get(cid).story_key if by_id.get(cid) else None) or "")
+            for cid in (candidate.covers or candidate.covered_unit_ids or [])
+        }
         stories.discard("")
-        epics = {((by_id.get(cid).artifact_key if by_id.get(cid) else None) or "") for cid in (candidate.covers or candidate.covered_unit_ids or [])}
-        epics.discard("")
-        if len(stories) > 1 or len(epics) > 1:
-            candidate.applied_rules = list(
-                dict.fromkeys([*(candidate.applied_rules or []), "quality-gate:mezcla-historias"])
-            )
-            candidate.review_required = True
+        if len(stories) > 1:
+            ids = [cid for cid in (candidate.covers or []) if cid in by_id]
+            rejected.extend(by_id[cid] for cid in ids)
             continue
-        candidate.name = strip_title_prefix(candidate.name)
+        candidate.name = strip_title_prefix(candidate.name)[:120]
         new_steps: list[CandidateStep] = []
         for step in candidate.steps:
             ids = list(step.covered_unit_ids or candidate.covers or [])
             units = [by_id[cid] for cid in ids if cid in by_id]
             action = to_infinitive(step.action)
+            if units and (not is_tester_action(action)):
+                action = _unit_action(units[0])
+            expected = polish_expected(step.expected_result, title=candidate.name)
             if units:
-                supported = any(
-                    phrases_similar(action, _unit_action(unit)) or phrases_similar(action, unit.user_action)
-                    for unit in units
-                )
-                if action and not supported and not any(phrases_similar(action, _unit_given(unit)) for unit in units):
-                    action = _unit_action(units[0]) or action
-                expected = step.expected_result or ""
                 source = _unit_expected(units[0])
-                if expected and source and not phrases_similar(expected, source):
-                    expected = source
-                elif not expected:
+                if expected and source and not phrases_similar(expected, source) and not _QUOTED.search(expected):
                     expected = source
                 step.covered_unit_ids = [unit.coverage_id for unit in units]
                 covered.update(step.covered_unit_ids)
-            if _GENERIC.match(action or ""):
-                action = _unit_action(units[0]) if units else ""
-            if not action:
+            if not is_tester_action(action):
                 candidate.applied_rules = list(
                     dict.fromkeys(
                         [*(candidate.applied_rules or []), "pendiente-qc:sin acción de usuario soportable"]
@@ -549,9 +696,10 @@ def validate_composed_candidates(
                 )
                 candidate.review_required = True
             step.action = action
-            step.expected_result = rewrite_expected(expected if units else step.expected_result, candidate.name)
-            new_steps.append(step)
-        candidate.steps = [step for step in new_steps if step.action or step.expected_result]
+            step.expected_result = expected
+            if action or expected:
+                new_steps.append(step)
+        candidate.steps = new_steps
         for index, step in enumerate(candidate.steps, start=1):
             step.step_number = index
         ids = list(dict.fromkeys([*(candidate.covers or []), *(candidate.covered_unit_ids or [])]))
@@ -560,9 +708,26 @@ def validate_composed_candidates(
         candidate.covers = list(dict.fromkeys(ids))
         candidate.covered_unit_ids = list(candidate.covers)
         covered.update(candidate.covers)
+        if candidate.generation_origin == "llm" and candidate_violates_writing_standard(candidate):
+            rejected.extend(by_id[cid] for cid in candidate.covers if cid in by_id)
+            continue
+        na_ids = [cid for cid in candidate.covers if cid in by_id and by_id[cid].applicability == "na_ambiente"]
+        exe_ids = [cid for cid in candidate.covers if cid in by_id and (by_id[cid].applicability or "ejecutable") != "na_ambiente"]
+        if na_ids and exe_ids:
+            candidate.covers = exe_ids
+            candidate.covered_unit_ids = exe_ids
+            candidate.applicability = "ejecutable"
+        elif na_ids and not exe_ids:
+            candidate.applicability = "na_ambiente"
+        elif not candidate.applicability:
+            candidate.applicability = "ejecutable"
         repaired.append(candidate)
     missing = [unit for unit in inventory if unit.coverage_id in executable_ids and unit.coverage_id not in covered]
+    missing.extend(unit for unit in rejected if unit.coverage_id not in covered)
     if missing and fill_missing is not None:
-        extra = fill_missing(missing)
+        extra = fill_missing(list({unit.coverage_id: unit for unit in missing}.values()))
+        for row in extra:
+            if not row.generation_origin or row.generation_origin == "composed-flow":
+                row.generation_origin = "coverage-fill"
         repaired.extend(extra)
     return repaired

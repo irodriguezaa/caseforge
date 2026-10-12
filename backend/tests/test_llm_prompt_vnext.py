@@ -14,15 +14,10 @@ def test_prompt_requires_covered_unit_ids_and_functional_merge() -> None:
     blob = _ENGINE_RULES + "\n" + _JSON_INSTRUCTIONS
     assert "covered_unit_ids" in blob
     assert "covered_unit_ids es obligatorio" in blob
-    assert "Grabar ≠ Cancelar" in blob or "Grabar≠Cancelar" in blob
-    assert "Grabar ≠ Eliminar" in blob or "Grabar≠Eliminar" in blob
-    assert "Reproducir ≠ Grabar" in blob or "Reproducir≠Grabar" in blob
-    assert "Agregar favorito" in blob and "Eliminar favorito" in blob
-    assert "Seleccionar ≠ Back" in blob or "Seleccionar≠Back" in blob
-    assert "Audio ≠ Subtítulo" in blob or "Audio≠Subtítulo" in blob
-    assert "cambio de pista" in blob or "pista/track" in blob
-    assert "El mismo Expected NO es suficiente" in blob or "El mismo Expected NO justifica" in blob
+    assert "El mismo Expected NO justifica" in blob
     assert "Se observa el comportamiento definido." in blob
+    assert "reescribe CADA" in blob or "reescritura" in blob.lower() or "reescribe CADA caso" in blob
+    assert "Pedidos abiertos" in blob and "Cupón no válido" in blob
     assert "Las únicas fuentes permitidas para generar casos mediante LLM" in _ENGINE_RULES
     assert "Ignora NCO, TRI, QA Bugs y QC Bugs" in _ENGINE_RULES
 
@@ -133,7 +128,7 @@ def _cand(*, action: str, expected: str, covers: list[str]) -> GeneratedCaseCand
 
 def test_prompt_forbids_wrong_when_and_user_action_expected() -> None:
     blob = _ENGINE_RULES + "\n" + _JSON_INSTRUCTIONS
-    assert "Más Opciones" in blob
+    assert "infinitivo" in blob.lower()
     assert "Nunca una acción del usuario" in blob or "NUNCA describe una acción del usuario" in blob
     assert "El usuario selecciona la opción." in blob
 

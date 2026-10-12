@@ -28,7 +28,6 @@ from app.schemas.case_generation import (
     GenerationStats,
 )
 from app.services.case_composer import (
-    attach_artifact_literals,
     compose_inventory,
     proposed_flows_for_llm,
     validate_composed_candidates,
@@ -162,10 +161,17 @@ Reglas HANDOFF (obligatorias):
     cambiar configuración ni cuenta, van en el mismo caso.
     Fidelidad de user_action: el paso usa esa acción, en infinitivo ("Seleccionar…").
     NUNCA uses "El usuario ingresa al flujo correspondiente."
+    Intenciones distintas no se fusionan aunque el resultado observable coincida.
+    El mismo Expected NO justifica unir dos casos. covered_unit_ids es obligatorio.
     Si una unidad no tiene acción soportable, el caso queda pendiente de revisión QC
     con el motivo; no inventes el paso.
     Expected = únicamente el resultado observable (Then/AC/observable_then) de las units.
     Expected NUNCA describe una acción del usuario.
+    El LLM reescribe CADA caso de proposed_flows (no es opcional): título ≤120,
+    pasos en infinitivo, resultados observables, sin endpoints ni llaves técnicas
+    en el resultado, Datos de prueba solo con valores que el tester introduce,
+    applicability na_ambiente no se mezcla con ejecutables.
+    covered_unit_ids es obligatorio en el caso y en cada paso.
     PROHIBIDO en Expected: "El usuario selecciona la opción.", "El usuario presiona...",
     "El usuario navega...", "El usuario ingresa...".
     NO uses "Se observa el comportamiento definido." ni variantes.
@@ -237,10 +243,33 @@ Paso: infinitivo de acción de usuario que avanza el flujo. Nunca
 "El usuario ingresa al flujo correspondiente."
 Resultado: lo que el tester ve. Textos de UI entre comillas de Jira se copian literales.
 Cada paso declara covered_unit_ids. Cada unidad ejecutable queda en al menos un paso.
-Usa proposed_flows como propuesta de composición; puedes ajustar redacción, no inventar acciones.
-Compón unidades consecutivas del mismo flujo como pasos. Equivalencia solo si el
-esperado normalizado es idéntico. No mezcles historias ni EPCs.
+Usa proposed_flows como propuesta de composición; reescribe CADA flujo.
+Equivalencia solo si el esperado normalizado es idéntico. No mezcles historias ni EPCs.
 related_functionality = key de la Technical Epic. related_jira = Story.
+Título: comportamiento + contexto, ≤120 caracteres, sin Feature ni "acción — resultado".
+Paso: infinitivo. Given de estado va a precondition. Nunca títulos de escenario como paso.
+Resultado: lo visible, textos de UI entre comillas. Ramas negativas recuperables
+antes de la positiva, nunca ambos resultados excluyentes en el mismo paso.
+
+Ejemplos sintéticos (dominio inventado; no copiar al entregable):
+
+1) Precondición: la cuenta "Hogar" está activa; hay un pedido en borrador.
+   Paso 1: Abrir "Pedidos"
+   Resultado: se muestra la lista "Pedidos abiertos".
+   Paso 2: Seleccionar "Continuar pedido"
+   Resultado: se muestra el resumen con el botón "Confirmar".
+
+2) Precondición: el usuario está en "Pago".
+   Paso 1: Ingresar un código inválido en "Cupón" y seleccionar "Aplicar"
+   Resultado: se muestra el mensaje "Cupón no válido".
+   Paso 2: Ingresar el código válido y seleccionar "Aplicar"
+   Resultado: se muestra "Descuento aplicado" y el total actualizado.
+
+3) Precondición: existe una reserva "Sala 2".
+   Paso 1: Abrir "Reservas"
+   Resultado: se muestra "Sala 2" con "Modificar" y "Cancelar".
+   Paso 2: Seleccionar "Cancelar"
+   Resultado: se muestra "¿Cancelar reserva?" con "Sí, cancelar".
 """
 
 _METRICS_RE = re.compile(r"\bm[eé]tric|\banalytics\b|\bga4\b|\bfirebase\b|\bmdp\b", re.IGNORECASE)
@@ -1510,10 +1539,7 @@ def generate_release_app_candidates(
             for unit in inventory
             if (unit.rn_key or "").upper() in allowed or (unit.jira_key or "").upper() in allowed
         ]
-    jira_candidates = attach_artifact_literals(
-        compose_inventory(inventory, existing_cases, _duplicate_of),
-        jira_artifacts,
-    )
+    jira_candidates = compose_inventory(inventory, existing_cases, _duplicate_of)
 
     engine = "evidence"
     candidates: list[GeneratedCaseCandidate] = []
@@ -1544,7 +1570,9 @@ def generate_release_app_candidates(
                 failed_ids.update(unit.coverage_id for unit in batch.units)
                 continue
             llm_candidates.extend(accepted)
-        llm_covers = _covered_ids(llm_candidates)
+        llm_covers = _covered_ids(
+            [row for row in llm_candidates if (row.generation_origin or "") == "llm"]
+        )
         missing = [
             unit
             for unit in inventory
@@ -1572,7 +1600,9 @@ def generate_release_app_candidates(
                     continue
                 llm_candidates.extend(accepted)
         llm_candidates = _dedupe_candidates(llm_candidates)
-        llm_covers = _covered_ids(llm_candidates)
+        llm_covers = _covered_ids(
+            [row for row in llm_candidates if (row.generation_origin or "") == "llm"]
+        )
         stats.llm_batches = batch_rows
         stats.coverage_unit_status = reconcile_llm_coverage(
             inventory, llm_candidates, failed_ids
@@ -1583,7 +1613,7 @@ def generate_release_app_candidates(
             f"({', '.join(sorted(llm_covers)) or 'ninguna'})."
         )
         still_missing = [
-            unit for unit in inventory if unit.coverage_id not in llm_covers
+            unit for unit in inventory if unit.coverage_id not in _covered_ids(llm_candidates)
         ]
         candidates = list(llm_candidates)
         if still_missing:
@@ -1613,6 +1643,10 @@ def generate_release_app_candidates(
                 logger.warning("LLM fallback activated")
                 candidates = jira_candidates or filled or []
                 engine = "evidence-jira" if candidates else "evidence-fallback"
+        elif any((row.generation_origin or "") == "coverage-fill" for row in candidates) and any(
+            (row.generation_origin or "") == "llm" for row in candidates
+        ):
+            engine = "llm+coverage-fill"
         elif llm_candidates:
             engine = "llm"
         else:

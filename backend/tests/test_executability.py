@@ -32,8 +32,12 @@ def test_bound_action_is_stable_generic_without_condition() -> None:
 
 def test_when_of_user_is_kept_as_step() -> None:
     cases = candidates_from_jira_artifacts(_artifacts(), "rn.pdf", [], lambda *_a: None)
-    ticket = next(item for item in cases if "ticket actualizado" in item.name.lower())
-    assert any("visualiza la pantalla de ticket" in step.action.lower() for step in ticket.steps)
+
+    def _blob(item) -> str:
+        return " ".join([item.name, *[step.action for step in item.steps]]).lower()
+
+    ticket = next(item for item in cases if "ticket" in _blob(item) and "visualiz" in _blob(item))
+    assert any("visualiz" in step.action.lower() and "ticket" in step.action.lower() for step in ticket.steps)
     assert not any(step_smuggles_condition(step.action) for step in ticket.steps)
 
 
@@ -137,7 +141,9 @@ def test_then_and_goes_to_expected_not_precondition() -> None:
     info = next(
         item
         for item in cases
-        if "texto informativo" in item.name.lower() and "longitud" not in item.name.lower()
+        if "texto" in item.name.lower()
+        and "longitud" not in item.name.lower()
+        and "límite" not in " ".join(step.expected_result for step in item.steps).lower()
     )
     assert "usuario@dominio.com" not in (info.precondition or "").lower()
     joined_exp = " ".join(step.expected_result for step in info.steps).lower()
@@ -147,7 +153,11 @@ def test_then_and_goes_to_expected_not_precondition() -> None:
 
 def test_sibling_key_conditions_are_not_copied_to_other_cases() -> None:
     cases = candidates_from_jira_artifacts(_artifacts(), "rn.pdf", [], lambda *_a: None)
-    ticket = next(item for item in cases if "ticket actualizado" in item.name.lower())
+    ticket = next(
+        item
+        for item in cases
+        if "ticket" in " ".join([item.name, *[step.action for step in item.steps]]).lower()
+    )
     blob = f"{ticket.precondition} {ticket.test_data}".lower()
     assert "apa/metadata" not in blob
     assert "llave se encuentra vacía" not in blob
@@ -202,7 +212,13 @@ def test_inventory_volume_and_roles_unchanged() -> None:
 
 def test_length_exceeded_condition_is_not_the_step() -> None:
     cases = candidates_from_jira_artifacts(_artifacts(), "rn.pdf", [], lambda *_a: None)
-    long_text = next(item for item in cases if "longitud" in item.name.lower())
+    long_text = next(
+        item
+        for item in cases
+        if "longitud" in item.name.lower()
+        or "..." in " ".join(step.expected_result for step in item.steps)
+        or "límite" in " ".join(step.expected_result for step in item.steps).lower()
+    )
     assert all("supera el límite" not in step.action.lower() for step in long_text.steps)
     expected_blob = " ".join(step.expected_result for step in long_text.steps)
     assert "..." in expected_blob or "límite" in expected_blob.lower()

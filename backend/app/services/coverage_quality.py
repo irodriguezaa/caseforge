@@ -35,6 +35,24 @@ _USER_ACT_EXPECTED = re.compile(
     re.IGNORECASE,
 )
 _PLACEHOLDER_TOKEN = re.compile(r"<([A-Za-zÁ-úÑñ_][\wÁ-úÑñ]*)>")
+_3SG_LEAD = (
+    (re.compile(r"^\s*(el usuario\s+)?selecciona\b", re.I), "Seleccionar"),
+    (re.compile(r"^\s*(el usuario\s+)?ingresa\b", re.I), "Ingresar"),
+    (re.compile(r"^\s*(el usuario\s+)?abre\b", re.I), "Abrir"),
+    (re.compile(r"^\s*(el usuario\s+)?cierra\b", re.I), "Cerrar"),
+    (re.compile(r"^\s*(el usuario\s+)?presiona\b", re.I), "Presionar"),
+    (re.compile(r"^\s*(el usuario\s+)?navega\b", re.I), "Navegar"),
+    (re.compile(r"^\s*(el usuario\s+)?(da clic|hace clic)\b", re.I), "Hacer clic"),
+    (re.compile(r"^\s*(el usuario\s+)?elige\b", re.I), "Elegir"),
+    (re.compile(r"^\s*(el usuario\s+)?pulsa\b", re.I), "Pulsar"),
+    (re.compile(r"^\s*(el usuario\s+)?confirma\b", re.I), "Confirmar"),
+    (re.compile(r"^\s*(el usuario\s+)?cancela\b", re.I), "Cancelar"),
+    (re.compile(r"^\s*(el usuario\s+)?reproduce\b", re.I), "Reproducir"),
+    (re.compile(r"^\s*(el usuario\s+)?busca\b", re.I), "Buscar"),
+    (re.compile(r"^\s*(el usuario\s+)?visualiza\b", re.I), "Visualizar"),
+    (re.compile(r"^\s*(el usuario\s+)?entra\b", re.I), "Entrar"),
+    (re.compile(r"^\s*(el usuario\s+)?cambia\b", re.I), "Cambiar"),
+)
 
 
 def _norm(text: str) -> str:
@@ -99,18 +117,32 @@ def quality_gate(candidates: list[GeneratedCaseCandidate]) -> list[GeneratedCase
             tag = (candidate.related_jira or "").strip()
             cid = next((item for item in (candidate.covers or []) if item), "")
             ctx = ((candidate.precondition or "").split(";")[0] if candidate.precondition else "").strip()[:48]
-            suffix = " ".join(part for part in (tag, cid, ctx) if part)[:72]
+            action = (candidate.steps[0].action if candidate.steps else "")[:40]
+            suffix = " ".join(part for part in (ctx, action) if part)[:48]
             if suffix and suffix.lower() not in (candidate.name or "").lower():
-                candidate.name = f"{candidate.name} [{suffix}]"[:250]
+                candidate.name = f"{candidate.name[:70]} {suffix}".strip()[:120]
     for candidate in candidates:
         candidate.precondition = _PLACEHOLDER_TOKEN.sub(r"\1", normalize_precondition(candidate.precondition) or "") or None
         candidate.test_data = _PLACEHOLDER_TOKEN.sub(r"\1", candidate.test_data or "") or candidate.test_data
-        candidate.name = _PLACEHOLDER_TOKEN.sub(r"\1", candidate.name or "")
+        candidate.name = _PLACEHOLDER_TOKEN.sub(r"\1", candidate.name or "")[:120]
         merged: list = []
         composed = (candidate.generation_origin or "") in {"composed-flow", "llm", "coverage-fill"}
         for step in candidate.steps:
             step.action = _PLACEHOLDER_TOKEN.sub(r"\1", step.action or "")
+            for pattern, replacement in _3SG_LEAD:
+                if pattern.search(step.action):
+                    step.action = pattern.sub(replacement, step.action, count=1)
+                    break
             step.expected_result = rewrite_expected(step.expected_result, candidate.name)
+            step.expected_result = re.sub(
+                r"https?://\S+|/(services|recordings|user|v\d+)/[^\s;]*|\b(GET|POST|PUT|PATCH|DELETE)\b|"
+                r"\bstatus codes?\b|se ejecuta el API[^\n.;]*|module_version\S*|`[^`]+`|"
+                r'"/[^"]+"|"\d{3}"|[A-Z][A-Za-z]+_[A-Z][A-Za-z0-9_]+',
+                " ",
+                step.expected_result or "",
+                flags=re.I,
+            )
+            step.expected_result = re.sub(r"\s+", " ", step.expected_result).strip()
             same_action = merged and _norm(merged[-1].action) == _norm(step.action)
             same_cover = merged and list(merged[-1].covered_unit_ids or []) == list(step.covered_unit_ids or [])
             if same_action and (same_cover or not composed):
@@ -123,7 +155,9 @@ def quality_gate(candidates: list[GeneratedCaseCandidate]) -> list[GeneratedCase
             if _norm(step.expected_result) == _norm(candidate.name) and step.expected_result:
                 ctx = (candidate.related_jira or "").strip()
                 if ctx and ctx.lower() not in (candidate.name or "").lower():
-                    candidate.name = f"{candidate.name} ({ctx})"[:250]
+                    action = (step.action or "")[:40]
+                    if action and action.lower() not in (candidate.name or "").lower():
+                        candidate.name = f"{(candidate.name or '')[:70]} {action}".strip()[:120]
         reasons: list[str] = []
         blob = " ".join(
             [

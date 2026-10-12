@@ -101,6 +101,15 @@ def metrics(r, types, arts=None):
             if i and _FILLER.match(s_.action or "") and (exps[i] in exps[i - 1] or exps[i - 1] in exps[i] or len(set(exps[i].split()) - set(exps[i - 1].split())) <= 2):
                 filler += 1
                 break
+    for c in C:
+        m["(!) paso que no es acción del usuario (Given, título de escenario, regla)"] += any(
+            not re.match(r"^\s*(el usuario\s+)?[a-záéíóúñ]+(ar|er|ir)\b", (s_.action or ""), re.I)
+            or re.match(r"^\s*(el usuario\s+)?(est[aá]|se encuentra|tiene|cuenta con|desbloque[oó])\b", (s_.action or ""), re.I)
+            for s_ in c.steps)
+        m["(!) resultado con endpoint, status o llave técnica"] += any(
+            re.search(r'"/[a-z]|/v\d/|status code|"\d{3}"|[A-Z][a-z]+_[A-Z][A-Za-z]+_', s_.expected_result or "") for s_ in c.steps)
+        m["(!) datos de prueba con ruido del formato (id-n, smartlink, mention)"] += bool(re.search(r'"(id-\d+|smartlink|mention)"', c.test_data or ""))
+        m["(!) título de más de 150 caracteres"] += len(c.name or "") > 150
     m["(!) caso con paso de relleno (Observar/Confirmar que repite el anterior)"] = filler
     names = collections.Counter(norm(c.name) for c in C)
     m["(!) casos con nombre duplicado"] = sum(v for v in names.values() if v > 1)
@@ -113,7 +122,8 @@ def metrics(r, types, arts=None):
         print(f"  {k}: {v} ({v * 100 // max(len(C), 1)}%)")
     if arts is not None:
         lits = jira_literals(arts)
-        blob = " ".join(" ".join([c.name or "", c.precondition or "", c.test_data or ""] + [s.action + " " + (s.expected_result or "") for s in c.steps]) for c in C).lower()
+        # Solo título, acciones y resultados: los Datos de prueba NO cuentan (evita volcar textos ahí)
+        blob = " ".join(" ".join([c.name or ""] + [s.action + " " + (s.expected_result or "") for s in c.steps]) for c in C).lower()
         kept = [l for l in lits if l.lower() in blob]
         print(f"  textos literales de UI de Jira conservados: {len(kept)}/{len(lits)} ({len(kept) * 100 // max(len(lits), 1)}%)")
     return m, missing

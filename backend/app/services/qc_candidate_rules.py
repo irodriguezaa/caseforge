@@ -694,17 +694,32 @@ def apply_qc_rules(
         if is_accessibility_audit_only(candidate, release_context):
             continue
         original_name = candidate.name
-        rewritten_steps = [rewrite_step_language(step, original_name) for step in candidate.steps]
-        extra_from_steps = [step.test_data for step in rewritten_steps if step.test_data]
-        if extra_from_steps:
-            candidate.test_data = "; ".join(
-                dict.fromkeys(part for part in [candidate.test_data, *extra_from_steps] if part)
-            )
+        origin = candidate.generation_origin or ""
+        extra_from_steps: list[str] = []
+        if origin in {"composed-flow", "llm", "coverage-fill"}:
+            rewritten_steps = []
+            for step in candidate.steps:
+                expected, expected_tech = rewrite_internal_to_observable(step.expected_result, original_name)
+                if expected_tech:
+                    extra_from_steps.append(expected_tech)
+                step.expected_result = expected
+                rewritten_steps.append(step)
+            if extra_from_steps:
+                candidate.test_data = "; ".join(
+                    dict.fromkeys(part for part in [candidate.test_data, *extra_from_steps] if part)
+                )
+        else:
+            rewritten_steps = [rewrite_step_language(step, original_name) for step in candidate.steps]
+            extra_from_steps = [step.test_data for step in rewritten_steps if step.test_data]
+            if extra_from_steps:
+                candidate.test_data = "; ".join(
+                    dict.fromkeys(part for part in [candidate.test_data, *extra_from_steps] if part)
+                )
         candidate.steps = rewritten_steps
         candidate.name = align_title_with_flow(
             rewrite_case_name(original_name, [step.expected_result for step in rewritten_steps]),
             rewritten_steps,
-        )
+        )[:120]
         if candidate_lacks_observable_qc(candidate):
             continue
         if candidate.user_type is None:

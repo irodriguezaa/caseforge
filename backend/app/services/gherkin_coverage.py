@@ -1520,12 +1520,11 @@ def candidates_from_jira_artifacts(
     stats = stats or GenerationStats()
     units = build_coverage_inventory(artifacts, rn_filename, stats=stats)
     from app.services.case_composer import (
-        attach_artifact_literals,
         compose_inventory,
         validate_composed_candidates,
     )
 
-    out = attach_artifact_literals(compose_inventory(units, existing, duplicate_of), artifacts)
+    out = compose_inventory(units, existing, duplicate_of)
     out = validate_composed_candidates(
         out,
         units,
