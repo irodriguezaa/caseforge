@@ -278,6 +278,7 @@ def build_test_cases_workbook(
     cases: list[TestCase],
     scope_keys: list[str] | None = None,
     coverage: dict | None = None,
+    scenario_ledger: list[dict] | None = None,
 ) -> bytes:
     workbook = Workbook()
     ordered = sorted(cases, key=lambda case: (primary_epic_key(case).lower(), case.test_case_id or ""))
@@ -425,6 +426,39 @@ def build_test_cases_workbook(
                 cell = zephyr.cell(zephyr_row, col, _excel_value(value))
                 _style_cell(cell)
             zephyr_row += 1
+
+    ledger_rows = list(scenario_ledger or [])
+    if not ledger_rows:
+        for case in ordered:
+            reason = str(getattr(case, "applicability_reason", "") or "")
+            if reason.startswith("na_ambiente"):
+                estado = "na_ambiente"
+            elif reason.startswith("pendiente") or "pendiente-qc" in reason:
+                estado = "pendiente de revisión QC"
+            else:
+                estado = "caso ejecutable"
+            ledger_rows.append(
+                {
+                    "story": getattr(case, "technical_story", None) or "",
+                    "scenario": getattr(case, "scenario_origin", None) or _display_case_name(case),
+                    "estado": estado,
+                    "case_id": case.test_case_id or "",
+                    "motivo": reason,
+                }
+            )
+    sheet = workbook.create_sheet("Escenarios de Jira")
+    _style_header(sheet, ["Historia", "Escenario", "Estado", "ID del caso", "Motivo"], [16, 48, 24, 28, 40])
+    for row_index, row in enumerate(ledger_rows, start=2):
+        values = [
+            row.get("story") or "",
+            row.get("scenario") or "",
+            row.get("estado") or "",
+            row.get("case_id") or "",
+            row.get("motivo") or "",
+        ]
+        for col, value in enumerate(values, start=1):
+            cell = sheet.cell(row_index, col, _excel_value(value))
+            _style_cell(cell)
 
     buffer = io.BytesIO()
     workbook.save(buffer)

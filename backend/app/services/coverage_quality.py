@@ -147,7 +147,12 @@ def quality_gate(candidates: list[GeneratedCaseCandidate]) -> list[GeneratedCase
         )
         candidate.name = re.sub(r"\s+", " ", candidate.name).strip()[:120]
         merged: list = []
-        composed = (candidate.generation_origin or "") in {"composed-flow", "llm", "coverage-fill"}
+        composed = (candidate.generation_origin or "") in {
+            "composed-flow",
+            "llm",
+            "coverage-fill",
+            "scenario-case",
+        }
         for step in candidate.steps:
             step.action = _PLACEHOLDER_TOKEN.sub(r"\1", step.action or "")
             generic_action = re.sub(r"\s+", " ", (step.action or "").strip().lower()) == (

@@ -512,9 +512,13 @@ Feature: Pantalla de Ticket
         ],
         "rn.pdf",
     )
-    names = " ".join((unit.scenario or "").lower() for unit in banner_units)
-    assert "no se logra obtener una llave" not in names
-    assert "llave se encuentra vac" not in names
+    legend = [
+        unit
+        for unit in banner_units
+        if "llave" in (unit.scenario or "").lower()
+    ]
+    assert legend
+    assert all(unit.applicability == "na_ambiente" for unit in legend)
     assert any("banner" in (unit.scenario or "").lower() for unit in banner_units)
     assert any("redir" in (unit.scenario or "").lower() for unit in banner_units)
     assert any(

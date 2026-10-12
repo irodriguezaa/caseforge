@@ -1,8 +1,15 @@
 """FASE 6C: writing standard on composed flows. Synthetic Gherkin only."""
 
+import pytest
+
 from app.schemas.case_generation import CoverageUnit
 from app.services.case_composer import compose_inventory, compose_story_units
 from app.services.gherkin_coverage import candidates_from_jira_artifacts
+
+
+@pytest.fixture(autouse=True)
+def _keep_flow_composition(monkeypatch):
+    monkeypatch.setattr("app.services.scenario_cases.composition_mode", lambda: "flow")
 
 
 def _artifacts(description: str) -> list[dict]:

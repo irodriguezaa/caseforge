@@ -5,12 +5,19 @@ from __future__ import annotations
 import json
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from app.schemas.case_generation import CandidateStep, CoverageUnit, GeneratedCaseCandidate
 from app.services.ai_case_engine import (
     _keep_llm_functionality_candidates,
     generate_release_app_candidates,
 )
 from app.services.qc_candidate_rules import apply_qc_rules
+
+
+@pytest.fixture(autouse=True)
+def _keep_flow_composition(monkeypatch):
+    monkeypatch.setattr("app.services.scenario_cases.composition_mode", lambda: "flow")
 
 
 def _unit(cid: str, scenario: str, story: str = "STORY-1", epic: str = "EPIC-1") -> CoverageUnit:

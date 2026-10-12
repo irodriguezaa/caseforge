@@ -47,6 +47,8 @@ class CoverageUnit(BaseModel):
     user_action: str | None = None
     source_origin: str = "gherkin"
     batch_id: str | None = None
+    scenario_group: str | None = None
+    story_summary: str | None = None
     applicability: Literal["ejecutable", "na_ambiente"] | None = None
     applicability_reason: str | None = None
     applied_rules: list[str] = Field(default_factory=list)
@@ -125,6 +127,7 @@ class GeneratedCaseCandidate(BaseModel):
     covered_unit_ids: list[str] = Field(default_factory=list)
     equivalence_key: str | None = None
     batch_id: str | None = None
+    technical_reference: str | None = None
 
 
 class GenerationStats(BaseModel):
@@ -150,6 +153,7 @@ class GenerationStats(BaseModel):
     inventory_exclusions: list[str] = Field(default_factory=list)
     llm_batches: list[dict[str, Any]] = Field(default_factory=list)
     coverage_unit_status: dict[str, str] = Field(default_factory=dict)
+    scenario_ledger: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class GenerateCasesResponse(BaseModel):

@@ -126,6 +126,12 @@ def metrics(r, types, arts=None):
         blob = " ".join(" ".join([c.name or ""] + [s.action + " " + (s.expected_result or "") for s in c.steps]) for c in C).lower()
         kept = [l for l in lits if l.lower() in blob]
         print(f"  textos literales de UI de Jira conservados: {len(kept)}/{len(lits)} ({len(kept) * 100 // max(len(lits), 1)}%)")
+    ledger = list((getattr(r, "generation_stats", None) and r.generation_stats.scenario_ledger) or [])
+    if ledger:
+        by_state = collections.Counter(row.get("estado") or "" for row in ledger)
+        print("Escenarios de Jira:", dict(by_state), "total", len(ledger))
+        pending = [row for row in ledger if row.get("estado") == "pendiente de revisión QC"]
+        print("pendientes QC:", len(pending), f"({len(pending) * 100 // max(len(ledger), 1)}%)")
     return m, missing
 
 

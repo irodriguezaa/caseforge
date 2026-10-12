@@ -747,7 +747,9 @@ def apply_qc_rules(
             rewritten_steps,
         )[:120]
         if candidate_lacks_observable_qc(candidate):
-            continue
+            pending = any(str(rule).startswith("pendiente-qc") for rule in (candidate.applied_rules or []))
+            if not pending:
+                continue
         if candidate.user_type is None:
             candidate.user_type = extract_user_type(
                 f"{candidate.precondition or ''} {candidate.test_data or ''} {candidate.name}"
@@ -766,13 +768,17 @@ def apply_qc_rules(
         equiv = build_functional_equivalence_key(candidate)
         candidate.equivalence_key = equiv.value()
         origin = candidate.generation_origin or ""
-        if origin in {"composed-flow", "llm", "coverage-fill"}:
-            seq = tuple(
-                (re.sub(r"\W+", " ", (step.action or "").lower()).strip(),
-                 re.sub(r"\W+", " ", (step.expected_result or "").lower()).strip())
-                for step in candidate.steps
-            )
-            cluster_key = f"{_primary_epic(candidate)}|{candidate.related_jira or ''}|{seq}"
+        if origin in {"composed-flow", "llm", "coverage-fill", "scenario-case"}:
+            if origin == "scenario-case":
+                covers = "+".join(sorted(candidate.covers or candidate.covered_unit_ids or []))
+                cluster_key = f"{_primary_epic(candidate)}|{candidate.related_jira or ''}|{covers or id(candidate)}"
+            else:
+                seq = tuple(
+                    (re.sub(r"\W+", " ", (step.action or "").lower()).strip(),
+                     re.sub(r"\W+", " ", (step.expected_result or "").lower()).strip())
+                    for step in candidate.steps
+                )
+                cluster_key = f"{_primary_epic(candidate)}|{candidate.related_jira or ''}|{seq}"
         else:
             cluster_key = f"{_primary_epic(candidate)}|{equiv.value()}"
             if not (equiv.objective or equiv.observable):

@@ -601,8 +601,9 @@ def apply_executability_gate(
     out: list[GeneratedCaseCandidate] = []
     for candidate in candidates:
         origin = candidate.generation_origin or ""
-        if origin in {"composed-flow", "llm", "coverage-fill"} or any(
-            str(rule).startswith("composed-flow") for rule in (candidate.applied_rules or [])
+        if origin in {"composed-flow", "llm", "coverage-fill", "scenario-case"} or any(
+            str(rule).startswith("composed-flow") or str(rule) == "scenario-case"
+            for rule in (candidate.applied_rules or [])
         ):
             _repair_composed_actions(candidate, by_id)
             candidate.precondition = normalize_precondition(candidate.precondition)

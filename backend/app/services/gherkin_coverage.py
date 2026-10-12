@@ -886,6 +886,19 @@ def _append_materialized(
     record_classification(stats, classification, candidate.name)
 
 
+def _record_exclusion(stats: GenerationStats, story_key: str, title: str, motivo: str) -> None:
+    stats.inventory_exclusions.append(f"{story_key}: {title}: {motivo}")
+    stats.scenario_ledger.append(
+        {
+            "story": story_key or "",
+            "scenario": title,
+            "estado": "excluido",
+            "motivo": motivo,
+            "case_id": "",
+        }
+    )
+
+
 def _coverage_unit(
     *,
     coverage_id: str,
@@ -910,6 +923,8 @@ def _coverage_unit(
     applicability: str | None = None,
     applicability_reason: str | None = None,
     examples: list[dict[str, str]] | None = None,
+    scenario_group: str | None = None,
+    story_summary: str | None = None,
 ) -> CoverageUnit:
     title = _fill_placeholders(title, None, examples)
     body = _fill_placeholders(body, None, examples)
@@ -959,6 +974,9 @@ def _coverage_unit(
         applicability=applicability if applicability in {"ejecutable", "na_ambiente"} else "ejecutable",
         applicability_reason=applicability_reason,
         applied_rules=list(applied_rules or []),
+        scenario_group=scenario_group
+        or f"{story_key}|{title}|{strategy}|{technical_group or ''}",
+        story_summary=story_summary,
     )
 
 
@@ -1139,6 +1157,7 @@ def _units_from_story_blocks(
         stats.attached_support += 1
     condition_b = "; ".join(dict.fromkeys(support_conditions)) or None
     extra_support = "; ".join(dict.fromkeys(support_notes)) or None
+    story_summary = str(story.get("summary") or "")
 
     def _next_id() -> str:
         seq_holder[0] += 1
@@ -1185,6 +1204,17 @@ def _units_from_story_blocks(
     coverable = [(block, clf) for block, clf in classified if _is_coverable(clf)]
     coverable = _merge_scroll_family(coverable)
     coverable = _merge_key_degradation_family(coverable)
+    coverable_titles = {(block.get("title") or "") for block, _clf in coverable}
+    for block, clf in classified:
+        title = str(block.get("title") or "")
+        if title in coverable_titles:
+            continue
+        motivo = (
+            "variante de soporte adjunta a la historia"
+            if clf.role == "B" or clf.qc_relevance == "QC_VARIANT"
+            else "no es escenario QC ejecutable"
+        )
+        _record_exclusion(stats, story_key, title, motivo)
 
     for block, clf in coverable:
         title = block["title"]
@@ -1201,13 +1231,21 @@ def _units_from_story_blocks(
         source_origin = str(block.get("source_origin") or "gherkin")
         user_action = _pick_user_action(clf)
         extra_rules = ["then-tecnico-traducido"] if block.get("_translated_then") else []
+        na_kwargs: dict[str, str] = {}
         if looks_like_invalid_lead(title):
-            stats.inventory_exclusions.append(f"{story_key}: {title}: título no es unidad QC")
+            _record_exclusion(stats, story_key, title, "título no es unidad QC")
             continue
         noise = _non_qc_inventory_reason(title, body, user_action, story=story)
         if noise and not block.get("_translated_then"):
-            stats.inventory_exclusions.append(f"{story_key}: {title}: {noise}")
-            continue
+            if _legend_template_off_surface(story, title, body) or _orphan_config_key(title, body):
+                extra_rules = list(dict.fromkeys([*extra_rules, "na-ambiente"]))
+                na_kwargs = {
+                    "applicability": "na_ambiente",
+                    "applicability_reason": f"na_ambiente: {noise}",
+                }
+            else:
+                _record_exclusion(stats, story_key, title, noise)
+                continue
 
         if strategy == "group" and examples:
             extra = format_examples(examples)
@@ -1245,6 +1283,8 @@ def _units_from_story_blocks(
                     source_origin=source_origin,
                     story_context=story_context,
                     applied_rules=extra_rules,
+                    story_summary=story_summary,
+                    **na_kwargs,
                     examples=block.get("examples") or examples,
                 )
             )
@@ -1274,6 +1314,8 @@ def _units_from_story_blocks(
                         source_origin=source_origin,
                         story_context=story_context,
                         applied_rules=extra_rules,
+                    story_summary=story_summary,
+                    **na_kwargs,
                         examples=group,
                     )
                 )
@@ -1304,6 +1346,8 @@ def _units_from_story_blocks(
                         source_origin=source_origin,
                         story_context=story_context,
                         applied_rules=extra_rules,
+                    story_summary=story_summary,
+                    **na_kwargs,
                         examples=[example],
                     )
                 )
@@ -1347,6 +1391,8 @@ def _units_from_story_blocks(
                     source_origin=source_origin,
                     story_context=story_context,
                     applied_rules=extra_rules,
+                    story_summary=story_summary,
+                    **na_kwargs,
                     examples=block.get("examples") or examples,
                 )
             )
@@ -1377,6 +1423,8 @@ def _units_from_story_blocks(
                     source_origin=source_origin,
                     story_context=story_context,
                     applied_rules=extra_rules,
+                    story_summary=story_summary,
+                    **na_kwargs,
                     examples=block.get("examples") or examples,
                 )
             )
@@ -1547,4 +1595,9 @@ def candidates_from_jira_artifacts(
     )
     out = apply_qc_rules(out, stats=stats)
     out = apply_executability_gate(out, units)
-    return quality_gate(out)
+    out = quality_gate(out)
+    from app.services.scenario_cases import contextualize_duplicate_titles, fill_scenario_ledger
+
+    out = contextualize_duplicate_titles(out)
+    fill_scenario_ledger(stats, units, out)
+    return out

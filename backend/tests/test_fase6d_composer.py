@@ -1,5 +1,7 @@
 """FASE 6D: granularity, unique titles, NA per epic. Synthetic Gherkin only."""
 
+import pytest
+
 from app.schemas.case_generation import CandidateStep, CoverageUnit, GeneratedCaseCandidate
 from app.services.case_composer import (
     candidate_violates_writing_standard,
@@ -10,6 +12,11 @@ from app.services.case_composer import (
 )
 from app.services.gherkin_coverage import build_coverage_inventory, candidates_from_jira_artifacts
 from app.services.qc_candidate_rules import apply_qc_rules, merge_candidates
+
+
+@pytest.fixture(autouse=True)
+def _keep_flow_composition(monkeypatch):
+    monkeypatch.setattr("app.services.scenario_cases.composition_mode", lambda: "flow")
 
 
 def _artifacts(*stories: tuple[str, str, str]) -> list[dict]:

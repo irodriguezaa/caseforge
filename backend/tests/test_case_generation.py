@@ -1108,7 +1108,7 @@ def test_export_excel_has_qc_and_zephyr_sheets(client, monkeypatch, tmp_path) ->
     exported = client.get(f"/api/v1/releases/{release_id}/test-cases/export")
     assert exported.status_code == 200
     workbook = load_workbook(io.BytesIO(exported.content))
-    assert workbook.sheetnames == ["Avance", "Test Cases", "Zephyr"]
+    assert workbook.sheetnames == ["Avance", "Test Cases", "Zephyr", "Escenarios de Jira"]
     avance = workbook["Avance"]
     qc = workbook["Test Cases"]
     zephyr = workbook["Zephyr"]

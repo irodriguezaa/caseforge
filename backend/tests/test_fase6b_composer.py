@@ -1,5 +1,7 @@
 """FASE 6B: flow composition and writing standard. Synthetic Gherkin only."""
 
+import pytest
+
 from app.schemas.case_generation import CoverageUnit, GenerationStats
 from app.services.case_composer import (
     compose_inventory,
@@ -10,6 +12,11 @@ from app.services.case_composer import (
     validate_composed_candidates,
 )
 from app.services.gherkin_coverage import build_coverage_inventory
+
+
+@pytest.fixture(autouse=True)
+def _keep_flow_composition(monkeypatch):
+    monkeypatch.setattr("app.services.scenario_cases.composition_mode", lambda: "flow")
 
 
 def _unit(**kwargs) -> CoverageUnit:

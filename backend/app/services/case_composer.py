@@ -292,6 +292,7 @@ class FlowDraft:
     pending_reason: str | None = None
     evidence: str = ""
     applied_rules: list[str] = field(default_factory=list)
+    technical_reference: str | None = None
 
 
 def _group_same_when(units: list[CoverageUnit]) -> list[list[CoverageUnit]]:
@@ -781,6 +782,10 @@ def _title_distinguisher(candidate: GeneratedCaseCandidate) -> str:
 
 
 def ensure_distinct_titles(candidates: list[GeneratedCaseCandidate]) -> list[GeneratedCaseCandidate]:
+    from app.services.scenario_cases import composition_mode, contextualize_duplicate_titles
+
+    if composition_mode() == "scenario":
+        return contextualize_duplicate_titles(candidates)
     executable_names = {
         _norm(row.name)
         for row in candidates
@@ -842,7 +847,8 @@ def draft_to_candidate(
             draft.units[0].applicability_reason if applicability == "na_ambiente" else draft.pending_reason
         ),
         applied_rules=rules,
-        generation_origin="composed-flow",
+        generation_origin="scenario-case" if "scenario-case" in rules else "composed-flow",
+        technical_reference=draft.technical_reference,
         source_type="functionality",
         confidence="medium" if draft.pending_reason else "high",
         requires_condition=any(bool(unit.requires_condition) for unit in draft.units),
@@ -854,6 +860,10 @@ def compose_inventory(
     existing: list[dict[str, str]],
     duplicate_of,
 ) -> list[GeneratedCaseCandidate]:
+    from app.services.scenario_cases import compose_scenario_inventory, composition_mode, contextualize_duplicate_titles
+
+    if composition_mode() == "scenario":
+        return contextualize_duplicate_titles(compose_scenario_inventory(inventory, existing, duplicate_of))
     by_story: dict[str, list[CoverageUnit]] = {}
     order: list[str] = []
     na_units: list[CoverageUnit] = []
@@ -1072,4 +1082,8 @@ def validate_composed_candidates(
             if not row.generation_origin or row.generation_origin == "composed-flow":
                 row.generation_origin = "coverage-fill"
         repaired.extend(extra)
+    from app.services.scenario_cases import composition_mode, contextualize_duplicate_titles
+
+    if composition_mode() == "scenario":
+        return contextualize_duplicate_titles(repaired)
     return ensure_distinct_titles(_fold_identical_story_cases(repaired))

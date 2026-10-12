@@ -1,5 +1,7 @@
 """B = condition, A = user action, C = observable. Never mix B into A."""
 
+import pytest
+
 from app.schemas.case_generation import CandidateStep, CoverageUnit, GeneratedCaseCandidate
 from app.services.ai_case_engine import _candidate_from_functionality_ticket
 from app.services.executability import (
@@ -13,6 +15,11 @@ from app.services.executability import (
 from app.services.gherkin_coverage import build_coverage_inventory, candidates_from_jira_artifacts
 from app.services.qc_candidate_rules import apply_qc_rules, rewrite_step_language
 from tests.test_scenario_classifier import _artifacts
+
+
+@pytest.fixture(autouse=True)
+def _keep_flow_composition(monkeypatch):
+    monkeypatch.setattr("app.services.scenario_cases.composition_mode", lambda: "flow")
 
 
 def test_test_intent_is_semantic_not_key_hardcoded() -> None:

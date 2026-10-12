@@ -1662,6 +1662,11 @@ def generate_release_app_candidates(
         candidates = []
 
     candidates = stamp_candidates(candidates, functionality_keys, jira_artifacts)
+    if jira_candidates:
+        from app.services.scenario_cases import align_llm_to_deterministic, composition_mode
+
+        if composition_mode() == "scenario" and candidates is not jira_candidates:
+            candidates = align_llm_to_deterministic(jira_candidates, candidates)
     candidates = _merge_last_resort(
         pdf_bytes,
         rn_filename or "",
@@ -1678,6 +1683,10 @@ def generate_release_app_candidates(
     candidates = apply_qc_rules(candidates, release_context=release_context, stats=stats)
     candidates = apply_executability_gate(candidates, inventory)
     candidates = quality_gate(candidates)
+    from app.services.scenario_cases import contextualize_duplicate_titles, fill_scenario_ledger
+
+    candidates = contextualize_duplicate_titles(candidates)
+    fill_scenario_ledger(stats, inventory, candidates)
     stamp_source_types(candidates)
     candidates = stamp_candidates(candidates, functionality_keys, jira_artifacts)
     covered = sorted(_covered_ids(candidates))
