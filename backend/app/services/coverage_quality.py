@@ -183,10 +183,11 @@ def quality_gate(candidates: list[GeneratedCaseCandidate]) -> list[GeneratedCase
                     if pattern.search(step.action):
                         step.action = pattern.sub(replacement, step.action, count=1)
                         break
-            step.expected_result = rewrite_expected(step.expected_result, candidate.name)
             scenario_case = (candidate.generation_origin or "") in {"scenario-case", "llm"} or "scenario-case" in (
                 candidate.applied_rules or []
             )
+            if not scenario_case:
+                step.expected_result = rewrite_expected(step.expected_result, candidate.name)
             if not scenario_case:
                 step.expected_result = re.sub(
                     r"https?://\S+|/(services|recordings|user|v\d+)/[^\s;]*|\b(GET|POST|PUT|PATCH|DELETE)\b|"
@@ -196,10 +197,10 @@ def quality_gate(candidates: list[GeneratedCaseCandidate]) -> list[GeneratedCase
                     step.expected_result or "",
                     flags=re.I,
                 )
-            step.expected_result = re.sub(r"\s+", " ", step.expected_result).strip()
+            step.expected_result = re.sub(r"\s+", " ", step.expected_result or "").strip()
             same_action = merged and _norm(merged[-1].action) == _norm(step.action)
             same_cover = merged and list(merged[-1].covered_unit_ids or []) == list(step.covered_unit_ids or [])
-            if same_action and (same_cover or not composed):
+            if same_action and not scenario_case and (same_cover or not composed):
                 merged[-1].expected_result = f"{merged[-1].expected_result}; {step.expected_result}".strip("; ")
                 continue
             merged.append(step)
@@ -228,9 +229,13 @@ def quality_gate(candidates: list[GeneratedCaseCandidate]) -> list[GeneratedCase
                 if expected:
                     step.expected_result = expected
             if lifted:
+                from app.services.scenario_cases import complete_technical_reference
+
                 current = candidate.technical_reference or ""
                 extra = "; ".join(dict.fromkeys(lifted))
-                candidate.technical_reference = "; ".join(part for part in (current, extra) if part and extra not in current)
+                candidate.technical_reference = complete_technical_reference(
+                    "; ".join(part for part in (current, extra) if part)
+                )
         for index, step in enumerate(candidate.steps, start=1):
             step.step_number = index
             if (

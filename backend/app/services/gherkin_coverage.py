@@ -166,20 +166,26 @@ def _feature_preamble(story: dict[str, Any]) -> str:
     return before.strip()
 
 
+def feature_title_of(story: dict[str, Any]) -> str:
+    blob = gherkin_source_text(
+        f"{story.get('description') or ''}\n{story.get('acceptance_criteria') or ''}"
+    ) or f"{story.get('description') or ''}\n{story.get('acceptance_criteria') or ''}"
+    match = re.search(r"(?im)^\s*Feature\s*:\s*(.+)$", blob)
+    return match.group(1).strip() if match else ""
+
+
 def _when_is_system(body: str) -> bool:
+    """When no lo ejecuta el usuario y el Then no describe UI visible."""
     whens = re.findall(r"(?im)^\s*(?:When|Cuando)\s+(.+)$", body or "")
-    if not whens:
+    if not whens or any(is_user_action(clause) for clause in whens):
         return False
-    return any(
-        re.search(
-            r"\b(procesa|procesar|decodifica|decodificar|parsea|parsear|reintenta|reintentar)\b|"
-            r"\b(el sistema|la aplicaci[oó]n|el servicio|el backend)\s+(env[ií]a|enviar|procesa|decodifica|parsea|reintenta)\b",
-            clause,
-            re.I,
-        )
-        and not is_user_action(clause)
-        for clause in whens
+    thens = re.findall(r"(?im)^\s*(?:Then|Entonces)\s+(.+)$", body or "")
+    visible = any(
+        re.search(r"\b(muestra|mostrar|pantalla|bot[oó]n|mensaje|men[uú]|modal|opci[oó]n)\b", clause, re.I)
+        and not re.search(r"\b(se emite|debe emitirse|evento)\b", clause, re.I)
+        for clause in thens
     )
+    return not visible
 
 
 def _pick_translated_observable(blob: str, pool: list[str]) -> str | None:
@@ -1498,9 +1504,18 @@ def _units_from_story_blocks(
                 )
             )
     preamble = _feature_preamble(story)
-    if preamble:
+    feature_title = feature_title_of(story)
+    if preamble or feature_title:
         for unit in units:
-            unit.feature_background = preamble
+            if preamble:
+                unit.feature_background = preamble
+            if feature_title:
+                unit.story_summary = unit.story_summary or story_summary
+                notes = list(unit.technical_notes or [])
+                mark = f"feature-title:{feature_title}"
+                if mark not in notes:
+                    notes.append(mark)
+                unit.technical_notes = notes
     return units
 
 

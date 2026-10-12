@@ -49,7 +49,11 @@ _INPUT_FIELD = re.compile(
 )
 _TECH_PRE = re.compile(
     r"\b(sdk|librer[ií]a|inicializ\w*|endpoint|\bapi\b|feature\s*:|implementaci[oó]n|"
-    r"contexto global|convenci[oó]n)\b",
+    r"contexto\s+(?:t[eé]cnico|global)|configuraci[oó]n\s+t[eé]cnica|convenci[oó]n)\b",
+    re.I,
+)
+_DANGLING_WORD = re.compile(
+    r"^(?:de|del|para|por|con|en|a|al|el|la|los|las|un|una|y|o|que|su)$",
     re.I,
 )
 _FULL_IDENT = re.compile(
@@ -218,10 +222,9 @@ def lift_technical(text: str | None) -> tuple[str, list[str]]:
         return " "
 
     cleaned = _FULL_IDENT.sub(_grab, text or "")
-    cleaned = re.sub(r'["“]\s*[.\s=]*["”]', " ", cleaned)
     cleaned = re.sub(r"\s*[.](?:\s*[.])+\s*", " ", cleaned)
     cleaned = re.sub(r"\s+=\s*", " ", cleaned)
-    cleaned = re.sub(r"\s+", " ", cleaned).strip(" .;,-:\"“”")
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
     return cleaned, list(dict.fromkeys(found))
 
 
@@ -293,7 +296,30 @@ def _navigation_steps(text: str) -> list[tuple[str, str]]:
         if kind == "when" and not is_nav and not is_user_action(clause):
             continue
         steps.append((action, _arrival_result(clause)))
-    return steps
+    if len(steps) < 2:
+        return steps
+    destinations: list[str] = []
+    for _action, result in steps:
+        dest = re.sub(r"(?i)^se muestra\s+", "", result or "").strip(" .")
+        if dest:
+            destinations.append(dest)
+    if len(destinations) < 2:
+        return steps
+    return [("Ingresar a " + " > ".join(destinations), f"Se muestra {destinations[-1]}.")]
+
+
+def complete_technical_reference(text: str | None) -> str | None:
+    """Keep each identifier once and drop a fragment of a longer dotted token."""
+    parts = [part.strip() for part in re.split(r"\s*;\s*", text or "") if part.strip()]
+    kept: list[str] = []
+    for part in parts:
+        if " " not in part and any(
+            part != other and "." in other and part in other.split(".") for other in parts
+        ):
+            continue
+        if part not in kept:
+            kept.append(part)
+    return "; ".join(kept) or None
 
 
 def _missing_data(walked: list[tuple[str, str]], source: str) -> list[str]:
@@ -317,9 +343,12 @@ def _missing_data(walked: list[tuple[str, str]], source: str) -> list[str]:
 
 
 def _short_phrase(text: str | None, limit: int = 6) -> str:
-    raw = re.sub(r"^\s*feature\s*:?\s*", "", (text or ""), flags=re.I).strip(" .:-")
-    words = [word for word in re.split(r"\s+", raw) if word]
-    return " ".join(words[:limit])
+    raw = re.sub(r"^\s*feature\s*:?\s*", "", (text or ""), flags=re.I)
+    raw = re.sub(r"^\s*\d+\s*:\s*", "", raw).strip(" .:-")
+    words = [word for word in re.split(r"\s+", raw) if word][:limit]
+    while words and _DANGLING_WORD.match(words[-1].strip(".,;:")):
+        words.pop()
+    return " ".join(words)
 
 
 def compose_scenario_units(units: list[CoverageUnit]) -> FlowDraft:
@@ -486,6 +515,14 @@ def compose_scenario_units(units: list[CoverageUnit]) -> FlowDraft:
             0,
             CandidateStep(step_number=1, action=action, expected_result=result, covered_unit_ids=list(covers)),
         )
+    from app.services.gherkin_coverage import _when_is_system
+
+    original = primary.evidence or primary.body or ""
+    if all((unit.applicability or "") == "na_ambiente" for unit in units):
+        steps = []
+    elif _when_is_system(original) or _when_is_system(primary.body or ""):
+        pending = "verificación técnica"
+        steps = []
     for step in steps:
         if _NAV_GIVEN.search(step.action or "") and not (step.expected_result or "").strip():
             step.expected_result = _arrival_result(step.action)
@@ -533,7 +570,13 @@ def compose_scenario_units(units: list[CoverageUnit]) -> FlowDraft:
     test_data = _examples_as_data(units)
     if data_notes:
         test_data = "; ".join(part for part in [test_data, *data_notes] if part)
-    tech_notes = list(dict.fromkeys([*tech, *(note for unit in units for note in (unit.technical_notes or []))]))
+    tech_notes = list(
+        dict.fromkeys(
+            note
+            for note in [*tech, *(item for unit in units for item in (unit.technical_notes or []))]
+            if not str(note).startswith("feature-title:")
+        )
+    )
     rules = ["scenario-case", *{
         rule
         for unit in units
@@ -554,7 +597,7 @@ def compose_scenario_units(units: list[CoverageUnit]) -> FlowDraft:
         pending_reason=pending,
         evidence=primary.evidence or title,
         applied_rules=rules,
-        technical_reference="; ".join(part for part in tech_notes if part) or None,
+        technical_reference=complete_technical_reference("; ".join(part for part in tech_notes if part)),
     )
 
 
@@ -586,7 +629,7 @@ def compose_scenario_inventory(
 
 
 def feature_context(candidate: GeneratedCaseCandidate) -> str:
-    raw = _short_phrase(candidate.use_case_title or candidate.description or "")
+    raw = _short_phrase(candidate.use_case_title or candidate.description or "", limit=6)
     if not raw:
         return ""
     if re.sub(r"\W+", " ", raw.lower()).strip() == re.sub(r"\W+", " ", (candidate.name or "").lower()).strip():
@@ -685,6 +728,15 @@ def fill_scenario_ledger(
                 or any(str(rule).startswith("pendiente-qc") for rule in (match.applied_rules or []))
             )
         )
+        review_pending = bool(
+            match
+            and any(
+                str(rule).startswith("pendiente-qc")
+                and "verificación técnica" not in str(rule)
+                and "sin acción de usuario" not in str(rule)
+                for rule in (match.applied_rules or [])
+            )
+        )
         if (unit.applicability or "") == "na_ambiente" or (match and (match.applicability or "") == "na_ambiente"):
             estado, motivo, case_id = (
                 "na_ambiente",
@@ -693,6 +745,12 @@ def fill_scenario_ledger(
             )
         elif match and match.steps and not case_pending:
             estado, motivo, case_id = "caso ejecutable", "", match.name
+        elif review_pending:
+            estado, motivo, case_id = (
+                "pendiente de revisión QC",
+                (match.applicability_reason if match else None) or "sin caso válido",
+                match.name if match else "",
+            )
         elif any(str(rule) == "verificacion-tecnica" for rule in rules) and (
             match is None or not match.steps
         ):

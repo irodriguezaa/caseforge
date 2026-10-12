@@ -262,9 +262,9 @@ Scenario: Registrar métrica al confirmar
     )
     gherkin_units = [unit for unit in units if (unit.source_origin or "gherkin") == "gherkin"]
     assert gherkin_units
-    assert any(_llm_eligible(unit) for unit in gherkin_units)
-    pending_units = [
-        unit for unit in gherkin_units if any(str(rule).startswith("pendiente-qc") for rule in (unit.applied_rules or []))
-    ]
-    assert pending_units
-    assert all(_llm_eligible(unit) for unit in pending_units)
+    system_units = [unit for unit in gherkin_units if "flag" in (unit.scenario or "").lower()]
+    user_units = [unit for unit in gherkin_units if unit not in system_units]
+    assert system_units
+    assert all(not _llm_eligible(unit) for unit in system_units)
+    assert user_units
+    assert all(_llm_eligible(unit) for unit in user_units)

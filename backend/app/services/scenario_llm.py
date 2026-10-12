@@ -15,6 +15,7 @@ from app.config import settings
 from app.schemas.case_generation import CandidateStep, CoverageUnit, GeneratedCaseCandidate
 from app.services.case_composer import _QUOTED
 from app.services.coverage_quality import normalize_precondition
+from app.services.executability import is_user_action
 from app.services.scenario_cases import (
     TECH_VERIFY_MARK,
     _navigation_steps,
@@ -58,18 +59,19 @@ _REWRITE_SYSTEM = """Eres analista QC. Redactas UN caso ejecutable a partir del 
 No decidas cobertura: no elimines el escenario. No copies el borrador determinista; es solo referencia opcional.
 
 Plantilla del caso:
-- Navegación: si el Background o los Given de la Feature tienen varios pasos de pantalla sin resultado propio, unifícalos en un paso "Ingresar a A > B > C".
-- Acción: infinitivo (Seleccionar, Ingresar, Presionar, Completar). Una acción de usuario por paso.
-- Resultado: observable en pantalla. Prohibido "Se observa el comportamiento…", "Se verifica que…" de relleno.
+- Navegación: si el Background o los Given de la Feature describen cómo llegar, esos pasos van PRIMERO, en el orden del Background, sin repetir la misma acción. Varios pasos de navegación seguidos se unifican en "Ingresar a A > B > C" y el resultado es "Se muestra C" más lo que se ve en esa pantalla.
+- Acción: infinitivo (Seleccionar, Ingresar, Presionar, Completar). Cada acción aparece una sola vez.
+- Resultado: observable en pantalla. Prohibido "Se observa el comportamiento…", "Se verifica que…" de relleno, "Se muestra el resultado de…", "Se muestra un/una <sustantivo>" sin nada más, y un resultado que solo repite el objeto de la acción ("Seleccionar X" no puede quedar en "Se muestra X").
 - Precondición: solo estados (sesión, perfil, contenido ya presente). Sin "Feature", sin API, sin endpoints.
 - Referencia técnica: APIs, eventos, status, nombres de llave, identificadores con `_`, puntos o backticks. El identificador va completo, nunca recortado. Nunca en el título, la precondición, los pasos ni el resultado.
 - Datos de prueba: solo de ESTE escenario. Si falta un dato que Jira no da, escribe exactamente `Definir por QC: <qué dato se necesita>`. No inventes valores.
-- Textos entre comillas: solo si ese texto aparece literal en el Gherkin, la Feature o las tablas. No inventes textos.
+- Textos entre comillas: solo si ese texto aparece literal en el Gherkin, la Feature o las tablas. No inventes textos. Cierra cada comilla y conserva el punto: Hacer clic en el botón "Siguiente".
 - Un Then que describe un estado (fue, queda, está) se redacta como estado, sin comillas y sin "Se muestra el mensaje".
 - Si el When es del usuario y el Then es un evento, el resultado es el comportamiento visible tomado del título, la Feature o la historia. El evento va en technical_reference con "verificación técnica: requiere herramienta (logs/monitoreo)".
 - La precondición solo lleva estados del usuario o del contenido. Inicialización de SDK, contexto técnico y el título de la Feature van en technical_reference.
-- Si el título se repite, distingue con " — " y una frase de hasta 6 palabras del título de la historia o de la Feature. Si no se repite, no agregues nada. No pegues la precondición.
-- Si el Background o un Given de la Feature describe cómo llegar (abrir, ingresar, navegar, seleccionar), el primer paso es esa navegación y su resultado es la pantalla a la que se llega.
+- Si el título se repite dentro de la misma EPC, distingue con " — " y una frase completa de hasta 6 palabras, sin numeración (nada de 01: ni 02:) y sin terminar en preposición o artículo. Si no se repite, el título queda solo. No pegues la precondición.
+- La precondición no menciona SDK, librerías, inicialización, contexto técnico, configuración técnica ni el título de la historia o de la Feature. Eso va en technical_reference.
+- En technical_reference cada identificador aparece una vez y completo. No cortes continue_watching.carousel.loaded en fragmentos.
 
 Textos de UI entre comillas: copia el literal exacto del Gherkin en la acción o en el resultado.
 Si ui_phrases trae textos de más de una palabra, inclúyelos en algún paso (acción o resultado).
@@ -143,12 +145,149 @@ def required_ui_literals(gherkin: str) -> list[str]:
     return list(dict.fromkeys(found))
 
 
+_NAV_VERB = re.compile(r"\b(abre|abrir|ingresa|ingresar|navega|navegar|selecciona|seleccionar)\b", re.I)
+_NUMBERED_TITLE = re.compile(r"(?:—|-)\s*\d+\s*:|\b\d{1,2}\s*:")
+_DANGLING_CONTEXT = re.compile(
+    r"\b(de|del|para|por|con|en|a|al|el|la|los|las|un|una|y|o|que|su)\s*$",
+    re.I,
+)
+_TECH_PRE_VISIBLE = re.compile(
+    r"\b(sdk|librer[ií]a|inicializ\w*|contexto\s+(?:t[eé]cnico|global)|"
+    r"configuraci[oó]n\s+t[eé]cnica|feature\s*:)\b",
+    re.I,
+)
+_QUOTE_MARK = re.compile(r'["“”]')
+_NAV_STOP = {
+    "el", "la", "los", "las", "un", "una", "que", "de", "del", "al", "a", "en", "y", "o",
+    "con", "por", "para", "su", "sus", "usuario", "se", "es", "son",
+}
+
+
+def _odd_quotes(text: str) -> bool:
+    for line in (text or "").splitlines() or [""]:
+        if len(_QUOTE_MARK.findall(line)) % 2 == 1:
+            return True
+    return False
+
+
+def _echoes_action(action: str, expected: str) -> bool:
+    act = _norm_text(action)
+    exp = _norm_text(expected).strip(" .")
+    obj = re.sub(r"^(?:el usuario\s+)?[a-záéíóúñ]+(?:ar|er|ir)\s+", "", act).strip()
+    obj = re.sub(r"^(?:el|la|los|las|un|una)\s+", "", obj).strip()
+    if len(obj) < 3:
+        return False
+    shown = re.sub(r"^se muestra\s+(?:la opci[oó]n|el|la|los|las|un|una)\s+", "", exp).strip()
+    return shown == obj
+
+
+def _background_nav(background: str) -> list[str]:
+    clauses: list[str] = []
+    for kind, clause in _walk_gwt(background or ""):
+        if kind in {"given", "when"} and _NAV_VERB.search(clause or ""):
+            clauses.append(_norm_text(clause))
+    return clauses
+
+
+def _matches_background_nav(action: str, clauses: list[str]) -> bool:
+    folded = _norm_text(action)
+    if not _NAV_VERB.search(folded):
+        return False
+    tokens = set(folded.split()) - _NAV_STOP
+    for clause in clauses:
+        needed = {token for token in set(clause.split()) - _NAV_STOP if not _NAV_VERB.fullmatch(token)}
+        if needed and len(needed & tokens) >= min(2, len(needed)):
+            return True
+    return False
+
+
+def _feature_labels(*blobs: str) -> list[str]:
+    labels: list[str] = []
+    for blob in blobs:
+        for note in re.findall(r"feature-title:(.+)", blob or ""):
+            labels.append(note.strip())
+        for match in re.finditer(r"(?im)^\s*Feature\s*:\s*(.+)$", blob or ""):
+            labels.append(match.group(1).strip())
+    return list(dict.fromkeys(labels))
+
+
+def _compact_leading_navigation(candidate: GeneratedCaseCandidate) -> None:
+    """Collapse several leading navigation steps into Ingresar a A > B > C."""
+    steps = list(candidate.steps or [])
+    if len(steps) < 2:
+        return
+    nav_lead = re.compile(r"^\s*(el usuario\s+)?(ingresar|abrir|navegar|entrar|acceder)\b", re.I)
+    run: list[CandidateStep] = []
+    for step in steps:
+        if nav_lead.match(step.action or ""):
+            run.append(step)
+        else:
+            break
+    if len(run) < 2:
+        return
+    destinations: list[str] = []
+    for step in run:
+        dest = re.sub(r"(?i)^se muestra\s+", "", step.expected_result or "").strip(" .")
+        if not dest:
+            dest = re.sub(
+                r"(?i)^(el usuario\s+)?(ingresar a|ingresar|abrir|navegar a|navegar|entrar a|acceder a)\s+",
+                "",
+                step.action or "",
+            ).strip(" .")
+        if dest:
+            destinations.append(dest)
+    if len(destinations) < 2:
+        return
+    merged = run[0].model_copy(update={
+        "action": "Ingresar a " + " > ".join(destinations),
+        "expected_result": f"Se muestra {destinations[-1]}.",
+    })
+    rest = steps[len(run):]
+    candidate.steps = [merged, *rest]
+    for index, step in enumerate(candidate.steps, start=1):
+        step.step_number = index
+
+
+def _relocate_technical_precondition(
+    candidate: GeneratedCaseCandidate,
+    story_title: str = "",
+    feature_title: str = "",
+    extra_labels: list[str] | None = None,
+) -> None:
+    """Move a technical precondition clause whole into Referencia técnica."""
+    clauses = [part.strip() for part in re.split(r"\s*;\s*", candidate.precondition or "") if part.strip()]
+    if not clauses:
+        return
+    labels = [_norm_text(story_title), _norm_text(feature_title)]
+    labels.extend(_norm_text(label) for label in (extra_labels or []))
+    kept: list[str] = []
+    moved: list[str] = []
+    for clause in clauses:
+        folded = _norm_text(clause)
+        technical = bool(_TECH_PRE_VISIBLE.search(clause)) or any(
+            label and len(label.split()) >= 3 and label in folded for label in labels
+        )
+        if technical:
+            moved.append(clause)
+        else:
+            kept.append(clause)
+    candidate.precondition = "; ".join(kept) or None
+    if not moved:
+        return
+    current = [part.strip() for part in (candidate.technical_reference or "").split(";") if part.strip()]
+    candidate.technical_reference = "; ".join(dict.fromkeys([*current, *moved])) or None
+
+
 def validate_llm_case(
     llm: GeneratedCaseCandidate,
     gherkin: str,
     sibling_data: list[str],
     own_data: str = "",
     source: str = "",
+    background: str = "",
+    repeated_title: bool = False,
+    story_title: str = "",
+    feature_title: str = "",
 ) -> list[str]:
     reasons: list[str] = []
     if not llm.steps:
@@ -189,6 +328,47 @@ def validate_llm_case(
             continue
         if token in llm_data:
             reasons.append("datos de prueba de otro escenario")
+            break
+    visible = [llm.name or "", llm.precondition or ""]
+    visible.extend(step.action or "" for step in llm.steps)
+    visible.extend(step.expected_result or "" for step in llm.steps)
+    if any(_odd_quotes(text) for text in visible):
+        reasons.append("hay comillas sin cerrar; conserva la comilla de cierre y el punto")
+    actions = [_norm_text(step.action or "") for step in llm.steps if _norm_text(step.action or "")]
+    if len(actions) != len(set(actions)):
+        reasons.append("una acción se repite en el caso")
+    nav = _background_nav(background)
+    if nav:
+        flags = [_matches_background_nav(step.action or "", nav) for step in llm.steps]
+        if any(flags[index] and any(not earlier for earlier in flags[:index]) for index in range(len(flags))):
+            reasons.append("un paso de navegación del Background queda después de una acción del escenario")
+    for index, step in enumerate(llm.steps, start=1):
+        expected = step.expected_result or ""
+        if re.search(r"se muestra el resultado de", expected, re.I):
+            reasons.append(f"el resultado del paso {index} usa «Se muestra el resultado de»")
+        elif re.fullmatch(r"se muestra (?:un|una) \S+\.?", _norm_text(expected)):
+            reasons.append(f"el resultado del paso {index} es de relleno")
+        elif _echoes_action(step.action or "", expected):
+            reasons.append(f"el resultado del paso {index} solo repite la acción")
+    name = llm.name or ""
+    if _NUMBERED_TITLE.search(name):
+        reasons.append("el título lleva numeración; quita el 01: o 02:")
+    if " — " in name:
+        context = name.split(" — ", 1)[1].strip()
+        if not repeated_title:
+            reasons.append("el título no se repite en la EPC y no debe llevar contexto")
+        if _DANGLING_CONTEXT.search(context):
+            reasons.append("el contexto del título está cortado")
+        if len(context.split()) > 6:
+            reasons.append("el contexto del título pasa de 6 palabras")
+    pre = llm.precondition or ""
+    if _TECH_PRE_VISIBLE.search(pre):
+        reasons.append("la precondición es técnica; muévela a technical_reference")
+    folded_pre = _norm_text(pre)
+    for label in (story_title, feature_title, *_feature_labels(source)):
+        folded = _norm_text(label)
+        if folded and len(folded.split()) >= 3 and folded in folded_pre:
+            reasons.append("la precondición repite el título de la historia o de la Feature")
             break
     return list(dict.fromkeys(reasons))
 
@@ -357,8 +537,6 @@ def strip_filler_steps(candidate: GeneratedCaseCandidate) -> None:
     for step in candidate.steps:
         if kept and _FILLER_ACTION.match(step.action or ""):
             continue
-        if _norm_text(step.expected_result or "") == _norm_text(candidate.name or "") and step.action:
-            step.expected_result = f"Se muestra el resultado de: {step.action}".rstrip(".") + "."
         kept.append(step)
     for index, step in enumerate(kept, start=1):
         step.step_number = index
@@ -425,8 +603,12 @@ def _inject_ui_phrases(candidate: GeneratedCaseCandidate, source: str) -> None:
 
 
 def polish_llm_candidates(candidates: list[GeneratedCaseCandidate]) -> list[GeneratedCaseCandidate]:
+    from app.services.scenario_cases import complete_technical_reference
+
     for candidate in candidates:
-        strip_filler_steps(candidate)
+        _relocate_technical_precondition(candidate, candidate.use_case_title or "")
+        if candidate.technical_reference:
+            candidate.technical_reference = complete_technical_reference(candidate.technical_reference)
     return candidates
 
 
@@ -531,12 +713,16 @@ def _call_llm(user_payload: dict[str, Any], timeout: float, feedback: str | None
 
 
 def _llm_eligible(unit: CoverageUnit) -> bool:
+    from app.services.gherkin_coverage import _when_is_system
+
     if (unit.source_origin or "gherkin") != "gherkin":
         return False
     if (unit.applicability or "") == "na_ambiente":
         return False
+    if _when_is_system(unit.body or "") or _when_is_system(unit.evidence or ""):
+        return False
     rules = unit.applied_rules or []
-    if "verificacion-tecnica" in rules and not (unit.user_action or "").strip():
+    if "verificacion-tecnica" in rules and not is_user_action(unit.user_action or ""):
         return False
     return True
 
@@ -575,6 +761,7 @@ def _stub_from_unit(unit: CoverageUnit) -> GeneratedCaseCandidate:
 
 def _mark_pending(candidate: GeneratedCaseCandidate, reason: str) -> GeneratedCaseCandidate:
     copy = candidate.model_copy(deep=True)
+    copy.steps = []
     copy.review_required = True
     copy.applicability_reason = reason
     copy.applied_rules = list(
@@ -597,6 +784,41 @@ def _mark_accepted(candidate: GeneratedCaseCandidate) -> GeneratedCaseCandidate:
     return copy
 
 
+def _feature_title(background: str) -> str:
+    match = re.search(r"(?im)^\s*Feature\s*:\s*(.+)$", background or "")
+    return match.group(1).strip() if match else ""
+
+
+def _move_complete_identifiers(candidate: GeneratedCaseCandidate) -> None:
+    """Move a whole identifier or endpoint into Referencia técnica. Do not rewrite the sentence."""
+    from app.services.scenario_cases import complete_technical_reference, lift_technical
+
+    lifted: list[str] = []
+    name, name_ids = lift_technical(candidate.name)
+    if name:
+        candidate.name = name
+    lifted.extend(name_ids)
+    pre, pre_ids = lift_technical(candidate.precondition)
+    candidate.precondition = pre or None
+    lifted.extend(pre_ids)
+    for step in candidate.steps or []:
+        action, action_ids = lift_technical(step.action)
+        expected, expected_ids = lift_technical(step.expected_result)
+        if action:
+            step.action = action
+        if expected:
+            step.expected_result = expected
+        lifted.extend(action_ids)
+        lifted.extend(expected_ids)
+    if lifted:
+        current = candidate.technical_reference or ""
+        extra = "; ".join(dict.fromkeys(item for item in lifted if item))
+        candidate.technical_reference = "; ".join(part for part in (current, extra) if part)
+    _lift_endpoints(candidate)
+    if candidate.technical_reference:
+        candidate.technical_reference = complete_technical_reference(candidate.technical_reference)
+
+
 def _rewrite_one(
     base: GeneratedCaseCandidate,
     unit: CoverageUnit | None,
@@ -604,6 +826,7 @@ def _rewrite_one(
     background: str,
     sibling_data: list[str],
     timeout: float,
+    repeated_title: bool = False,
 ) -> tuple[GeneratedCaseCandidate, dict[str, Any]]:
     gherkin = (unit.body if unit else "") or (base.evidence or "")
     payload = {
@@ -659,15 +882,28 @@ def _rewrite_one(
                     )
                     if part
                 )
-                _repair_llm_case(llm, source, unit)
-                strip_filler_steps(llm)
-                _lift_endpoints(llm)
-                _inject_required_literals(llm, gherkin)
-                reasons = validate_llm_case(llm, gherkin, sibling_data, base.test_data or "", source)
+                features = [
+                    str(note).split(":", 1)[1].strip()
+                    for note in ((unit.technical_notes if unit else None) or [])
+                    if str(note).startswith("feature-title:")
+                ]
+                feature = features[0] if features else _feature_title(background)
+                _compact_leading_navigation(llm)
+                _relocate_technical_precondition(llm, story_summary, feature, features)
+                _move_complete_identifiers(llm)
+                reasons = validate_llm_case(
+                    llm,
+                    gherkin,
+                    sibling_data,
+                    base.test_data or "",
+                    source,
+                    background=background,
+                    repeated_title=repeated_title,
+                    story_title=story_summary,
+                    feature_title=feature,
+                )
             if llm and not reasons:
                 accepted = _mark_accepted(llm)
-                _ensure_navigation(accepted, unit)
-                _inject_ui_phrases(accepted, f"{background}\n{gherkin}\n{unit.extra_test_data if unit else ''}")
                 meta["ok"] = True
                 meta["ms"] = int((time.perf_counter() - started) * 1000)
                 return accepted, meta
@@ -681,8 +917,6 @@ def _rewrite_one(
             logger.warning("scenario LLM rewrite failed attempt=%s error=%s", attempt + 1, last_error)
     meta["error"] = last_error
     meta["ms"] = int((time.perf_counter() - started) * 1000)
-    if base.steps:
-        return base.model_copy(deep=True), meta
     return _mark_pending(base, last_error or "LLM no redactó un caso válido"), meta
 
 
@@ -701,6 +935,16 @@ def rewrite_scenario_candidates(
         key = unit.story_key or ""
         if unit.extra_test_data:
             by_story.setdefault(key, []).append(unit.extra_test_data)
+    repeated: set[tuple[str, str]] = set()
+    counts: dict[tuple[str, str], int] = {}
+    for unit in inventory:
+        if (unit.source_origin or "gherkin") != "gherkin":
+            continue
+        epic = (unit.artifact_key or "").upper()
+        scenario = re.sub(r"\s*\([^)]*\)\s*$", "", (unit.scenario or "")).strip().lower()
+        key = (epic, scenario)
+        counts[key] = counts.get(key, 0) + 1
+    repeated = {key for key, count in counts.items() if count > 1}
     jobs: list[tuple[CoverageUnit, GeneratedCaseCandidate]] = []
     seen: set[str] = set()
     for unit in inventory:
@@ -723,6 +967,8 @@ def rewrite_scenario_candidates(
         story = unit.story_key or ""
         siblings = [item for item in by_story.get(story, []) if item != (unit.extra_test_data or "")]
         background = (unit.feature_background or "").strip()
+        epic = (unit.artifact_key or "").upper()
+        scenario = re.sub(r"\s*\([^)]*\)\s*$", "", (unit.scenario or "")).strip().lower()
         rewritten, meta = _rewrite_one(
             candidate,
             unit,
@@ -730,6 +976,7 @@ def rewrite_scenario_candidates(
             background,
             siblings,
             timeout,
+            repeated_title=(epic, scenario) in repeated,
         )
         return unit, rewritten, meta
 

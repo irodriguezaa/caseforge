@@ -11,6 +11,7 @@ import collections, json, re, sys
 sys.path.insert(0, ".")
 from app.services import ai_case_engine as eng
 from app.services import jira_generation as jg
+from app.services.executability import is_user_action
 
 GEN = "el usuario ingresa al flujo correspondiente"
 
@@ -64,6 +65,174 @@ def jira_literals(arts):
                     continue
                 lits.add(m)
     return lits
+
+
+_NAV_VERB = re.compile(
+    r"\b(abre|abrir|ingresa|ingresar|navega|navegar|selecciona|seleccionar)\b",
+    re.I,
+)
+_WHEN_LINE = re.compile(r"(?im)^\s*(?:When|Cuando)\s+(.+)$")
+_THEN_LINE = re.compile(r"(?im)^\s*(?:Then|Entonces)\s+(.+)$")
+_GWT_LINE = re.compile(r"(?im)^\s*(?:Given|Dado que|Dado|When|Cuando)\s+(.+)$")
+_SCENARIO_SPLIT = re.compile(r"(?im)^\s*(?:Scenario Outline|Scenario|Escenario)\s*:\s*(.+)$")
+_QUOTE_MARK = re.compile(r'["“”]')
+_NUMBERED_TITLE = re.compile(r"(?:—|-)\s*\d+\s*:|\b\d{1,2}\s*:")
+_DANGLING_CONTEXT = re.compile(
+    r"\b(de|del|para|por|con|en|a|al|el|la|los|las|un|una|y|o|que|su)\s*$",
+    re.I,
+)
+_TECH_PRE = re.compile(
+    r"\b(sdk|librer[ií]a|inicializ\w*|contexto\s+(?:t[eé]cnico|global)|"
+    r"configuraci[oó]n\s+t[eé]cnica|feature\s*:)\b",
+    re.I,
+)
+_VISIBLE_THEN = re.compile(r"\b(muestra|mostrar|pantalla|bot[oó]n|mensaje|men[uú]|modal|opci[oó]n)\b", re.I)
+_EVENT_THEN = re.compile(r"\b(se emite|debe emitirse|evento)\b", re.I)
+_STOP = {
+    "el", "la", "los", "las", "un", "una", "que", "de", "del", "al", "a", "en", "y", "o",
+    "con", "por", "para", "su", "sus", "usuario", "se", "es", "son",
+}
+
+
+def _odd_quotes(text: str) -> bool:
+    for line in (text or "").splitlines() or [""]:
+        if len(_QUOTE_MARK.findall(line)) % 2 == 1:
+            return True
+    return False
+
+
+def _echoes_action(action: str, expected: str) -> bool:
+    act = norm(action)
+    exp = norm(expected).strip(" .")
+    obj = re.sub(r"^(?:el usuario\s+)?[a-záéíóúñ]+(?:ar|er|ir)\s+", "", act).strip()
+    obj = re.sub(r"^(?:el|la|los|las|un|una)\s+", "", obj).strip()
+    if len(obj) < 3:
+        return False
+    shown = re.sub(r"^se muestra\s+(?:la opci[oó]n|el|la|los|las|un|una)\s+", "", exp).strip()
+    return shown == obj
+
+
+def _bare_show(expected: str) -> bool:
+    return bool(re.fullmatch(r"se muestra (?:un|una) \S+\.?", norm(expected)))
+
+
+def _story_blobs(arts) -> list[dict]:
+    rows = []
+    for epic in arts or []:
+        for child in epic.get("children") or [epic]:
+            key = str(child.get("key") or "").strip()
+            blob = f"{child.get('description') or ''}\n{child.get('acceptance_criteria') or ''}"
+            parts = _SCENARIO_SPLIT.split(blob)
+            head = parts[0] if parts else blob
+            nav = [norm(clause) for clause in _GWT_LINE.findall(head) if _NAV_VERB.search(clause)]
+            feature = ""
+            feat = re.search(r"(?im)^\s*Feature\s*:\s*(.+)$", head)
+            if feat:
+                feature = feat.group(1).strip()
+            titles = parts[1::2]
+            bodies = parts[2::2]
+            scenarios = []
+            for title, body in zip(titles, bodies):
+                whens = _WHEN_LINE.findall(body or "")
+                thens = _THEN_LINE.findall(body or "")
+                system = bool(whens) and not any(is_user_action(clause) for clause in whens)
+                visible = any(_VISIBLE_THEN.search(clause) and not _EVENT_THEN.search(clause) for clause in thens)
+                scenarios.append({"title": title.strip(), "system": system and not visible})
+            rows.append({
+                "key": key,
+                "summary": child.get("summary") or "",
+                "feature": feature,
+                "nav": nav,
+                "scenarios": scenarios,
+            })
+    return rows
+
+
+def _matches_nav(action: str, clauses: list[str]) -> bool:
+    folded = norm(action)
+    if not _NAV_VERB.search(folded):
+        return False
+    tokens = set(folded.split()) - _STOP
+    for clause in clauses:
+        needed = set(clause.split()) - _STOP
+        needed = {token for token in needed if not _NAV_VERB.fullmatch(token)}
+        if needed and len(needed & tokens) >= min(2, len(needed)):
+            return True
+    return False
+
+
+def _matched_scenario(case, stories: list[dict]) -> dict | None:
+    keys = {item.strip() for item in (case.related_jira or "").split("|") if item.strip()}
+    name = re.sub(r"\s+—\s+.*$", "", norm(case.name))
+    best = None
+    best_len = 0
+    for story in stories:
+        if keys and story["key"] not in keys:
+            continue
+        for scenario in story["scenarios"]:
+            title = norm(scenario["title"])
+            if title and title in name and len(title) > best_len:
+                best = {**scenario, "story": story}
+                best_len = len(title)
+    return best
+
+
+def _r7_metrics(cases, arts) -> dict[str, int]:
+    stories = _story_blobs(arts or [])
+    by_key = {story["key"]: story for story in stories}
+    counts = {
+        "(R7) comillas sin cerrar": 0,
+        "(R7) acción repetida en el mismo caso": 0,
+        "(R7) navegación del Background después de una acción del escenario": 0,
+        "(R7) resultado de relleno o Se muestra el resultado de": 0,
+        "(R7) título con numeración o cortado": 0,
+        "(R7) precondición técnica": 0,
+        "(R7) caso ejecutable cuyo When es del sistema": 0,
+    }
+    for case in cases:
+        visible = [case.name or "", case.precondition or ""]
+        visible.extend(step.action or "" for step in case.steps)
+        visible.extend(step.expected_result or "" for step in case.steps)
+        if any(_odd_quotes(text) for text in visible):
+            counts["(R7) comillas sin cerrar"] += 1
+        actions = [norm(step.action) for step in case.steps if norm(step.action)]
+        if len(actions) != len(set(actions)):
+            counts["(R7) acción repetida en el mismo caso"] += 1
+        keys = [item.strip() for item in (case.related_jira or "").split("|") if item.strip()]
+        nav = []
+        for key in keys:
+            nav.extend((by_key.get(key) or {}).get("nav") or [])
+        if nav and case.steps:
+            flags = [_matches_nav(step.action or "", nav) for step in case.steps]
+            if any(flags[index] and any(not earlier for earlier in flags[:index]) for index in range(len(flags))):
+                counts["(R7) navegación del Background después de una acción del escenario"] += 1
+        if any(
+            re.search(r"se muestra el resultado de", step.expected_result or "", re.I)
+            or _echoes_action(step.action or "", step.expected_result or "")
+            or _bare_show(step.expected_result or "")
+            for step in case.steps
+        ):
+            counts["(R7) resultado de relleno o Se muestra el resultado de"] += 1
+        name = case.name or ""
+        context = name.split(" — ", 1)[1] if " — " in name else ""
+        if _NUMBERED_TITLE.search(name) or (context and _DANGLING_CONTEXT.search(context.strip())):
+            counts["(R7) título con numeración o cortado"] += 1
+        pre = case.precondition or ""
+        technical_pre = bool(_TECH_PRE.search(pre))
+        folded_pre = norm(pre)
+        for key in keys:
+            story = by_key.get(key) or {}
+            for label in (story.get("summary") or "", story.get("feature") or ""):
+                folded = norm(label)
+                if len(folded.split()) >= 3 and folded in folded_pre:
+                    technical_pre = True
+        if technical_pre:
+            counts["(R7) precondición técnica"] += 1
+        if case.steps:
+            matched = _matched_scenario(case, stories)
+            if matched and matched["system"]:
+                counts["(R7) caso ejecutable cuyo When es del sistema"] += 1
+    return counts
 
 
 def _stories_with_navigation(arts) -> set[str]:
@@ -159,6 +328,8 @@ def metrics(r, types, arts=None):
     print("historias técnicas sin casos:", missing or "ninguna")
     for k, v in m.items():
         print(f"  {k}: {v} ({v * 100 // max(len(C), 1)}%)")
+    for key, value in _r7_metrics(C, arts).items():
+        print(f"  {key}: {value} ({value * 100 // max(len(C), 1)}%)")
     if arts is not None:
         lits = jira_literals(arts)
         # Solo título, acciones y resultados: los Datos de prueba NO cuentan (evita volcar textos ahí)
@@ -169,6 +340,8 @@ def metrics(r, types, arts=None):
     if ledger:
         by_state = collections.Counter(row.get("estado") or "" for row in ledger)
         print("Escenarios de Jira:", dict(by_state), "total", len(ledger))
+        covered = by_state.get("caso ejecutable", 0) + by_state.get("verificación técnica", 0)
+        print(f"ejecutable + verificación técnica: {covered}")
         pending = [row for row in ledger if row.get("estado") == "pendiente de revisión QC"]
         print("pendientes QC:", len(pending), f"({len(pending) * 100 // max(len(ledger), 1)}%)")
         excluded = [row for row in ledger if row.get("estado") == "excluido"]
