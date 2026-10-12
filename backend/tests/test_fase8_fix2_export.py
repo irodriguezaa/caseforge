@@ -159,6 +159,30 @@ def test_x2_na_in_rn_is_on_ledger_and_na_sheet(monkeypatch) -> None:
     assert any(row.get("estado") == "na_ambiente" for row in result.rn_scope_coverage["scenario_ledger"])
 
 
+def test_x2_persisted_na_is_not_repeated_from_the_ledger() -> None:
+    case = _case(
+        test_case_id="QC-NA",
+        test_case_name="Llave remota",
+        technical_story="ST-NA",
+        scenario_origin="ST-NA: Llave remota",
+        applicability_reason="na_ambiente: Given exige configuración remota",
+    )
+    ledger = [
+        {
+            "epic": "EPC-1",
+            "story": "ST-NA",
+            "scenario": "Llave remota",
+            "estado": "na_ambiente",
+            "motivo": "Given exige configuración remota",
+            "case_id": "Llave remota",
+        }
+    ]
+    book = load_workbook(io.BytesIO(build_test_cases_workbook([case], scenario_ledger=ledger)))
+    na_sheet = book["No aplicables en ambiente"]
+    names = [na_sheet.cell(index, 2).value for index in range(2, na_sheet.max_row + 1)]
+    assert names.count("Llave remota") == 1
+
+
 def test_x2_na_survives_deterministic_and_is_not_sent_to_llm() -> None:
     from app.services.gherkin_coverage import build_coverage_inventory
 

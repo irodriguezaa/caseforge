@@ -47,6 +47,13 @@ def _is_na_ambiente(case: TestCase) -> bool:
     return str(getattr(case, "applicability_reason", "") or "").startswith("na_ambiente")
 
 
+def _na_identity(story: str, scenario: str) -> tuple[str, str]:
+    story_key = (story or "").strip().lower()
+    text = re.sub(r"\s*\([^)]*\)\s*$", "", (scenario or "").strip())
+    text = re.sub(rf"^{re.escape(story_key)}\s*:\s*", "", text, flags=re.I).strip()
+    return story_key, text.lower()
+
+
 def _skip_zephyr(case: TestCase) -> bool:
     reason = str(getattr(case, "applicability_reason", "") or "")
     if reason.startswith("na_ambiente") or reason.startswith("quality-gate"):
@@ -488,9 +495,9 @@ def build_test_cases_workbook(
         next_row = 2
         for case in na_ambiente:
             covered.add(
-                (
-                    str(getattr(case, "technical_story", "") or "").strip().lower(),
-                    str(getattr(case, "scenario_origin", "") or _display_case_name(case)).strip().lower(),
+                _na_identity(
+                    str(getattr(case, "technical_story", "") or ""),
+                    str(getattr(case, "scenario_origin", "") or _display_case_name(case)),
                 )
             )
             precondition, compact_data, _notes = split_stored_test_data(case.test_data)
@@ -525,7 +532,7 @@ def build_test_cases_workbook(
             story = str(row.get("story") or "").strip()
             if not scenario:
                 continue
-            ident = (story.lower(), scenario.lower())
+            ident = _na_identity(story, scenario)
             if ident in covered:
                 continue
             covered.add(ident)
