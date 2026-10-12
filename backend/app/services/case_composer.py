@@ -11,7 +11,7 @@ from typing import Any
 
 from app.schemas.case_generation import CandidateStep, CoverageUnit, GeneratedCaseCandidate
 from app.services.coverage_quality import normalize_precondition, rewrite_expected
-from app.services.executability import is_user_action, parse_scenario_clauses
+from app.services.executability import STABLE_GENERIC_STEP, is_stable_generic_step, parse_scenario_clauses
 
 _GENERIC = re.compile(
     r"^\s*(el usuario\s+)?ingres(a|ar)( al)? flujo correspondiente\.?\s*$",
@@ -54,6 +54,10 @@ _3SG = (
     (re.compile(r"\breproduce\b", re.I), "Reproducir"),
     (re.compile(r"\bbusca\b", re.I), "Buscar"),
     (re.compile(r"\bvisualiza\b", re.I), "Visualizar"),
+    (re.compile(r"\bhace scroll\b", re.I), "Hacer scroll"),
+    (re.compile(r"\btransacciona\b", re.I), "Transaccionar"),
+    (re.compile(r"\brealiza\b", re.I), "Realizar"),
+    (re.compile(r"\bentra\b", re.I), "Entrar"),
 )
 _NEGATIVE = re.compile(r"inv[aá]lid|error|mensaje|rechaz|no se (muestra|permite)|incorrect|no es v[aá]lido", re.I)
 _SUCCESS = re.compile(r"\b(éxito|exito|correctamente|permite|se muestra el (comprobante|resultado)|confirma)\b", re.I)
@@ -71,6 +75,31 @@ _ADF_NOISE = re.compile(r"\b(id-\d+|smartlink|mention)\b", re.IGNORECASE)
 _ENDPOINT = re.compile(r"https?://|/v\d+/|\b(GET|POST|PUT|PATCH|DELETE|HTTP)\b|status code", re.I)
 _PIPE_TABLE = re.compile(r"\|[^|\n]+\|")
 _QUOTED = re.compile(r'["\u201c]([^"\u201d\n]{2,80})["\u201d]')
+_LOCATION_LEAD = re.compile(
+    r"^\s*((el )?usuario\s+)?"
+    r"(se (encuentra|halla|visualiza)|est[aá](?:\s+en)?|se muestra|aparece|"
+    r"se presenta|se abre)\s+"
+    r"(en\s+)?(la |el |los |las )?",
+    re.IGNORECASE,
+)
+_FORMAT_RESIDUE = re.compile(
+    r"\{/?code(?::[^}]*)?\}|\{noformat\}|\bh[1-6]\.\s*|\bEscenario\s*:",
+    re.IGNORECASE,
+)
+_FILLER_ACT = re.compile(
+    r"^\s*(el usuario\s+)?(observar|confirmar|verificar|validar|revisar|comprobar)\b",
+    re.IGNORECASE,
+)
+_INPUT_ACTION = re.compile(
+    r"\b(ingresar|escribir|digitar|completar|capturar|ingresa|escribe)\b",
+    re.IGNORECASE,
+)
+_INVALID_DATA = re.compile(r"inv[aá]lid|incorrect", re.IGNORECASE)
+_TEMPLATE_MARK = re.compile(r"^@\w+|^\{\{.*\}\}$|^<\w+>$")
+_SCREEN_WORD = re.compile(
+    r"\b(pantalla|men[uú]|modal|panel|home|detalle|resumen|secci[oó]n|ficha|listado|banner|tarjeta)\b",
+    re.IGNORECASE,
+)
 _STOP = {
     "el", "la", "los", "las", "un", "una", "de", "del", "en", "al", "se", "que",
     "con", "por", "para", "cuando", "usuario", "then", "when", "given", "and",
@@ -85,11 +114,21 @@ def _tokens(text: str | None) -> set[str]:
     return {tok for tok in _norm(text).split() if len(tok) > 2 and tok not in _STOP}
 
 
+def _location_core(text: str | None) -> str:
+    raw = re.sub(r"^\s*(given|when|then|and|dado que|dado|cuando|entonces|y)\s+", "", text or "", flags=re.I)
+    raw = _LOCATION_LEAD.sub("", raw)
+    raw = re.sub(r"^(la|el|los|las|de|del)\s+", "", raw.strip(), flags=re.I)
+    return _norm(raw)
+
+
 def phrases_similar(left: str | None, right: str | None) -> bool:
     a, b = _norm(left), _norm(right)
     if not a or not b:
         return False
     if a == b or a in b or b in a:
+        return True
+    la, lb = _location_core(left), _location_core(right)
+    if la and lb and (la == lb or la in lb or lb in la):
         return True
     ta, tb = _tokens(a), _tokens(b)
     if not ta or not tb:
@@ -152,6 +191,7 @@ def _unit_action(unit: CoverageUnit) -> str:
 
 def polish_expected(text: str | None, *, title: str | None = None) -> str:
     raw = rewrite_expected(text or "", title)
+    raw = _FORMAT_RESIDUE.sub(" ", raw)
     raw = re.sub(
         r"el (servicio|sistema|backend|frontend) (responde|consulta|solicita)[^\n.;]*?( y )?",
         "",
@@ -184,6 +224,8 @@ def polish_expected(text: str | None, *, title: str | None = None) -> str:
     visible = "; ".join(dict.fromkeys(chunks))
     quotes = _QUOTED.findall(text or "")
     for quote in quotes:
+        if _TEMPLATE_MARK.search(quote.strip()):
+            continue
         if quote.lower() not in visible.lower() and not re.search(r"[/_{}\[\]]", quote):
             visible = f'{visible} "{quote}"'.strip() if visible else f'"{quote}"'
     return visible
@@ -268,31 +310,95 @@ def _group_same_when(units: list[CoverageUnit]) -> list[list[CoverageUnit]]:
     return groups
 
 
+def _quote_is_actionable(quote: str, blob: str) -> bool:
+    text = (quote or "").strip()
+    if not text or _TEMPLATE_MARK.search(text) or re.search(r"[/_{}\[\]]", text):
+        return False
+    escaped = re.escape(text)
+    if re.search(
+        rf"(seleccion\w*|presion\w*|clic|puls\w*|ingres\w*|abr[ei]\w*|elig\w*|"
+        rf"confirm\w*|cancel\w*)\s+[\"\u201c]{escaped}",
+        blob,
+        re.I,
+    ):
+        return True
+    if re.search(
+        rf"(pantalla|men[uú]|modal|panel|home|detalle|secci[oó]n)\s+[\"\u201c]?{escaped}",
+        blob,
+        re.I,
+    ):
+        return True
+    return bool(_SCREEN_WORD.search(text))
+
+
+def _story_has_invalid_input(units: list[CoverageUnit]) -> bool:
+    blob = " ".join(f"{unit.body or ''} {unit.scenario or ''}" for unit in units)
+    return bool(_INPUT_ACTION.search(blob) and _INVALID_DATA.search(blob))
+
+
+def _is_state_only_unit(unit: CoverageUnit) -> bool:
+    return not bool(_unit_action(unit))
+
+
+def _conflicting_then(left: CoverageUnit, right: CoverageUnit) -> bool:
+    a, b = _norm(_unit_expected(left)), _norm(_unit_expected(right))
+    if not a or not b:
+        return False
+    neg_a = " no " in f" {a} " or a.startswith("no ") or "no se muestra" in a
+    neg_b = " no " in f" {b} " or b.startswith("no ") or "no se muestra" in b
+    return neg_a != neg_b
+
+
+def _fallback_action(units: list[CoverageUnit]) -> str:
+    for unit in units:
+        for raw in (unit.user_action, unit.scenario, _unit_action(unit)):
+            text = to_infinitive(raw or "")
+            if is_tester_action(text):
+                return text
+            match = re.match(r"^\s*((el usuario)\s+)?([a-záéíóúñ]+)a\b", raw or "", flags=re.I)
+            if match:
+                candidate = to_infinitive(f"{match.group(3)}ar {(raw or '')[match.end():].strip()}")
+                if is_tester_action(candidate):
+                    return candidate
+    surface = _surface_from_units(units)
+    blob = " ".join(f"{unit.body or ''} {unit.scenario or ''}" for unit in units)
+    if surface and not _TEMPLATE_MARK.search(surface) and not re.search(r"[/_{}\[\]]", surface):
+        if _SCREEN_WORD.search(surface) or _quote_is_actionable(surface, blob):
+            return f'Abrir "{surface}"' if " " in surface or len(surface) < 40 else f"Abrir {surface}"
+    if re.search(r"\b(flujo|pantalla|experiencia|home)\b", blob, re.I):
+        return "Abrir la pantalla"
+    if any(_unit_expected(unit) for unit in units):
+        return STABLE_GENERIC_STEP
+    return ""
+
+
 def _surface_from_units(units: list[CoverageUnit]) -> str | None:
     blob = " ".join(f"{unit.body or ''} {unit.scenario or ''}" for unit in units)
     quoted = _QUOTED.findall(blob)
     for quote in quoted:
-        if re.search(r"[/_{}\[\]]", quote):
+        if not _quote_is_actionable(quote, blob):
             continue
         if " " in quote or len(quote) > 4:
             return quote
-    match = re.search(r"se muestra (?:la |el |los |las )?([^\n.;]{6,60})", blob, re.I)
-    if match:
-        return match.group(1).strip()
     match = re.search(
-        r"\b(la tarjeta|el panel|la pantalla|la sección|la home|el modal)([^\n.;]{0,40})",
+        r"\b(la tarjeta|el panel|la pantalla|la sección|la home|el modal|el banner)([^\n.;]{0,40})",
         blob,
         re.I,
     )
     if match:
         return (match.group(1) + match.group(2)).strip()
     match = re.search(
-        r"\b(home|banner|modal|panel|men[uú]|detalle|resumen|listado|ficha)\b",
+        r"\b(home|banner|modal|panel|men[uú]|detalle|resumen|listado|ficha|tarjeta)\b",
         blob,
         re.I,
     )
     if match:
         return match.group(0)
+    match = re.search(r"se muestra (?:la |el |los |las )?([^\n.;]{6,60})", blob, re.I)
+    if match:
+        captured = match.group(1).strip()
+        if _SCREEN_WORD.search(captured) or _quote_is_actionable(captured, blob):
+            return captured
     return None
 
 
@@ -360,7 +466,9 @@ def _precondition_parts(units: list[CoverageUnit], step_actions: list[str]) -> s
             clause = clause.strip()
             if not clause or _FEATURE.search(clause):
                 continue
-            if is_user_action(clause) or any(phrases_similar(clause, action) for action in step_actions):
+            if is_tester_action(to_infinitive(clause)) or any(
+                phrases_similar(clause, action) for action in step_actions
+            ):
                 continue
             parts.append(clause)
         for clause in re.split(r"\s*;\s*", unit.normal_precondition or ""):
@@ -381,11 +489,16 @@ def _draft_from_units(units: list[CoverageUnit], story_units: list[CoverageUnit]
     first = units[0]
     first_given = _unit_given(first)
     for clause in [part.strip() for part in (first_given or "").split(";") if part.strip()]:
-        if is_user_action(clause) and not phrases_similar(clause, _unit_action(first)):
+        actioned = to_infinitive(clause)
+        if (
+            is_tester_action(actioned)
+            and not _STATE_LEAD.match(actioned)
+            and not phrases_similar(clause, _unit_action(first))
+        ):
             steps.append(
                 CandidateStep(
                     step_number=1,
-                    action=to_infinitive(clause),
+                    action=actioned,
                     expected_result=polish_expected(_unit_expected(first)),
                     covered_unit_ids=[first.coverage_id],
                 )
@@ -414,11 +527,12 @@ def _draft_from_units(units: list[CoverageUnit], story_units: list[CoverageUnit]
                 flags=re.I,
             )
         )
+        blob = " ".join(item.body or "" for item in group)
         quoted = [
             quote
             for item in group
             for quote in _QUOTED.findall(item.body or "")
-            if not re.search(r"[/_{}\[\]]", quote)
+            if _quote_is_actionable(quote, blob)
         ]
         if action and quoted and quoted[0] not in action:
             action = f'{action} "{quoted[0]}"'
@@ -431,13 +545,22 @@ def _draft_from_units(units: list[CoverageUnit], story_units: list[CoverageUnit]
                 prev.covered_unit_ids = list(dict.fromkeys([*(prev.covered_unit_ids or []), *covers]))
                 continue
             surface = _surface_from_units(story_units or units)
-            if surface:
+            if surface and _quote_is_actionable(surface, blob + " " + " ".join(
+                f"{unit.body or ''} {unit.scenario or ''}" for unit in (story_units or units)
+            )):
                 action = f'Abrir "{surface}"' if " " in surface or len(surface) < 40 else f"Abrir {surface}"
             else:
-                pending = "sin acción de usuario soportable en las unidades cubiertas"
-                continue
+                action = _fallback_action(group)
+                if not action:
+                    pending = "pendiente de revisión QC"
+                    continue
         neg, pos = _split_exclusive_expected(expected)
-        if neg and pos:
+        if (
+            neg
+            and pos
+            and _INPUT_ACTION.search(action or "")
+            and _story_has_invalid_input(story_units or units)
+        ):
             steps.append(
                 CandidateStep(
                     step_number=len(steps) + 1,
@@ -494,35 +617,197 @@ def _draft_from_units(units: list[CoverageUnit], story_units: list[CoverageUnit]
     )
 
 
+def _gw_key(unit: CoverageUnit) -> tuple[str, str]:
+    return (
+        _norm(_unit_given(unit) or unit.normal_precondition),
+        _norm(_unit_action(unit)),
+    )
+
+
+def _attach_unit_as_verification(draft: FlowDraft, unit: CoverageUnit) -> None:
+    expected = _unit_expected(unit)
+    given = _unit_given(unit)
+    if draft.steps:
+        last = draft.steps[-1]
+        last.expected_result = polish_expected(
+            "; ".join(part for part in (last.expected_result, expected) if part)
+        )
+        last.covered_unit_ids = list(dict.fromkeys([*(last.covered_unit_ids or []), unit.coverage_id]))
+    extra_pre = given or unit.normal_precondition
+    if extra_pre:
+        draft.precondition = normalize_precondition(
+            "; ".join(part for part in (draft.precondition, extra_pre) if part)
+        )
+    draft.units.append(unit)
+    draft.evidence = " | ".join(
+        dict.fromkeys((unit.evidence or "").split("\n", 1)[0] for unit in draft.units)
+    )[:2000]
+
+
+def _drop_state_only_steps(draft: FlowDraft) -> FlowDraft:
+    kept = [
+        step
+        for step in draft.steps
+        if is_tester_action(step.action) or is_stable_generic_step(step.action)
+    ]
+    if not kept:
+        action = _fallback_action(draft.units)
+        expected = polish_expected(
+            "; ".join(part for part in (_unit_expected(unit) for unit in draft.units) if part)
+        )
+        if action and expected:
+            kept = [
+                CandidateStep(
+                    step_number=1,
+                    action=action,
+                    expected_result=expected,
+                    covered_unit_ids=[unit.coverage_id for unit in draft.units],
+                )
+            ]
+        else:
+            draft.pending_reason = draft.pending_reason or "pendiente de revisión QC"
+    for index, step in enumerate(kept, start=1):
+        step.step_number = index
+    draft.steps = kept
+    return draft
+
+
 def compose_story_units(units: list[CoverageUnit]) -> list[FlowDraft]:
     ordered = list(units)
     if not ordered:
         return []
-    segments: list[list[CoverageUnit]] = [[ordered[0]]]
-    for nxt in ordered[1:]:
+    hanging = [unit for unit in ordered if _is_state_only_unit(unit)]
+    actionable = [unit for unit in ordered if not _is_state_only_unit(unit)]
+    unused: list[CoverageUnit] = []
+    buckets: list[list[CoverageUnit]] = []
+    index: dict[tuple[str, str], int] = {}
+    for unit in actionable:
+        key = _gw_key(unit)
+        if key[1] and key in index:
+            previous = buckets[index[key]][0]
+            if not _conflicting_then(previous, unit):
+                buckets[index[key]].append(unit)
+                continue
+        if key[1]:
+            index[key] = len(buckets)
+        buckets.append([unit])
+    if not buckets:
+        draft = _drop_state_only_steps(_draft_from_units(ordered, story_units=ordered))
+        for unit in hanging:
+            if unit not in draft.units:
+                _attach_unit_as_verification(draft, unit)
+        return [draft]
+    segments: list[list[CoverageUnit]] = [list(buckets[0])]
+    for bucket in buckets[1:]:
         prev = segments[-1][-1]
+        nxt = bucket[0]
         if _exclusive_precondition(prev, nxt) and not _recoverable(prev, nxt):
-            segments.append([nxt])
+            segments.append(list(bucket))
             continue
         if _recoverable(prev, nxt) or _follows(prev, nxt):
-            segments[-1].append(nxt)
-            continue
-        same_when = _norm(_unit_action(prev)) == _norm(_unit_action(nxt)) and bool(_norm(_unit_action(prev)))
-        same_given = _norm(_unit_given(prev) or prev.normal_precondition) == _norm(
-            _unit_given(nxt) or nxt.normal_precondition
-        )
-        if same_when and same_given and (_same_expected(prev, nxt) or not (_unit_expected(prev) and _unit_expected(nxt))):
-            segments[-1].append(nxt)
+            segments[-1].extend(bucket)
             continue
         prev_intent, next_intent = _intent_verb(prev), _intent_verb(nxt)
         if prev_intent and next_intent and prev_intent != next_intent:
-            segments.append([nxt])
+            segments.append(list(bucket))
             continue
         if _same_expected(prev, nxt) and prev_intent != next_intent:
-            segments.append([nxt])
+            segments.append(list(bucket))
             continue
-        segments.append([nxt])
-    return [_draft_from_units(segment, story_units=ordered) for segment in segments]
+        segments.append(list(bucket))
+    drafts = [_drop_state_only_steps(_draft_from_units(segment, story_units=ordered)) for segment in segments]
+    for unit in hanging:
+        attached = False
+        given = _unit_given(unit)
+        for draft in drafts:
+            if any(
+                phrases_similar(given, seed)
+                for step in draft.steps
+                for seed in (step.action, step.expected_result)
+                if seed
+            ):
+                _attach_unit_as_verification(draft, unit)
+                attached = True
+                break
+        if not attached:
+            unused.append(unit)
+    if unused:
+        drafts.append(_drop_state_only_steps(_draft_from_units(unused, story_units=ordered)))
+    return drafts
+
+
+def _step_seq_key(candidate: GeneratedCaseCandidate) -> tuple[tuple[str, str], ...]:
+    return tuple(
+        (_norm(step.action), _norm(step.expected_result))
+        for step in candidate.steps
+    )
+
+
+def _fold_identical_story_cases(candidates: list[GeneratedCaseCandidate]) -> list[GeneratedCaseCandidate]:
+    seen: dict[str, GeneratedCaseCandidate] = {}
+    order: list[str] = []
+    for candidate in candidates:
+        key = "|".join(
+            [
+                candidate.related_jira or "",
+                candidate.related_functionality or "",
+                candidate.applicability or "",
+                str(_step_seq_key(candidate)),
+            ]
+        )
+        current = seen.get(key)
+        if current is None:
+            seen[key] = candidate
+            order.append(key)
+            continue
+        current.covers = list(dict.fromkeys([*(current.covers or []), *(candidate.covers or [])]))
+        current.covered_unit_ids = list(current.covers)
+        for step, other in zip(current.steps, candidate.steps):
+            step.covered_unit_ids = list(
+                dict.fromkeys([*(step.covered_unit_ids or []), *(other.covered_unit_ids or [])])
+            )
+    return [seen[key] for key in order]
+
+
+def _title_distinguisher(candidate: GeneratedCaseCandidate) -> str:
+    pre = ((candidate.precondition or "").split(";")[0] if candidate.precondition else "").strip()
+    action = (candidate.steps[0].action if candidate.steps else "").strip()
+    expected = ((candidate.steps[-1].expected_result or "").split(";")[0] if candidate.steps else "").strip()
+    for part in (pre, action, expected):
+        part = re.sub(r"\s+", " ", part).strip(" .")
+        if part and _norm(part) not in _norm(candidate.name):
+            return part[:48]
+    return ""
+
+
+def ensure_distinct_titles(candidates: list[GeneratedCaseCandidate]) -> list[GeneratedCaseCandidate]:
+    executable_names = {
+        _norm(row.name)
+        for row in candidates
+        if (row.applicability or "ejecutable") != "na_ambiente"
+    }
+    for candidate in candidates:
+        if (candidate.applicability or "ejecutable") == "na_ambiente" and _norm(candidate.name) in executable_names:
+            candidate.name = f"No aplicable: {candidate.name}".strip()[:120]
+    grouped: dict[str, list[GeneratedCaseCandidate]] = {}
+    for candidate in candidates:
+        grouped.setdefault(_norm(candidate.name), []).append(candidate)
+    for rows in grouped.values():
+        if len(rows) < 2:
+            continue
+        used: set[str] = set()
+        for candidate in rows:
+            extra = _title_distinguisher(candidate)
+            if extra:
+                candidate.name = f"{strip_title_prefix(candidate.name)[:70]} {extra}".strip()[:120]
+            key = _norm(candidate.name)
+            suffix = 2
+            while key in used:
+                candidate.name = f"{candidate.name[:110]} ({suffix})".strip()[:120]
+                key = _norm(candidate.name)
+                suffix += 1
+            used.add(key)
+    return candidates
 
 
 def draft_to_candidate(
@@ -586,7 +871,9 @@ def compose_inventory(
             out.append(draft_to_candidate(draft, existing, duplicate_of))
     seen_na: dict[str, GeneratedCaseCandidate] = {}
     for unit in na_units:
-        fingerprint = _norm(f"{unit.scenario} {_unit_expected(unit)}")
+        fingerprint = _norm(
+            f"{unit.artifact_key or unit.rn_key or ''}|{unit.scenario} {_unit_expected(unit)}"
+        )
         if fingerprint in seen_na:
             current = seen_na[fingerprint]
             stories = list(dict.fromkeys(
@@ -601,7 +888,7 @@ def compose_inventory(
         candidate.applicability = "na_ambiente"
         seen_na[fingerprint] = candidate
         out.append(candidate)
-    return out
+    return ensure_distinct_titles(_fold_identical_story_cases(out))
 
 
 def proposed_flows_for_llm(units: list[CoverageUnit]) -> list[dict[str, Any]]:
@@ -633,18 +920,64 @@ def proposed_flows_for_llm(units: list[CoverageUnit]) -> list[dict[str, Any]]:
     return rows
 
 
-def candidate_violates_writing_standard(candidate: GeneratedCaseCandidate) -> bool:
+def _ui_literals_from_units(units: list[CoverageUnit]) -> list[str]:
+    found: list[str] = []
+    for unit in units:
+        blob = f"{unit.body or ''} {unit.scenario or ''}"
+        for quote in _QUOTED.findall(blob):
+            if _TEMPLATE_MARK.search(quote.strip()) or re.search(r"[/_{}\[\]]", quote):
+                continue
+            if re.search(r"^[a-z]+[A-Z]", quote) and " " not in quote:
+                continue
+            if not _quote_is_actionable(quote, blob) and not re.search(
+                rf"(Then|Entonces).{{0,120}}{re.escape(quote)}", blob, re.I
+            ):
+                continue
+            found.append(quote)
+    return list(dict.fromkeys(found))
+
+
+def candidate_violates_writing_standard(
+    candidate: GeneratedCaseCandidate,
+    inventory_by_id: dict[str, CoverageUnit] | None = None,
+    sibling_titles: set[str] | None = None,
+) -> bool:
     if len(candidate.name or "") > 150:
         return True
-    if _ADF_NOISE.search(candidate.test_data or ""):
+    if _ADF_NOISE.search(candidate.test_data or "") or _FORMAT_RESIDUE.search(
+        " ".join(
+            [
+                candidate.name or "",
+                candidate.precondition or "",
+                *(f"{step.action} {step.expected_result}" for step in candidate.steps),
+            ]
+        )
+    ):
         return True
-    for step in candidate.steps:
-        if step.action and not is_tester_action(step.action):
+    title_key = f"{candidate.related_jira or ''}|{_norm(candidate.name)}"
+    if sibling_titles and title_key in sibling_titles:
+        return True
+    for index, step in enumerate(candidate.steps):
+        if step.action and not is_tester_action(step.action) and not is_stable_generic_step(step.action):
             return True
         if _TECH_RESULT.search(step.expected_result or ""):
             return True
         if _norm(step.expected_result) == _norm(candidate.name):
             return True
+        if index and _FILLER_ACT.match(step.action or ""):
+            prev = candidate.steps[index - 1]
+            if not step.expected_result or phrases_similar(step.expected_result, prev.expected_result):
+                return True
+        if inventory_by_id:
+            covered = [
+                inventory_by_id[cid]
+                for cid in (step.covered_unit_ids or candidate.covers or [])
+                if cid in inventory_by_id
+            ]
+            surface = f"{step.action or ''} {step.expected_result or ''}"
+            for quote in _ui_literals_from_units(covered):
+                if quote.lower() not in surface.lower():
+                    return True
     return False
 
 
@@ -663,6 +996,7 @@ def validate_composed_candidates(
     repaired: list[GeneratedCaseCandidate] = []
     covered: set[str] = set()
     rejected: list[CoverageUnit] = []
+    seen_llm_titles: set[str] = set()
     for candidate in candidates:
         stories = {
             ((by_id.get(cid).story_key if by_id.get(cid) else None) or "")
@@ -678,16 +1012,17 @@ def validate_composed_candidates(
         for step in candidate.steps:
             ids = list(step.covered_unit_ids or candidate.covers or [])
             units = [by_id[cid] for cid in ids if cid in by_id]
-            action = to_infinitive(step.action)
-            if units and (not is_tester_action(action)):
-                action = _unit_action(units[0])
+            action = step.action or ""
+            if not is_stable_generic_step(action):
+                action = to_infinitive(action)
+            if units and (not is_tester_action(action)) and not is_stable_generic_step(action):
+                action = _unit_action(units[0]) or action
             expected = polish_expected(step.expected_result, title=candidate.name)
             if units:
                 source = _unit_expected(units[0])
                 if expected and source and not phrases_similar(expected, source) and not _QUOTED.search(expected):
                     expected = source
                 step.covered_unit_ids = [unit.coverage_id for unit in units]
-                covered.update(step.covered_unit_ids)
             if not is_tester_action(action):
                 candidate.applied_rules = list(
                     dict.fromkeys(
@@ -707,10 +1042,17 @@ def validate_composed_candidates(
             ids.extend(step.covered_unit_ids or [])
         candidate.covers = list(dict.fromkeys(ids))
         candidate.covered_unit_ids = list(candidate.covers)
-        covered.update(candidate.covers)
-        if candidate.generation_origin == "llm" and candidate_violates_writing_standard(candidate):
+        story_title_key = f"{candidate.related_jira or ''}|{_norm(candidate.name)}"
+        if candidate.generation_origin == "llm" and candidate_violates_writing_standard(
+            candidate,
+            inventory_by_id=by_id,
+            sibling_titles=seen_llm_titles,
+        ):
             rejected.extend(by_id[cid] for cid in candidate.covers if cid in by_id)
             continue
+        if candidate.generation_origin == "llm":
+            seen_llm_titles.add(story_title_key)
+        covered.update(candidate.covers)
         na_ids = [cid for cid in candidate.covers if cid in by_id and by_id[cid].applicability == "na_ambiente"]
         exe_ids = [cid for cid in candidate.covers if cid in by_id and (by_id[cid].applicability or "ejecutable") != "na_ambiente"]
         if na_ids and exe_ids:
@@ -730,4 +1072,4 @@ def validate_composed_candidates(
             if not row.generation_origin or row.generation_origin == "composed-flow":
                 row.generation_origin = "coverage-fill"
         repaired.extend(extra)
-    return repaired
+    return ensure_distinct_titles(_fold_identical_story_cases(repaired))

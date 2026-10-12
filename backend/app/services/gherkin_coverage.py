@@ -458,7 +458,7 @@ def _prose_snippets(text: str) -> list[str]:
             continue
         if line.startswith("|") or _GIVEN.match(line) or _WHEN.match(line) or _THEN.match(line):
             continue
-        if _NON_UNIT_HEADING.match(line) or _NON_UNIT_TECH_SCOPE.search(line):
+        if _NON_UNIT_HEADING.match(line) or _NON_UNIT_TECH_SCOPE.search(line) or _PROSE_SKIP.match(line):
             continue
         line = re.sub(r"^[\-\*\d.\)\s]+", "", line).strip()
         if not line or looks_like_invalid_lead(line):
@@ -492,6 +492,8 @@ def extract_prose_observable_blocks(
         ("description", description or ""),
         ("ac", acceptance_criteria or ""),
     ):
+        if origin == "description":
+            continue
         text = _text_without_scenarios(raw)
         if not text:
             continue
@@ -561,12 +563,22 @@ def extract_prose_observable_blocks(
     return blocks
 
 
-_ADF_NOISE = re.compile(r"```+|\"\"\"+|_{2,}")
-_NON_UNIT_HEADING = re.compile(r"^\s*(#{1,6}\s|.{0,80}:\s*$)")
+_ADF_NOISE = re.compile(
+    r"```+|\"\"\"+|\{code(?::[^}]*)?\}|\{/?code\}|\{noformat\}",
+    re.IGNORECASE,
+)
+_NON_UNIT_HEADING = re.compile(r"^\s*(#{1,6}\s|h[1-6]\.\s|.{0,80}:\s*$)")
 _NON_UNIT_TECH_SCOPE = re.compile(
-    r"\b(dependencias|alcance t[eé]cnico|servicios involucrados|"
-    r"cobertura unitaria|profiling|compilaci[oó]n|"
-    r"rendimiento (medido|con herramientas))\b",
+    r"\b(dependencias|alcance t[eé]cnico|alcance funcional|"
+    r"servicios involucrados|cobertura unitaria|profiling|"
+    r"criterios de (calidad|compilaci[oó]n)|compilaci[oó]n|"
+    r"rendimiento (medido|con herramientas)|"
+    r"^objetivo\b|^alcance\b)\b",
+    re.IGNORECASE | re.MULTILINE,
+)
+_PROSE_SKIP = re.compile(
+    r"^\s*(objetivo|alcance( funcional| t[eé]cnico)?|criterios de (calidad|compilaci[oó]n)|"
+    r"dependencias|servicios involucrados)\b",
     re.IGNORECASE,
 )
 _THEN_TITLE = re.compile(r"^\s*(Then|Entonces)\s+(.+)$", re.IGNORECASE)
@@ -574,6 +586,9 @@ _THEN_TITLE = re.compile(r"^\s*(Then|Entonces)\s+(.+)$", re.IGNORECASE)
 
 def _strip_adf_noise(text: str) -> str:
     cleaned = _ADF_NOISE.sub(" ", text or "")
+    cleaned = re.sub(r"^h[1-6]\.\s*", "", cleaned, flags=re.IGNORECASE | re.MULTILINE)
+    cleaned = re.sub(r"(^|(?<=\s))_([^_\n]{1,80})_(?=\s|$|[.,;:])", r"\2", cleaned)
+    cleaned = re.sub(r"_{2,}", " ", cleaned)
     return re.sub(r"[ \t]+\n", "\n", cleaned)
 
 

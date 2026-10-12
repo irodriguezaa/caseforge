@@ -581,31 +581,33 @@ def candidate_lacks_observable_qc(candidate: GeneratedCaseCandidate) -> bool:
     )
 
 
+def _primary_epic(candidate: GeneratedCaseCandidate) -> str:
+    parts = [part.strip() for part in (candidate.related_functionality or "").split("|") if part.strip()]
+    return parts[0] if parts else ""
+
+
 def merge_candidates(group: list[GeneratedCaseCandidate]) -> GeneratedCaseCandidate:
     primary = group[0]
     extra_data = []
     extra_evidence = []
     extra_jira = []
-    extra_epic = []
     extra_pre = []
     extra_covers: list[str] = []
     extra_rules: list[str] = []
     for item in group:
+        if _primary_epic(item) and _primary_epic(primary) and _primary_epic(item) != _primary_epic(primary):
+            continue
         if item.test_data:
             extra_data.append(item.test_data)
         extra_evidence.append(item.evidence.split("\n", 1)[0] if item.evidence else "")
         if item.related_jira:
             extra_jira.extend(part.strip() for part in item.related_jira.split("|") if part.strip())
-        if item.related_functionality:
-            extra_epic.extend(
-                part.strip() for part in item.related_functionality.split("|") if part.strip()
-            )
         if item.precondition:
             extra_pre.append(item.precondition)
         extra_covers.extend(item.covered_unit_ids or item.covers or [])
         extra_rules.extend(item.applied_rules or [])
     jiras = list(dict.fromkeys(extra_jira))
-    epics = list(dict.fromkeys(extra_epic))
+    epic = _primary_epic(primary) or primary.related_functionality
     steps = [rewrite_step_language(step, primary.name) for step in primary.steps]
     test_data = "; ".join(dict.fromkeys(extra_data)) or primary.test_data
     technical_heavy = bool(test_data and len(test_data) > 80)
@@ -614,28 +616,41 @@ def merge_candidates(group: list[GeneratedCaseCandidate]) -> GeneratedCaseCandid
     user_type = primary.user_type or extract_user_type(
         f"{primary.precondition or ''} {test_data or ''} {primary.name}"
     )
-    consolidated = len(group) > 1
+    same_epic = [item for item in group if _primary_epic(item) == _primary_epic(primary) or not _primary_epic(item)]
+    if not same_epic:
+        same_epic = [primary]
+    consolidated = len(same_epic) > 1
     justification = primary.justification
     if consolidated:
         justification += (
             " Consolidado: equivalencia funcional (mismo EPC, objetivo, acción, "
             "condición, resultado y flujo); se conservan referencias Jira/Scenario."
         )
+    apps = [(item.applicability or "ejecutable") for item in same_epic]
+    applicability = "na_ambiente" if apps and all(item == "na_ambiente" for item in apps) else (
+        "ejecutable" if any(item == "ejecutable" for item in apps) else primary.applicability
+    )
+    applicability_reason = primary.applicability_reason
+    if applicability == "na_ambiente":
+        applicability_reason = next(
+            (item.applicability_reason for item in same_epic if item.applicability_reason),
+            applicability_reason,
+        )
     return GeneratedCaseCandidate(
         name=name,
         description=primary.description,
         precondition="; ".join(dict.fromkeys(extra_pre)) or primary.precondition,
-        requires_condition=any(item.requires_condition for item in group),
+        requires_condition=any(item.requires_condition for item in same_epic),
         steps=steps,
         test_data=test_data,
-        related_functionality=" | ".join(epics) if epics else primary.related_functionality,
+        related_functionality=epic,
         related_jira=" | ".join(jiras) if jiras else primary.related_jira,
         related_rn=primary.related_rn,
         evidence=" | ".join(dict.fromkeys(part for part in extra_evidence if part))[:2000],
         justification=justification,
         possible_duplicate_of=primary.possible_duplicate_of,
         confidence=classify_confidence(
-            requires_condition=any(item.requires_condition for item in group),
+            requires_condition=any(item.requires_condition for item in same_epic),
             basic_validation=primary.basic_validation,
             steps=steps,
             technical_heavy=technical_heavy,
@@ -646,6 +661,8 @@ def merge_candidates(group: list[GeneratedCaseCandidate]) -> GeneratedCaseCandid
         user_type=user_type,
         covers=list(dict.fromkeys(extra_covers)),
         covered_unit_ids=list(dict.fromkeys(extra_covers)),
+        applicability=applicability,
+        applicability_reason=applicability_reason,
         applied_rules=list(dict.fromkeys(
             [*extra_rules, *("functional_equivalence",)] if consolidated else extra_rules
         )),
@@ -673,12 +690,21 @@ def _bucket_merge(
     merged: list[GeneratedCaseCandidate] = []
     for key in order:
         group = buckets[key]
-        if count_consolidation and len(group) > 1 and stats is not None:
-            stats.consolidated_functional += len(group) - 1
-            stats.examples_consolidated.append(
-                " + ".join(item.name for item in group)[:240]
-            )
-        merged.append(merge_candidates(group))
+        by_epic: dict[str, list[GeneratedCaseCandidate]] = {}
+        epic_order: list[str] = []
+        for item in group:
+            epic = _primary_epic(item) or f"unique:{id(item)}"
+            if epic not in by_epic:
+                epic_order.append(epic)
+            by_epic.setdefault(epic, []).append(item)
+        for epic in epic_order:
+            subgroup = by_epic[epic]
+            if count_consolidation and len(subgroup) > 1 and stats is not None:
+                stats.consolidated_functional += len(subgroup) - 1
+                stats.examples_consolidated.append(
+                    " + ".join(item.name for item in subgroup)[:240]
+                )
+            merged.append(merge_candidates(subgroup))
     return merged
 
 
@@ -746,9 +772,9 @@ def apply_qc_rules(
                  re.sub(r"\W+", " ", (step.expected_result or "").lower()).strip())
                 for step in candidate.steps
             )
-            cluster_key = f"{candidate.related_jira or ''}|{seq}"
+            cluster_key = f"{_primary_epic(candidate)}|{candidate.related_jira or ''}|{seq}"
         else:
-            cluster_key = equiv.value()
+            cluster_key = f"{_primary_epic(candidate)}|{equiv.value()}"
             if not (equiv.objective or equiv.observable):
                 cluster_key = f"unique:{id(candidate)}"
         kept.append((cluster_key, candidate))

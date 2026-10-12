@@ -13,7 +13,7 @@ _GHERKIN_LEAD = re.compile(
 _LEAD_JUNK = re.compile(r"^\s*(\||#{1,6}\s|[-*]\s|[^\wÁÉÍÓÚáéíóúñÑ])")
 _PLACEHOLDER = re.compile(r"<[A-Za-zÁ-ú_]+>")
 _EMPTY_TABLE = re.compile(r"\|[^|]+\|[^|]+\|\s*$")
-_MARKDOWN_RESIDUE = re.compile(r"```|\"\"\"|__")
+_MARKDOWN_RESIDUE = re.compile(r"```|\"\"\"|__|\{/?code|\{noformat\}|\bh[1-6]\.|\bEscenario\s*:", re.I)
 _USER_EXPECTED = re.compile(r"^\s*(el )?usuario\b", re.IGNORECASE)
 _GENERIC_ACTION = "el usuario ingresa al flujo correspondiente"
 _REMOTE_GIVEN = re.compile(
@@ -52,6 +52,9 @@ _3SG_LEAD = (
     (re.compile(r"^\s*(el usuario\s+)?visualiza\b", re.I), "Visualizar"),
     (re.compile(r"^\s*(el usuario\s+)?entra\b", re.I), "Entrar"),
     (re.compile(r"^\s*(el usuario\s+)?cambia\b", re.I), "Cambiar"),
+    (re.compile(r"^\s*(el usuario\s+)?hace scroll\b", re.I), "Hacer scroll"),
+    (re.compile(r"^\s*(el usuario\s+)?transacciona\b", re.I), "Transaccionar"),
+    (re.compile(r"^\s*(el usuario\s+)?realiza\b", re.I), "Realizar"),
 )
 
 
@@ -113,26 +116,50 @@ def quality_gate(candidates: list[GeneratedCaseCandidate]) -> list[GeneratedCase
     for rows in grouped.values():
         if len(rows) < 2:
             continue
+        used: set[str] = set()
         for candidate in rows:
-            tag = (candidate.related_jira or "").strip()
-            cid = next((item for item in (candidate.covers or []) if item), "")
             ctx = ((candidate.precondition or "").split(";")[0] if candidate.precondition else "").strip()[:48]
             action = (candidate.steps[0].action if candidate.steps else "")[:40]
-            suffix = " ".join(part for part in (ctx, action) if part)[:48]
-            if suffix and suffix.lower() not in (candidate.name or "").lower():
+            expected = (
+                (candidate.steps[-1].expected_result or "").split(";")[0] if candidate.steps else ""
+            ).strip()[:40]
+            suffix = next(
+                (part for part in (ctx, action, expected) if part and part.lower() not in (candidate.name or "").lower()),
+                "",
+            )
+            if suffix:
                 candidate.name = f"{candidate.name[:70]} {suffix}".strip()[:120]
+            key = _norm(candidate.name)
+            n = 2
+            while key in used:
+                candidate.name = f"{candidate.name[:110]} ({n})".strip()[:120]
+                key = _norm(candidate.name)
+                n += 1
+            used.add(key)
     for candidate in candidates:
         candidate.precondition = _PLACEHOLDER_TOKEN.sub(r"\1", normalize_precondition(candidate.precondition) or "") or None
         candidate.test_data = _PLACEHOLDER_TOKEN.sub(r"\1", candidate.test_data or "") or candidate.test_data
-        candidate.name = _PLACEHOLDER_TOKEN.sub(r"\1", candidate.name or "")[:120]
+        candidate.name = re.sub(
+            r"\{/?code(?::[^}]*)?\}|\bh[1-6]\.\s*|\bEscenario\s*:",
+            " ",
+            _PLACEHOLDER_TOKEN.sub(r"\1", candidate.name or ""),
+            flags=re.I,
+        )
+        candidate.name = re.sub(r"\s+", " ", candidate.name).strip()[:120]
         merged: list = []
         composed = (candidate.generation_origin or "") in {"composed-flow", "llm", "coverage-fill"}
         for step in candidate.steps:
             step.action = _PLACEHOLDER_TOKEN.sub(r"\1", step.action or "")
-            for pattern, replacement in _3SG_LEAD:
-                if pattern.search(step.action):
-                    step.action = pattern.sub(replacement, step.action, count=1)
-                    break
+            generic_action = re.sub(r"\s+", " ", (step.action or "").strip().lower()) == (
+                "el usuario ingresa al flujo correspondiente."
+            ) or re.sub(r"\s+", " ", (step.action or "").strip().lower()) == (
+                "el usuario ingresa al flujo correspondiente"
+            )
+            if not generic_action:
+                for pattern, replacement in _3SG_LEAD:
+                    if pattern.search(step.action):
+                        step.action = pattern.sub(replacement, step.action, count=1)
+                        break
             step.expected_result = rewrite_expected(step.expected_result, candidate.name)
             step.expected_result = re.sub(
                 r"https?://\S+|/(services|recordings|user|v\d+)/[^\s;]*|\b(GET|POST|PUT|PATCH|DELETE)\b|"
@@ -153,11 +180,18 @@ def quality_gate(candidates: list[GeneratedCaseCandidate]) -> list[GeneratedCase
         for index, step in enumerate(candidate.steps, start=1):
             step.step_number = index
             if _norm(step.expected_result) == _norm(candidate.name) and step.expected_result:
-                ctx = (candidate.related_jira or "").strip()
-                if ctx and ctx.lower() not in (candidate.name or "").lower():
-                    action = (step.action or "")[:40]
-                    if action and action.lower() not in (candidate.name or "").lower():
-                        candidate.name = f"{(candidate.name or '')[:70]} {action}".strip()[:120]
+                action = (step.action or "")[:40]
+                if action and action.lower() not in (candidate.name or "").lower():
+                    candidate.name = f"{(candidate.name or '')[:70]} {action}".strip()[:120]
+            step.action = re.sub(r"\{/?code(?::[^}]*)?\}|\bh[1-6]\.\s*|\bEscenario\s*:", " ", step.action or "", flags=re.I)
+            step.action = re.sub(r"\s+", " ", step.action).strip()
+            step.expected_result = re.sub(
+                r"\{/?code(?::[^}]*)?\}|\bh[1-6]\.\s*|\bEscenario\s*:",
+                " ",
+                step.expected_result or "",
+                flags=re.I,
+            )
+            step.expected_result = re.sub(r"\s+", " ", step.expected_result).strip()
         reasons: list[str] = []
         blob = " ".join(
             [
