@@ -285,6 +285,7 @@ def test_roku_qco_section_still_lands_in_legacy_qa_qc_not_normalized_qco() -> No
     normalized = analysis.raw_analysis["normalized"]
     assert normalized["qco"] == []
     assert normalized["incidents"] == []
+    assert {item["id"] for item in normalized["qa_qc"]} == {"ROKUPR-1537", "ROKUPR-1532"}
     buckets = _tickets_by_section(_bytes(ROKU), ROKU)
     qa_ids = {tid for tid, _ in buckets["qa_qc"]}
     assert qa_ids == {"ROKUPR-1537", "ROKUPR-1532"}

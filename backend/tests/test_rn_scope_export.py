@@ -107,7 +107,14 @@ def test_workbook_headers_and_rows() -> None:
 
 def test_export_rn_scope_from_release(client, monkeypatch, tmp_path) -> None:
     monkeypatch.setattr("app.services.rn_scope_export.fetch_scope_fields_for_keys", lambda _keys: {})
+
+    def boom(*_args, **_kwargs):
+        raise AssertionError("export must not re-read the RN PDF")
+
     release_id, _analysis = _create_app_release_with_rn(client, monkeypatch, tmp_path)
+    monkeypatch.setattr("app.services.release_note_analyzer.iter_rn_ticket_rows", boom)
+    monkeypatch.setattr("app.services.tata_release_note_parser.parse_tata_release_note", boom)
+    monkeypatch.setattr("app.routers.releases.read_release_note_pdf", boom)
     response = client.get(f"/api/v1/releases/{release_id}/rn-scope/export")
     assert response.status_code == 200, response.text
     assert "spreadsheet" in response.headers["content-type"]
@@ -118,16 +125,23 @@ def test_export_rn_scope_from_release(client, monkeypatch, tmp_path) -> None:
 
 def test_export_rn_scope_from_analyzed_pdf(client, monkeypatch, tmp_path) -> None:
     monkeypatch.setattr("app.services.rn_scope_export.fetch_scope_fields_for_keys", lambda _keys: {})
+
+    def boom(*_args, **_kwargs):
+        raise AssertionError("export must not re-read the RN PDF")
+
     _store_dir(monkeypatch, tmp_path)
     analyzed = client.post(
         "/api/v1/releases/analyze-rn",
         files={"file": (WEB_RN.name, WEB_RN.read_bytes(), "application/pdf")},
     )
     assert analyzed.status_code == 200
-    path = analyzed.json()["analysis"]["pdf_file_path"]
+    analysis = analyzed.json()["analysis"]
+    monkeypatch.setattr("app.services.release_note_analyzer.iter_rn_ticket_rows", boom)
+    monkeypatch.setattr("app.services.tata_release_note_parser.parse_tata_release_note", boom)
+    monkeypatch.setattr("app.routers.releases.read_release_note_pdf", boom)
     response = client.post(
         "/api/v1/releases/rn-scope/export",
-        json={"pdf_file_path": path, "filename": WEB_RN.name},
+        json={"filename": WEB_RN.name, "raw_analysis": analysis["raw_analysis"]},
     )
     assert response.status_code == 200, response.text
     assert "spreadsheet" in response.headers["content-type"]
@@ -148,13 +162,74 @@ def test_fetch_scope_fields_timeout_returns_empty(monkeypatch) -> None:
     assert fetch_scope_fields_for_keys(["WEBCL-3721"]) == {}
 
 
-def test_export_rn_scope_rejects_path_outside_storage(client, monkeypatch, tmp_path) -> None:
+def test_export_rn_scope_requires_stored_analysis(client, monkeypatch, tmp_path) -> None:
     _store_dir(monkeypatch, tmp_path)
     response = client.post(
         "/api/v1/releases/rn-scope/export",
         json={"pdf_file_path": str(WEB_RN)},
     )
-    assert response.status_code == 404
+    assert response.status_code == 422
+
+
+def _assert_stored_matches_pdf(pdf_path) -> None:
+    from app.services.ai_case_engine import _tickets_by_section
+    from app.services.epc_paste import tickets_from_normalized_technical_epics
+    from app.services.release_note_analyzer import RuleBasedPdfAnalyzer
+    from app.services.rn_scope_export import extract_rn_scope_rows_from_analysis
+
+    pdf = pdf_path.read_bytes()
+    analysis = RuleBasedPdfAnalyzer().analyze(pdf_path.name, pdf)
+    normalized = analysis.raw_analysis["normalized"]
+    assert isinstance(normalized.get("technical_epics"), list)
+    assert isinstance(normalized.get("nco"), list)
+    assert isinstance(normalized.get("tri"), list)
+    assert isinstance(normalized.get("qa_qc"), list)
+    assert isinstance(normalized.get("qa_bugs"), list)
+    assert isinstance(normalized.get("qc_bugs"), list)
+    assert isinstance(normalized.get("incidents"), list)
+    stored = tickets_from_normalized_technical_epics(analysis.raw_analysis)
+    walked = _tickets_by_section(pdf, pdf_path.name)
+    for bucket in ("functionality", "nco", "tri", "qa_qc"):
+        assert [(key.upper(), text) for key, text in stored[bucket]] == [
+            (key.upper(), text) for key, text in walked[bucket]
+        ]
+    assert extract_rn_scope_rows_from_analysis(analysis.raw_analysis, fetch_jira=False) == (
+        extract_rn_scope_rows(pdf, fetch_jira=False, filename=pdf_path.name)
+    )
+    if analysis.raw_analysis.get("vendor") == "tata":
+        for item in normalized["incidents"]:
+            assert item.get("source_category")
+            if item.get("source_category") == "INCIDENT":
+                assert item.get("normalized_category") == "TRI"
+                assert item["id"] in {row["id"] for row in normalized["tri"]}
+        for bucket in ("known_issues", "qa_evidence", "qa_bugs", "qc_bugs", "qco"):
+            assert all(item.get("normalized_category") != "TRI" for item in normalized[bucket])
+    else:
+        for bucket in ("technical_epics", "nco", "tri", "qa_qc"):
+            for item in normalized[bucket]:
+                assert item.get("source_category", "") == ""
+                assert item.get("normalized_category", "") == ""
+
+
+def test_stored_analysis_matches_pdf_scope_without_second_walk(monkeypatch) -> None:
+    import app.services.release_note_analyzer as analyzer_mod
+
+    pdf = WEB_RN.read_bytes()
+    walks = {"n": 0}
+    real_walk = analyzer_mod._iter_damco_ticket_rows
+
+    def counting_walk(pdf_bytes: bytes):
+        walks["n"] += 1
+        return real_walk(pdf_bytes)
+
+    monkeypatch.setattr(analyzer_mod, "_iter_damco_ticket_rows", counting_walk)
+    from app.services.release_note_analyzer import RuleBasedPdfAnalyzer
+
+    RuleBasedPdfAnalyzer().analyze(WEB_RN.name, pdf)
+    assert walks["n"] == 1
+    _assert_stored_matches_pdf(WEB_RN)
+    tata = WEB_RN.parent / "tata_launcher_12.0.0.pdf"
+    _assert_stored_matches_pdf(tata)
 
 
 def test_keep_technical_epic_keys_drops_nco_webcl() -> None:

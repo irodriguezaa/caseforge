@@ -17,6 +17,7 @@ NORMALIZED_BUCKETS = (
     "incidents",
     "known_issues",
     "qa_evidence",
+    "qa_qc",
 )
 
 # Hits consumed by CaseForge / DAMCO counts. Tata extras are omitted here on purpose.
@@ -54,6 +55,7 @@ class NormalizedRnScope:
     incidents: list[RnItem] = field(default_factory=list)
     known_issues: list[RnItem] = field(default_factory=list)
     qa_evidence: list[RnItem] = field(default_factory=list)
+    qa_qc: list[RnItem] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         payload: dict[str, Any] = {
@@ -86,10 +88,9 @@ def damco_scope_from_legacy_hits(
         item = RnItem(id=key, title=cell_text)
         if bucket == "functionality":
             target = "technical_epics"
-        elif bucket in ("nco", "tri"):
+        elif bucket in ("nco", "tri", "qa_qc"):
             target = bucket
         else:
-            # qa_qc and anything else stay off the Tata-only arrays.
             continue
         if key in seen[target]:
             continue

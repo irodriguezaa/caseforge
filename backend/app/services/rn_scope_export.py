@@ -104,23 +104,68 @@ def _tata_scope_hits(pdf_bytes: bytes, filename: str) -> list[tuple[str, str, st
     return hits
 
 
-def extract_rn_scope_rows(
-    pdf_bytes: bytes,
+def _item_fields(item: object) -> tuple[str, str, str]:
+    if isinstance(item, dict):
+        key = str(item.get("id") or item.get("key") or "").strip().upper()
+        title = item.get("title")
+        text = str(title).strip() if title else key
+        source = str(item.get("source_category") or "")
+    else:
+        key = str(getattr(item, "id", "") or "").strip().upper()
+        text = str(getattr(item, "title", None) or key)
+        source = str(getattr(item, "source_category", "") or "")
+    return key, text, source
+
+
+def hits_from_stored_analysis(raw_analysis: object) -> tuple[list[tuple[str, str, str]], bool]:
+    """Excel hits from the analysis saved at analyze-rn. Does not open the PDF.
+
+    Returns (hits, unique_keys). unique_keys matches the DAMCO exporter: one row
+    per key, first bucket wins. Tata keeps one row per key and actividad.
+    """
+    if not isinstance(raw_analysis, dict):
+        return [], True
+    normalized = raw_analysis.get("normalized")
+    if not isinstance(normalized, dict):
+        return [], True
+    vendor = str(raw_analysis.get("vendor") or normalized.get("vendor") or "")
+    if vendor == "tata":
+        hits: list[tuple[str, str, str]] = []
+        for bucket in NORMALIZED_BUCKETS:
+            for item in normalized.get(bucket) or []:
+                key, title, source = _item_fields(item)
+                if not key:
+                    continue
+                if bucket == "incidents":
+                    if source == "INCIDENT":
+                        continue
+                    hits.append((key, title, "incidents"))
+                    continue
+                excel_bucket = "incident_tri" if bucket == "tri" and source == "INCIDENT" else bucket
+                hits.append((key, title, excel_bucket))
+        return hits, False
+    mapping = (
+        ("technical_epics", "functionality"),
+        ("nco", "nco"),
+        ("tri", "tri"),
+        ("qa_qc", "qa_qc"),
+    )
+    hits = []
+    for source, legacy in mapping:
+        for item in normalized.get(source) or []:
+            key, title, _source = _item_fields(item)
+            if key:
+                hits.append((key, title, legacy))
+    return hits, True
+
+
+def _rows_from_hits(
+    hits: list[tuple[str, str, str]],
     *,
+    unique_keys: bool,
     jira_fields: dict[str, dict[str, str]] | None = None,
     fetch_jira: bool = True,
-    filename: str = "",
 ) -> list[dict[str, str]]:
-    if detect_rn_vendor(filename, pdf_bytes) == "tata":
-        hits = _tata_scope_hits(pdf_bytes, filename)
-        unique_keys = False
-    else:
-        hits = (
-            iter_rn_ticket_rows(pdf_bytes, filename)
-            if filename
-            else iter_rn_ticket_rows(pdf_bytes)
-        )
-        unique_keys = True
     fields = dict(jira_fields or {})
     if fetch_jira and hits:
         missing = [ticket_id for ticket_id, _cell, _bucket in hits if ticket_id.upper() not in fields]
@@ -170,16 +215,47 @@ def extract_rn_scope_rows(
     return rows
 
 
-def build_rn_scope_workbook(
+def extract_rn_scope_rows(
     pdf_bytes: bytes,
     *,
     jira_fields: dict[str, dict[str, str]] | None = None,
     fetch_jira: bool = True,
     filename: str = "",
-) -> bytes:
-    rows = extract_rn_scope_rows(
-        pdf_bytes, jira_fields=jira_fields, fetch_jira=fetch_jira, filename=filename
+) -> list[dict[str, str]]:
+    if detect_rn_vendor(filename, pdf_bytes) == "tata":
+        hits = _tata_scope_hits(pdf_bytes, filename)
+        unique_keys = False
+    else:
+        hits = (
+            iter_rn_ticket_rows(pdf_bytes, filename)
+            if filename
+            else iter_rn_ticket_rows(pdf_bytes)
+        )
+        unique_keys = True
+    return _rows_from_hits(
+        hits,
+        unique_keys=unique_keys,
+        jira_fields=jira_fields,
+        fetch_jira=fetch_jira,
     )
+
+
+def extract_rn_scope_rows_from_analysis(
+    raw_analysis: object,
+    *,
+    jira_fields: dict[str, dict[str, str]] | None = None,
+    fetch_jira: bool = True,
+) -> list[dict[str, str]]:
+    hits, unique_keys = hits_from_stored_analysis(raw_analysis)
+    return _rows_from_hits(
+        hits,
+        unique_keys=unique_keys,
+        jira_fields=jira_fields,
+        fetch_jira=fetch_jira,
+    )
+
+
+def _workbook_from_rows(rows: list[dict[str, str]]) -> bytes:
     workbook = Workbook()
     sheet = workbook.active
     sheet.title = "Alcance RN"
@@ -216,3 +292,30 @@ def build_rn_scope_workbook(
     buffer = io.BytesIO()
     workbook.save(buffer)
     return buffer.getvalue()
+
+
+def build_rn_scope_workbook(
+    pdf_bytes: bytes,
+    *,
+    jira_fields: dict[str, dict[str, str]] | None = None,
+    fetch_jira: bool = True,
+    filename: str = "",
+) -> bytes:
+    return _workbook_from_rows(
+        extract_rn_scope_rows(
+            pdf_bytes, jira_fields=jira_fields, fetch_jira=fetch_jira, filename=filename
+        )
+    )
+
+
+def build_rn_scope_workbook_from_analysis(
+    raw_analysis: object,
+    *,
+    jira_fields: dict[str, dict[str, str]] | None = None,
+    fetch_jira: bool = True,
+) -> bytes:
+    return _workbook_from_rows(
+        extract_rn_scope_rows_from_analysis(
+            raw_analysis, jira_fields=jira_fields, fetch_jira=fetch_jira
+        )
+    )

@@ -62,31 +62,57 @@ def is_pasted_epcs_analysis(raw_analysis: Any) -> bool:
     return isinstance(raw_analysis, dict) and raw_analysis.get("source") == PASTED_SOURCE
 
 
-def tickets_from_normalized_technical_epics(raw_analysis: Any) -> dict[str, list[tuple[str, str]]]:
-    """Same tickets.functionality shape the RN walker feeds into generate_release_app_candidates."""
-    functionality: list[tuple[str, str]] = []
-    if not isinstance(raw_analysis, dict):
-        return {"functionality": [], "nco": [], "tri": [], "qa_qc": []}
-    normalized = raw_analysis.get("normalized")
-    epics = normalized.get("technical_epics") if isinstance(normalized, dict) else None
-    if not isinstance(epics, list):
-        keys = rn_keys_from_normalized(raw_analysis)
-        functionality = [(key, key) for key in keys]
+# Buckets the case engine and revalidation already consume. Tata QA/QC stays in
+# qa_bugs/qc_bugs and is not folded into qa_qc; that matches the PDF walker.
+_STORED_TICKET_BUCKETS = (
+    ("technical_epics", "functionality"),
+    ("nco", "nco"),
+    ("tri", "tri"),
+    ("qa_qc", "qa_qc"),
+)
+
+
+def _stored_item_text(item: Any) -> tuple[str, str]:
+    if isinstance(item, dict):
+        key = str(item.get("id") or item.get("key") or "").strip().upper()
+        title = item.get("title")
+        text = str(title).strip() if title else key
     else:
-        seen: set[str] = set()
-        for item in epics:
-            if isinstance(item, dict):
-                key = str(item.get("id") or item.get("key") or "").strip().upper()
-                title = item.get("title")
-                text = str(title).strip() if title else key
-            else:
-                key = str(getattr(item, "id", "") or "").strip().upper()
-                text = str(getattr(item, "title", None) or key)
-            if not key or key in seen:
+        key = str(getattr(item, "id", "") or "").strip().upper()
+        text = str(getattr(item, "title", None) or key)
+    return key, text or key
+
+
+def tickets_from_normalized_technical_epics(raw_analysis: Any) -> dict[str, list[tuple[str, str]]]:
+    """Tickets already stored on the analysis. Does not open a Release Note PDF.
+
+    functionality comes from normalized.technical_epics (RN cell text in title).
+    nco, tri and qa_qc stay available for revalidation and incremental generation.
+    """
+    buckets: dict[str, list[tuple[str, str]]] = {
+        "functionality": [],
+        "nco": [],
+        "tri": [],
+        "qa_qc": [],
+    }
+    if not isinstance(raw_analysis, dict):
+        return buckets
+    normalized = raw_analysis.get("normalized")
+    if not isinstance(normalized, dict):
+        buckets["functionality"] = [(key, key) for key in rn_keys_from_normalized(raw_analysis)]
+        return buckets
+    seen: dict[str, set[str]] = {bucket: set() for _source, bucket in _STORED_TICKET_BUCKETS}
+    for source, bucket in _STORED_TICKET_BUCKETS:
+        items = normalized.get(source)
+        if not isinstance(items, list):
+            continue
+        for item in items:
+            key, text = _stored_item_text(item)
+            if not key or key in seen[bucket]:
                 continue
-            seen.add(key)
-            functionality.append((key, text or key))
-    return {"functionality": functionality, "nco": [], "tri": [], "qa_qc": []}
+            seen[bucket].add(key)
+            buckets[bucket].append((key, text))
+    return buckets
 
 
 def parse_epc_paste(text: str) -> ParsedEpcPaste:

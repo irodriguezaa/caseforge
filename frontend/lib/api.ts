@@ -336,6 +336,7 @@ export const api = {
     releaseId?: number;
     pdfFilePath?: string | null;
     filename?: string | null;
+    rawAnalysis?: Record<string, unknown> | null;
     downloadName: string;
   }): Promise<void> => {
     let response: Response;
@@ -345,15 +346,15 @@ export const api = {
           cache: "no-store",
           credentials: "include",
         });
-      } else if (options.pdfFilePath) {
+      } else if (options.rawAnalysis || options.pdfFilePath) {
         response = await fetch(apiUrl("/api/releases/rn-scope/export"), {
           method: "POST",
           cache: "no-store",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            pdf_file_path: options.pdfFilePath,
             filename: options.filename || undefined,
+            raw_analysis: options.rawAnalysis ?? undefined,
           }),
         });
       } else {

@@ -112,8 +112,11 @@ class ReleaseWithCounts(ReleaseRead):
 
 
 class RnScopeExportRequest(BaseModel):
-    pdf_file_path: str
+    """Excel export uses the analysis already produced by analyze-rn."""
+
+    raw_analysis: dict[str, Any] | None = None
     filename: str | None = None
+    pdf_file_path: str | None = None
 
 
 class AnalyzeEpcsRequest(BaseModel):

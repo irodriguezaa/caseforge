@@ -1,5 +1,6 @@
 """Incremental generation for a later Nuevo of the same Deliverable."""
 
+import copy
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -187,23 +188,23 @@ def test_incremental_qa_nco_is_deterministic_and_does_not_call_llm(
         "app.services.ai_case_engine.settings",
         replace(settings, openai_api_key="sk-test", openai_model="gpt-4o-mini"),
     )
-    tickets = {
-        "functionality": [(key, f"{key}: Funcionalidad cubierta") for key in sorted(_WEB_FEATURES)],
-        "qa_qc": [
-            (
-                "QCBG-10",
-                "QCBG-10: Se corrigió el listado de reproducción visible al usuario en WEBCL-3767",
-            )
-        ],
-        "nco": [
-            (
-                "NCO-9",
-                "NCO-9: El usuario ya no ve el modal de error al reproducir el contenido lineal tras la corrección.",
-            )
-        ],
-        "tri": [("TRI-1", "TRI-1: hallazgo de laboratorio sin caso QC")],
-    }
-    monkeypatch.setattr("app.routers.releases._tickets_by_section", lambda _pdf: tickets)
+    second_analysis = copy.deepcopy(analysis)
+    normalized = second_analysis["raw_analysis"]["normalized"]
+    normalized.setdefault("qa_qc", []).append(
+        {
+            "id": "QCBG-10",
+            "title": "QCBG-10: Se corrigió el listado de reproducción visible al usuario en WEBCL-3767",
+        }
+    )
+    normalized.setdefault("nco", []).append(
+        {
+            "id": "NCO-9",
+            "title": (
+                "NCO-9: El usuario ya no ve el modal de error al reproducir "
+                "el contenido lineal tras la corrección."
+            ),
+        }
+    )
     second = client.post(
         "/api/v1/releases",
         json={
@@ -212,7 +213,7 @@ def test_incremental_qa_nco_is_deterministic_and_does_not_call_llm(
             "platform": "WEB",
             "deliverable_name": "WEB incremental qa nco",
             "release_type": "NUEVO",
-            "analysis_data": analysis,
+            "analysis_data": second_analysis,
         },
     )
     assert second.status_code == 201, second.text

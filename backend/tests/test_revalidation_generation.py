@@ -300,26 +300,35 @@ def test_revalidation_http_does_not_mutate_origin_cases(client, monkeypatch) -> 
             "parent_release_id": origin["id"],
             "analysis_data": {
                 "pdf_filename": "reval.pdf",
-                "pdf_file_path": "reval.pdf",
                 "features_count": 1,
                 "qa_qc_issues_count": 1,
                 "nco_issues_count": 0,
                 "tri_issues_count": 0,
                 "observations": [],
+                "raw_analysis": {
+                    "vendor": "damco",
+                    "normalized": {
+                        "vendor": "damco",
+                        "technical_epics": [{"id": "FEAT-1", "title": "FEAT-1: A"}],
+                        "nco": [],
+                        "tri": [],
+                        "qa_qc": [
+                            {
+                                "id": "BUG-1",
+                                "title": "BUG-1: Se corrigió el error visible al usuario en el listado FEAT-1",
+                            }
+                        ],
+                    },
+                },
             },
         },
     ).json()
 
-    tickets = {
-        "functionality": [("FEAT-1", "FEAT-1: A")],
-        "qa_qc": [("BUG-1", "BUG-1: Se corrigió el error visible al usuario en el listado FEAT-1")],
-        "nco": [],
-    }
-    monkeypatch.setattr(
-        "app.services.revalidation_engine._tickets_by_section",
-        lambda _pdf: tickets,
-    )
-    monkeypatch.setattr("app.routers.releases.read_release_note_pdf", lambda _path: b"%PDF-fake")
+    def boom(*_args, **_kwargs):
+        raise AssertionError("revalidation must not re-read the RN PDF")
+
+    monkeypatch.setattr("app.services.revalidation_engine._tickets_by_section", boom)
+    monkeypatch.setattr("app.routers.releases.read_release_note_pdf", boom)
 
     generated = client.post(f"/api/v1/releases/{reval['id']}/generate-cases")
     assert generated.status_code == 200, generated.text
@@ -392,25 +401,35 @@ def test_revalidation_keeps_revalidation_delta_engine_without_llm(
             "parent_release_id": origin["id"],
             "analysis_data": {
                 "pdf_filename": "reval.pdf",
-                "pdf_file_path": "reval.pdf",
                 "features_count": 1,
                 "qa_qc_issues_count": 1,
                 "nco_issues_count": 0,
                 "tri_issues_count": 0,
                 "observations": [],
+                "raw_analysis": {
+                    "vendor": "damco",
+                    "normalized": {
+                        "vendor": "damco",
+                        "technical_epics": [{"id": "FEAT-1", "title": "FEAT-1: A"}],
+                        "nco": [],
+                        "tri": [],
+                        "qa_qc": [
+                            {
+                                "id": "BUG-1",
+                                "title": "BUG-1: Se corrigió el error visible al usuario en el listado FEAT-1",
+                            }
+                        ],
+                    },
+                },
             },
         },
     ).json()
-    tickets = {
-        "functionality": [("FEAT-1", "FEAT-1: A")],
-        "qa_qc": [("BUG-1", "BUG-1: Se corrigió el error visible al usuario en el listado FEAT-1")],
-        "nco": [],
-    }
-    monkeypatch.setattr(
-        "app.services.revalidation_engine._tickets_by_section",
-        lambda _pdf: tickets,
-    )
-    monkeypatch.setattr("app.routers.releases.read_release_note_pdf", lambda _path: b"%PDF-fake")
+
+    def boom(*_args, **_kwargs):
+        raise AssertionError("revalidation must not re-read the RN PDF")
+
+    monkeypatch.setattr("app.services.revalidation_engine._tickets_by_section", boom)
+    monkeypatch.setattr("app.routers.releases.read_release_note_pdf", boom)
     fake_client = MagicMock()
     with patch("app.services.ai_case_engine.httpx.Client") as client_cls:
         client_cls.return_value.__enter__.return_value = fake_client

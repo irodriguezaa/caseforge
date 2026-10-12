@@ -37,8 +37,10 @@ export function ReleaseAnalysisCard({
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
   const pasted = isPastedEpcsAnalysis(analysis);
+  const storedScope = (analysis.raw_analysis as { normalized?: unknown } | undefined)?.normalized;
   const canExtract =
-    !pasted && ((releaseId != null && releaseId > 0) || Boolean(analysis.pdf_file_path));
+    !pasted &&
+    ((releaseId != null && releaseId > 0) || Boolean(storedScope));
   const tata = isTataAnalysis(analysis);
   const metricTiles = [
     { label: "Funcionalidades", value: analysis.features_count },
@@ -58,6 +60,7 @@ export function ReleaseAnalysisCard({
         releaseId: releaseId ?? undefined,
         pdfFilePath: analysis.pdf_file_path,
         filename: analysis.pdf_filename,
+        rawAnalysis: analysis.raw_analysis,
         downloadName: analysis.detected_name || analysis.pdf_filename || "RN",
       });
     } catch (err) {

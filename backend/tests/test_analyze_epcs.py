@@ -279,7 +279,8 @@ def test_generate_from_pasted_epcs_skips_pdf_and_uses_jira_artifacts(
         raise AssertionError("generate-cases must not parse a PDF for pasted_epcs")
 
     monkeypatch.setattr("app.services.ai_case_engine.fetch_artifacts_for_keys", fake_fetch)
-    monkeypatch.setattr("app.routers.releases._tickets_by_section", boom_pdf)
+    monkeypatch.setattr("app.routers.releases.read_release_note_pdf", boom_pdf)
+    monkeypatch.setattr("app.services.release_note_analyzer.iter_rn_ticket_rows", boom_pdf)
     monkeypatch.setattr("app.services.ai_case_engine._tickets_by_section", boom_pdf)
     monkeypatch.setattr(RuleBasedPdfAnalyzer, "analyze", boom_pdf)
 

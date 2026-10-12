@@ -38,11 +38,11 @@ from app.schemas.release import (
     ReleaseWithCounts,
     RnScopeExportRequest,
 )
-from app.services.ai_case_engine import _tickets_by_section, generate_release_app_candidates
+from app.services.ai_case_engine import generate_release_app_candidates
 from app.services.generation_jobs import get_job, job_to_response, start_generation
 
 logger = logging.getLogger(__name__)
-from app.services.rn_scope_export import build_rn_scope_workbook
+from app.services.rn_scope_export import build_rn_scope_workbook_from_analysis
 from app.services.revalidation_engine import (
     candidates_from_incremental_plan,
     generate_revalidation_candidates,
@@ -58,7 +58,6 @@ from app.services.case_persistence import (
 )
 from app.services.epc_paste import (
     analyze_pasted_epcs,
-    is_pasted_epcs_analysis,
     tickets_from_normalized_technical_epics,
 )
 from app.services.rn_epc_scope import rn_keys_from_normalized
@@ -75,7 +74,6 @@ from app.services.release_note_analyzer import (
 from app.services.rn_storage import (
     persist_release_note_pdf,
     read_release_note_pdf,
-    read_stored_release_note_pdf,
     delete_release_note_pdf,
 )
 
@@ -267,9 +265,21 @@ def _xlsx_attachment(payload: bytes, raw_name: str, ascii_name: str) -> Response
     )
 
 
-def _rn_scope_xlsx(pdf_bytes: bytes, raw_name: str) -> Response:
+def _require_normalized_analysis(raw_analysis: object) -> dict:
+    if not isinstance(raw_analysis, dict) or not isinstance(raw_analysis.get("normalized"), dict):
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "El análisis no tiene alcance normalizado. "
+                "Vuelve a analizar el Release Note; la exportación no vuelve a leer el PDF."
+            ),
+        )
+    return raw_analysis
+
+
+def _rn_scope_xlsx(raw_analysis: dict, raw_name: str) -> Response:
     try:
-        payload = build_rn_scope_workbook(pdf_bytes, filename=raw_name)
+        payload = build_rn_scope_workbook_from_analysis(raw_analysis)
     except Exception as exc:
         raise HTTPException(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -281,15 +291,10 @@ def _rn_scope_xlsx(pdf_bytes: bytes, raw_name: str) -> Response:
 @router.post("/rn-scope/export")
 def export_analyzed_rn_scope(body: RnScopeExportRequest) -> Response:
     """Excel of RN tickets after analyze-rn, before the Release exists."""
-    pdf_bytes = read_stored_release_note_pdf(body.pdf_file_path)
-    if not pdf_bytes:
-        raise HTTPException(
-            status.HTTP_404_NOT_FOUND,
-            detail="No se encontró el PDF del RN. Vuelve a analizar el Release Note.",
-        )
+    raw_analysis = _require_normalized_analysis(body.raw_analysis)
     stem = (body.filename or "RN").rsplit(".", 1)[0]
     raw_name = f"Alcance_RN_{stem}.xlsx".replace(" ", "_")
-    return _rn_scope_xlsx(pdf_bytes, raw_name)
+    return _rn_scope_xlsx(raw_analysis, raw_name)
 
 
 @router.get("", response_model=list[ReleaseWithCounts])
@@ -695,12 +700,10 @@ def _test_case_coverage_snapshot(row: TestCase) -> dict:
 
 
 def _rn_cells_from_analysis(analysis: ReleaseAnalysis | None) -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
+    """Prior RN cells from the stored analysis. Does not open the PDF."""
     if analysis is None:
         return {}, {}, {}
-    prior_pdf = read_release_note_pdf(analysis.pdf_file_path)
-    if not prior_pdf:
-        return {}, {}, {}
-    buckets = _tickets_by_section(prior_pdf)
+    buckets = tickets_from_normalized_technical_epics(analysis.raw_analysis)
     functionality = {ticket_id.upper(): cell_text for ticket_id, cell_text in buckets.get("functionality", [])}
     qa_qc = {ticket_id.upper(): cell_text for ticket_id, cell_text in buckets.get("qa_qc", [])}
     nco = {ticket_id.upper(): cell_text for ticket_id, cell_text in buckets.get("nco", [])}
@@ -836,13 +839,7 @@ def _generate_cases_from_rn(
             estimation_days=summary["estimation_days"],
         )
 
-    pasted = is_pasted_epcs_analysis(analysis.raw_analysis)
-    pdf_bytes = None if pasted else read_release_note_pdf(analysis.pdf_file_path)
-    tickets_override = (
-        tickets_from_normalized_technical_epics(analysis.raw_analysis)
-        if pasted or not pdf_bytes
-        else None
-    )
+    tickets = tickets_from_normalized_technical_epics(analysis.raw_analysis)
     parent = release.parent
     declared_origin_id = release.parent_release_id
     declared_origin_name = f"{parent.name} v{parent.version}" if parent else None
@@ -867,14 +864,9 @@ def _generate_cases_from_rn(
             "observations": analysis.observations,
         },
     }
-    tickets_for_keys = (
-        tickets_override
-        if tickets_override is not None
-        else (_tickets_by_section(pdf_bytes, analysis.pdf_filename or "") if pdf_bytes else {})
-    )
     func_keys: list[str] = []
     seen_keys: set[str] = set()
-    for tid, _cell in tickets_for_keys.get("functionality") or []:
+    for tid, _cell in tickets.get("functionality") or []:
         key = (tid or "").strip().upper()
         if key and key not in seen_keys:
             seen_keys.add(key)
@@ -926,10 +918,10 @@ def _generate_cases_from_rn(
             validation_type=release.validation_type,
             analysis_present=True,
             rn_filename=analysis.pdf_filename,
-            pdf_bytes=pdf_bytes,
+            pdf_bytes=None,
             release_context=context,
             existing_cases=existing_reference,
-            tickets=tickets_override if tickets_override is not None else tickets_for_keys,
+            tickets=tickets,
             restrict_to_functionality_keys={scoped_key},
         )
         proposal.chunk_key = scoped_key
@@ -948,8 +940,8 @@ def _generate_cases_from_rn(
             release_name=release.name,
             validation_type=release.validation_type,
             rn_filename=analysis.pdf_filename,
-            pdf_bytes=pdf_bytes,
-            tickets=tickets_override,
+            pdf_bytes=None,
+            tickets=tickets,
             origin_release_id=release.parent_release_id,
             origin_release_name=(
                 f"{origin.name} v{origin.version}" if origin else f"Release {release.parent_release_id}"
@@ -978,17 +970,12 @@ def _generate_cases_from_rn(
                 validation_type=release.validation_type,
                 analysis_present=True,
                 rn_filename=analysis.pdf_filename,
-                pdf_bytes=pdf_bytes,
+                pdf_bytes=None,
                 release_context=context,
                 existing_cases=existing_reference,
-                tickets=tickets_override,
+                tickets=tickets,
             )
         else:
-            tickets = (
-                tickets_override
-                if tickets_override is not None
-                else (_tickets_by_section(pdf_bytes) if pdf_bytes else {})
-            )
             plan = plan_incremental_generation(
                 tickets,
                 baseline_cases,
@@ -1016,7 +1003,7 @@ def _generate_cases_from_rn(
                     validation_type=release.validation_type,
                     analysis_present=True,
                     rn_filename=analysis.pdf_filename,
-                    pdf_bytes=pdf_bytes,
+                    pdf_bytes=None,
                     release_context=context,
                     existing_cases=existing_reference,
                     tickets=scoped_tickets,
@@ -1127,15 +1114,10 @@ def export_release_rn_scope(release_id: int, db: Session = Depends(get_db)) -> R
             status.HTTP_404_NOT_FOUND,
             detail="No hay un RN asociado a esta Release. Analiza y crea la Release desde el PDF primero.",
         )
-    pdf_bytes = read_stored_release_note_pdf(analysis.pdf_file_path)
-    if not pdf_bytes:
-        raise HTTPException(
-            status.HTTP_404_NOT_FOUND,
-            detail="No se encontró el PDF del RN almacenado.",
-        )
+    raw_analysis = _require_normalized_analysis(analysis.raw_analysis)
     label = release.name or analysis.pdf_filename or "Release"
     raw_name = f"Alcance_RN_{label}.xlsx".replace(" ", "_")
-    return _rn_scope_xlsx(pdf_bytes, raw_name)
+    return _rn_scope_xlsx(raw_analysis, raw_name)
 
 
 @router.get("/{release_id}/test-cases/export")
