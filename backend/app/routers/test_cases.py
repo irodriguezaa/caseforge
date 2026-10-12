@@ -7,7 +7,7 @@ either every row in the batch persists, or none do -- see bulk_create_test_cases
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import DataError, IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session, selectinload
 
@@ -23,7 +23,7 @@ from app.schemas.test_case import (
     TestCaseBulkCreate,
     TestCaseBulkCreateResult,
     TestCaseCreate,
-    TestCaseRead,
+    TestCaseListItem,
     TestCaseReadWithSteps,
     TestCaseUpdate,
 )
@@ -40,7 +40,7 @@ def _build_test_case(release_id: int, payload: TestCaseCreate) -> TestCase:
     return test_case
 
 
-@router.get("/releases/{release_id}/test-cases", response_model=list[TestCaseRead])
+@router.get("/releases/{release_id}/test-cases", response_model=list[TestCaseListItem])
 def list_test_cases(
     release_id: int,
     status_filter: TestCaseStatus | None = Query(default=None, alias="status"),
@@ -66,7 +66,18 @@ def list_test_cases(
     if priority is not None:
         stmt = stmt.where(TestCase.priority == priority)
     stmt = stmt.order_by(TestCase.test_case_id)
-    return list(db.execute(stmt).scalars().all())
+    cases = list(db.execute(stmt).scalars().all())
+    if cases:
+        counts = dict(
+            db.execute(
+                select(TestStep.test_case_id, func.count(TestStep.id))
+                .where(TestStep.test_case_id.in_([case.id for case in cases]))
+                .group_by(TestStep.test_case_id)
+            ).all()
+        )
+        for case in cases:
+            case.step_count = int(counts.get(case.id, 0))
+    return cases
 
 
 @router.post(

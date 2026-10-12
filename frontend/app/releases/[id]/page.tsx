@@ -466,7 +466,7 @@ export default function ReleaseDetailPage(): React.ReactElement {
   const isBe = Boolean(release.be_release_id);
   const isOperativa = Boolean(release.operativa_release_id);
   const isApp = !isBe && !isOperativa;
-  const caseTableCols = 8;
+  const caseTableCols = 9;
   const backHref = isBe ? "/releases-be" : isOperativa ? "/operativas/release-notes" : "/releases";
   const backLabel = isBe
     ? "← Volver a Release BE"
@@ -1089,6 +1089,7 @@ export default function ReleaseDetailPage(): React.ReactElement {
           <tr>
             <th>ID</th>
             <th>Nombre</th>
+            <th className="steps">Pasos</th>
             {isApp ? <th>Issue Type</th> : null}
             <th>
               {testCases.length > 0 ? (
@@ -1158,6 +1159,9 @@ export default function ReleaseDetailPage(): React.ReactElement {
             >
               <td>{testCase.test_case_id}</td>
               <td>{isOperativa ? stripDeviceFromCaseName(testCase.test_case_name, testCase.device) : testCase.test_case_name}</td>
+              <td className={testCase.step_count ? "steps" : "steps muted"} title={`${testCase.step_count ?? 0} pasos`}>
+                {testCase.step_count ?? 0}
+              </td>
               {isApp ? <td>{formatRnSourceType(testCase.source_type)}</td> : null}
               {isApp ? (
                 <td onClick={(e) => e.stopPropagation()}>

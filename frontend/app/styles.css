@@ -487,6 +487,15 @@ table.case-grid { overflow: visible; overflow-anchor: none; }
 th, td { text-align: left; padding: .65rem .9rem; border-bottom: 1px solid var(--border); }
 th { color: var(--text-dim); font-size: .72rem; text-transform: uppercase; letter-spacing: .03em; font-weight: 600; }
 table.case-grid th { overflow: visible; vertical-align: middle; }
+table.case-grid th.steps,
+table.case-grid td.steps {
+  width: 1%;
+  white-space: nowrap;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  padding-left: .4rem;
+  padding-right: .4rem;
+}
 tr:last-child td { border-bottom: 0; }
 tr.clickable { cursor: pointer; }
 tr.clickable:hover { background: var(--surface-2); }

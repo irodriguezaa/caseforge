@@ -100,6 +100,9 @@ def test_create_test_case_with_nested_steps(client) -> None:
     assert len(body["steps"]) == 2
     assert body["steps"][0]["step_number"] == 1
 
+    listed = client.get(f"/api/v1/releases/{release['id']}/test-cases").json()
+    assert listed[0]["step_count"] == 2
+
 
 def test_test_case_id_unique_per_release_not_globally(client) -> None:
     release_a = _create_release(client, name="Release A")

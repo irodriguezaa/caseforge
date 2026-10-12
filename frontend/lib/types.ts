@@ -344,6 +344,7 @@ export interface TestCase {
   group_id?: string | null;
   hn_source?: string | null;
   source_type?: string | null;
+  step_count?: number;
   created_at: string;
   updated_at: string;
 }

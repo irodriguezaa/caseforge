@@ -121,6 +121,12 @@ class TestCaseRead(TestCaseBase):
     updated_at: datetime
 
 
+class TestCaseListItem(TestCaseRead):
+    """Row in the release grid. step_count is attached by the list query, not stored."""
+
+    step_count: int = 0
+
+
 class TestCaseReadWithSteps(TestCaseRead):
     steps: list[TestStepRead] = Field(default_factory=list)
 
