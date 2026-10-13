@@ -83,7 +83,7 @@ export function ValidationScopeSummary({
           {resources > 1
             ? ` Hay ${resources} recursos asignados; esta referencia no se convierte en tiempo calendario.`
             : " El tiempo calendario se ve aparte, con la ventana y los recursos de la Release."}
-          {" "}El esfuerzo de los casos de CaseForge se calcula con su fórmula propia. No se suma a los casos de la matriz.
+          {" "}Se suma al esfuerzo de los casos del RN. En un rango entra el tope. Los casos de la matriz no entran en esa fórmula.
         </p>
       ) : !hideEstimate && stored === "N/A" ? (
         <p>No hay esfuerzo estimado de validación.</p>

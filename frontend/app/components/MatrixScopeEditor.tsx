@@ -271,7 +271,7 @@ export function MatrixScopeEditor({
       {preview.impact_summary ? <p>{preview.impact_summary}</p> : null}
       {scope?.estimate ? (
         <p>
-          Estimación base para 1 recurso QC: {scope.estimate.label}. No se suma a los casos de la matriz.
+          Estimación base para 1 recurso QC: {scope.estimate.label}. Se suma al esfuerzo de los casos del RN; en un rango entra el tope. Los casos de la matriz no entran en esa fórmula.
           {resources > 1 ? ` Hay ${resources} recursos asignados; esta referencia no se convierte en tiempo calendario.` : ""}
         </p>
       ) : null}

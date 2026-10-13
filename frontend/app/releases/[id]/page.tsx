@@ -28,7 +28,8 @@ import { ValidationScopeSelect, ValidationScopeSummary } from "@/app/components/
 import { BE_REGRESIVO_SCOPE_LABEL, OPERATIVA_DEVICE_OPTIONS, SHOW_QCO_ZEPHYR_PUBLISH } from "@/lib/constants";
 import { calculateBusinessDays } from "@/lib/dateUtils";
 import { nextTestCaseId } from "@/lib/testCaseId";
-import { QC_ESTIMATION_TOOLTIP, QC_OPERATIVA_ESTIMATION_TOOLTIP, durationDays, estimateOperativaEffort, estimateReleaseEffortFromCases, estimateReleaseEffortLegacyCount, hoursByTechnicalEpic, progressByTechnicalEpic, rnScopeCoverage, rnScopeEpicKeys, stripDeviceFromCaseName } from "@/lib/qcEffort";
+import { QC_ESTIMATION_TOOLTIP, QC_HOURS_PER_DAY, QC_OPERATIVA_ESTIMATION_TOOLTIP, durationDays, estimateOperativaEffort, estimateReleaseEffortFromCases, estimateReleaseEffortLegacyCount, hoursByTechnicalEpic, progressByTechnicalEpic, rnScopeCoverage, rnScopeEpicKeys, stripDeviceFromCaseName } from "@/lib/qcEffort";
+import { validationScopeHours } from "@/lib/validationScope";
 import type { CoverageMatrixResponse, EpcRead, GenerateCasesResponse, PublishCasesResponse, Release, ReleaseAnalysis, ReleaseStatus, TestCase } from "@/lib/types";
 import { jiraIssueUrl, parseJiraTicketKeys } from "@/lib/jira";
 import { formatRnSourceType } from "@/lib/types";
@@ -492,18 +493,25 @@ export default function ReleaseDetailPage(): React.ReactElement {
       : "← Volver a Releases";
   const hasEngineCases = testCases.some((row) => row.generated_by_engine);
   const canEditAppsPlanning = isApp && release.status === "IN_PROGRESS" && canChangeReleaseStatus;
-  const { hours: estimationHours, days: estimationDays } = isOperativa
+  const { hours: caseHours, days: estimationDays } = isOperativa
     ? estimateOperativaEffort(visibleCases)
     : isApp
       ? estimateReleaseEffortFromCases(visibleCases)
       : estimateReleaseEffortLegacyCount(visibleCases.length);
+  const scopeHours = isApp
+    ? validationScopeHours(
+        editingPlanning && canEditAppsPlanning ? planningForm.validationType : release.validation_type,
+      )
+    : 0;
+  const estimationHours = caseHours + scopeHours;
   const qcResources =
     isApp && editingPlanning ? Math.max(1, Number(planningForm.qcResources) || 1) : (release.qc_resources ?? 1);
   const liveExecutionDays =
     isApp && editingPlanning
       ? calculateBusinessDays(planningForm.startDate, planningForm.endDate)
       : release.execution_days;
-  const estimatedDurationDays = isApp ? durationDays(estimationDays, qcResources) : estimationDays;
+  const personDays = isApp ? estimationHours / QC_HOURS_PER_DAY : estimationDays;
+  const estimatedDurationDays = isApp ? durationDays(personDays, qcResources) : estimationDays;
   const statusCounts = visibleCases.reduce<Record<string, number>>((counts, row) => {
     counts[row.status] = (counts[row.status] || 0) + 1;
     return counts;
@@ -784,7 +792,7 @@ export default function ReleaseDetailPage(): React.ReactElement {
               qcResources={qcResources}
               executionDays={liveExecutionDays}
               effortHours={isApp ? estimationHours : null}
-              personDays={isApp ? estimationDays : null}
+              personDays={isApp ? personDays : null}
               durationDays={isApp ? estimatedDurationDays : null}
             />
           </div>
@@ -1013,7 +1021,7 @@ export default function ReleaseDetailPage(): React.ReactElement {
               : isApp
                 ? [
                     { label: "Esfuerzo estimado QC", value: `${estimationHours.toFixed(1)} h`, tip: QC_ESTIMATION_TOOLTIP },
-                    { label: "Días-persona", value: estimationDays.toFixed(1) },
+                    { label: "Días-persona", value: personDays.toFixed(1) },
                     { label: "Duración estimada", value: `${estimatedDurationDays.toFixed(1)} días` },
                     { label: "Recursos QC", value: String(qcResources) },
                   ]

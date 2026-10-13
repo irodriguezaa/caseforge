@@ -15,7 +15,7 @@
  */
 
 export type ValidationScopeEstimate = {
-  /** Texto operativo definido por QC. No sale de la fórmula de casos. */
+  /** Texto operativo definido por QC. Se suma al esfuerzo de los casos del RN; no sale de esa fórmula. */
   label: string;
 };
 
@@ -70,6 +70,15 @@ export function validationScopeByLabel(value: string | null | undefined): Valida
   const key = (value ?? "").trim();
   if (!key) return null;
   return SCOPE_BY_LABEL.get(key) ?? null;
+}
+
+/** Horas que se suman al esfuerzo de los casos del RN. En un rango se usa el tope. */
+export function validationScopeHours(value: string | null | undefined): number {
+  const label = validationScopeByLabel(value)?.estimate?.label ?? "";
+  const range = label.match(/(\d+(?:[.,]\d+)?)\s*[–-]\s*(\d+(?:[.,]\d+)?)/);
+  if (range) return Number(range[2].replace(",", "."));
+  const single = label.match(/(\d+(?:[.,]\d+)?)/);
+  return single ? Number(single[1].replace(",", ".")) : 0;
 }
 
 /** Catálogo en el orden definido. Un valor guardado fuera del catálogo se agrega al final, sin reescribirlo. */
