@@ -59,6 +59,7 @@ def test_apply_qc_rules_does_not_merge_distinct_covers() -> None:
 
 
 def test_llm_second_batch_only_missing_units(client, monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr("app.services.scenario_cases.composition_mode", lambda: "flow")
     from dataclasses import replace
 
     from app.config import settings
@@ -167,6 +168,7 @@ def _assert_llm_payload_is_functionality_only(posted: dict) -> None:
 
 
 def test_llm_http_payload_excludes_nco_tri_qa_qc(client, monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr("app.services.scenario_cases.composition_mode", lambda: "flow")
     from dataclasses import replace
 
     from app.config import settings
@@ -243,6 +245,7 @@ def test_llm_http_payload_excludes_nco_tri_qa_qc(client, monkeypatch, tmp_path) 
 def test_llm_candidates_keep_only_functionality_jira_and_covers(
     client, monkeypatch, tmp_path
 ) -> None:
+    monkeypatch.setattr("app.services.scenario_cases.composition_mode", lambda: "flow")
     from dataclasses import replace
 
     from app.config import settings

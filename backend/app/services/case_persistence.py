@@ -66,6 +66,10 @@ def _join_test_data(candidate: GeneratedCaseCandidate) -> str | None:
         parts.append(f"Referencia técnica: {candidate.technical_reference}")
     if candidate.variant_table:
         parts.append(f"Variantes:\n{candidate.variant_table}")
+    if candidate.qc_tipo:
+        parts.append(f"Tipo de prueba: {candidate.qc_tipo}")
+    if candidate.qc_brecha:
+        parts.append(f"Brecha: {candidate.qc_brecha}")
     return "\n".join(parts) or None
 
 
@@ -78,7 +82,7 @@ def _audit_justification(candidate: GeneratedCaseCandidate) -> str:
         parts.append(f"duplicateStatus={candidate.duplicate_status}; duplicateWith=[{related}]")
     if candidate.device_source and f"Fuente dispositivo: {candidate.device_source}" not in parts[0]:
         parts.append(f"Fuente dispositivo: {candidate.device_source}")
-    if candidate.covers:
+    if candidate.covers and "covers=" not in (candidate.justification or ""):
         parts.append("covers=" + ",".join(candidate.covers))
     return " ".join(part for part in parts if part).strip()
 
@@ -143,7 +147,11 @@ def persist_candidates(
     used_ids = [row.test_case_id for row in existing]
     created: list[TestCase] = []
     for candidate in candidates:
-        complexity = classify_complexity(candidate)
+        complexity = (
+            candidate.qc_complejidad
+            if candidate.qc_complejidad in {"BAJA", "MEDIA", "ALTA"}
+            else classify_complexity(candidate)
+        )
         label = next_test_case_id(used_ids)
         used_ids.append(label)
         priority = (

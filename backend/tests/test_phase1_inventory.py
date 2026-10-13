@@ -362,6 +362,7 @@ def test_empty_feature_uses_gated_last_resort_when_other_inventory_exists(monkey
 
 
 def test_llm_path_still_adds_gated_last_resort(monkeypatch) -> None:
+    monkeypatch.setattr("app.services.scenario_cases.composition_mode", lambda: "flow")
     from dataclasses import replace
     from unittest.mock import MagicMock, patch
     import json

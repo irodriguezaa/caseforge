@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from app.schemas.case_generation import CoverageUnit
 from app.services.ai_case_engine import (
     _ENGINE_RULES,
@@ -16,6 +18,11 @@ from app.services.ai_case_engine import (
     reconcile_llm_coverage,
 )
 from tests.test_llm_candidate_keep import _generate, _llm_http, _llm_item, _unit
+
+
+@pytest.fixture(autouse=True)
+def _batching_uses_flow_composition(monkeypatch):
+    monkeypatch.setattr("app.services.scenario_cases.composition_mode", lambda: "flow")
 
 
 def _story(key: str, scenario: str, then: str = "se muestra el resultado") -> dict:
