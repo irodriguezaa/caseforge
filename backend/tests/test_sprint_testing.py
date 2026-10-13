@@ -284,7 +284,7 @@ def test_options_mark_future_sprints(client) -> None:
     assert by_id["44"]["execution_filter_id"] == "117704"
     assert by_id["45"]["actionable"] is True
     assert by_id["45"]["filter_id"] == "117703"
-    assert by_id["45"]["execution_filter_id"] is None
+    assert by_id["45"]["execution_filter_id"] == "117796"
     assert by_id["46"]["actionable"] is False
 
 
