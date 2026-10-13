@@ -14,10 +14,6 @@ from app.services.jira_client import JiraApiError, JiraNotConfiguredError, _clie
 
 # Documented in Prompt v4 — not discovered ad hoc.
 _FIELD_USER_STORY_AC = "customfield_19114"
-_FIELD_YO_COMO = "customfield_19120"
-_FIELD_QUIERO = "customfield_19121"
-_FIELD_PARA = "customfield_19122"
-_FIELD_TIPO_USUARIO = "customfield_19125"
 _FIELD_PRODUCT_BRIEF = "customfield_19094"
 _FIELD_TBRFRE_DEVICE = "customfield_12104"
 
@@ -29,10 +25,6 @@ _ISSUE_FIELDS = [
     "status",
     "issuelinks",
     _FIELD_USER_STORY_AC,
-    _FIELD_YO_COMO,
-    _FIELD_QUIERO,
-    _FIELD_PARA,
-    _FIELD_TIPO_USUARIO,
     _FIELD_PRODUCT_BRIEF,
     _FIELD_TBRFRE_DEVICE,
 ]
@@ -40,25 +32,14 @@ _ISSUE_FIELDS = [
 _GENERATION_TIMEOUT = 30.0
 
 
-def field_text(value: Any) -> str:
-    """ADF, plain text, or a Jira select/list value. No interpretation."""
-    if isinstance(value, dict) and "value" in value and "content" not in value and value.get("type") not in {"doc", "paragraph"}:
-        return str(value.get("value") or "").strip()
-    if isinstance(value, list) and value and all(isinstance(item, dict) and "value" in item for item in value):
-        return ", ".join(str(item.get("value") or "").strip() for item in value if str(item.get("value") or "").strip())
-    return adf_to_text(value, number_ordered=True)
-
-
-def adf_to_text(value: Any, *, number_ordered: bool = False, _list_depth: int = 0) -> str:
+def adf_to_text(value: Any) -> str:
     """Flattens Jira Cloud ADF (or a plain string) to text. No interpretation."""
     if value is None:
         return ""
     if isinstance(value, str):
         return value.strip()
     if isinstance(value, list):
-        return "\n".join(
-            part for item in value if (part := adf_to_text(item, number_ordered=number_ordered, _list_depth=_list_depth))
-        )
+        return "\n".join(part for item in value if (part := adf_to_text(item)))
     if not isinstance(value, dict):
         return str(value).strip()
     if value.get("type") == "inlineCard":
@@ -76,21 +57,8 @@ def adf_to_text(value: Any, *, number_ordered: bool = False, _list_depth: int = 
     if "content" in value:
         chunks: list[str] = []
         node_type = value.get("type")
-        if node_type == "orderedList" and number_ordered:
-            lines: list[str] = []
-            for index, child in enumerate(value.get("content") or [], start=1):
-                body = adf_to_text(child, number_ordered=True, _list_depth=_list_depth + 1).strip()
-                if not body:
-                    continue
-                if _list_depth == 0:
-                    lines.append(f"{index}. {body}")
-                elif body.startswith("- "):
-                    lines.append(body)
-                else:
-                    lines.append(f"- {body}")
-            return "\n".join(lines)
         for child in value.get("content") or []:
-            chunk = adf_to_text(child, number_ordered=number_ordered, _list_depth=_list_depth)
+            chunk = adf_to_text(child)
             if chunk:
                 chunks.append(chunk)
         blockish = {
@@ -127,37 +95,10 @@ def _issue_payload(issue: dict[str, Any]) -> dict[str, Any]:
         "parent_key": parent.get("key"),
         "parent_issuetype": ((parent_fields.get("issuetype") or {}).get("name") or "").strip(),
         "description": adf_to_text(fields.get("description")),
-        "acceptance_criteria": field_text(fields.get(_FIELD_USER_STORY_AC)),
-        "yo_como": field_text(fields.get(_FIELD_YO_COMO)),
-        "quiero": field_text(fields.get(_FIELD_QUIERO)),
-        "para": field_text(fields.get(_FIELD_PARA)),
-        "user_type": field_text(fields.get(_FIELD_TIPO_USUARIO)),
-        "success_criteria": field_text(fields.get(_FIELD_PRODUCT_BRIEF)),
-        "product_brief_summary": field_text(fields.get(_FIELD_PRODUCT_BRIEF))[:2000],
+        "acceptance_criteria": adf_to_text(fields.get(_FIELD_USER_STORY_AC)),
+        "product_brief_summary": adf_to_text(fields.get(_FIELD_PRODUCT_BRIEF))[:2000],
         "device": adf_to_text(fields.get(_FIELD_TBRFRE_DEVICE)),
-        "linked_issues": _linked_issues(fields),
     }
-
-
-def _linked_issues(fields: dict[str, Any]) -> list[dict[str, str]]:
-    rows: list[dict[str, str]] = []
-    for link in fields.get("issuelinks") or []:
-        if not isinstance(link, dict):
-            continue
-        for side in ("outwardIssue", "inwardIssue"):
-            other = link.get(side) or {}
-            key = str(other.get("key") or "").strip()
-            if not key:
-                continue
-            other_fields = other.get("fields") or {}
-            rows.append(
-                {
-                    "key": key,
-                    "summary": str(other_fields.get("summary") or ""),
-                    "issuetype": str((other_fields.get("issuetype") or {}).get("name") or ""),
-                }
-            )
-    return rows
 
 
 def _is_epic(issuetype: str) -> bool:
@@ -367,78 +308,6 @@ def fetch_issuetypes_for_keys(keys: list[str]) -> dict[str, str]:
     return found
 
 
-def _is_product_epic(issuetype: str) -> bool:
-    return "product epic" in (issuetype or "").lower()
-
-
-def _is_user_story_type(issuetype: str) -> bool:
-    kind = (issuetype or "").strip().lower()
-    return kind in {"user story", "historia de usuario"} or kind.startswith("user story")
-
-
-def collect_user_stories(
-    technical_brief: dict[str, Any] | None,
-    brief_children: list[dict[str, Any]],
-    children_by_epic: dict[str, list[dict[str, Any]]],
-) -> list[dict[str, Any]]:
-    """User Stories live under Product Epics of the Product Brief, not on the Technical Epic.
-
-    Technical Epic → parent TBRFRE → parent BRFRE → Product Epic children → User Story children.
-    """
-    if not isinstance(technical_brief, dict):
-        return []
-    product_key = str(technical_brief.get("parent_key") or "").strip()
-    if not product_key:
-        return []
-    stories: list[dict[str, Any]] = []
-    for child in brief_children:
-        if not isinstance(child, dict) or not _is_product_epic(str(child.get("issuetype") or "")):
-            continue
-        epic_key = str(child.get("key") or "").strip()
-        for story in children_by_epic.get(epic_key) or []:
-            if isinstance(story, dict) and _is_user_story_type(str(story.get("issuetype") or "")):
-                stories.append(story)
-    return stories
-
-
-def _attach_user_story(client, artifact: dict[str, Any]) -> None:
-    """Load every User Story of the Product Brief. The model drops the ones from another epic."""
-    artifact["user_stories"] = []
-    artifact["user_story"] = None
-    parent_key = str(artifact.get("parent_key") or "").strip()
-    if not parent_key:
-        return
-    try:
-        brief_raw = _get_issue(client, parent_key)
-    except JiraApiError:
-        return
-    if brief_raw is None:
-        return
-    brief = _issue_payload(brief_raw)
-    product_key = str(brief.get("parent_key") or "").strip()
-    if not product_key:
-        return
-    try:
-        product_children = [_issue_payload(item) for item in _search_children(client, product_key)]
-    except JiraApiError:
-        return
-    children_by_epic: dict[str, list[dict[str, Any]]] = {}
-    for epic in product_children:
-        if not _is_product_epic(str(epic.get("issuetype") or "")):
-            continue
-        epic_key = str(epic.get("key") or "").strip()
-        if not epic_key:
-            continue
-        try:
-            children_by_epic[epic_key] = [_issue_payload(item) for item in _search_children(client, epic_key)]
-        except JiraApiError:
-            children_by_epic[epic_key] = []
-    stories = collect_user_stories(brief, product_children, children_by_epic)
-    artifact["user_stories"] = stories
-    artifact["product_brief_key"] = product_key
-    artifact["user_story"] = stories[0] if stories else None
-
-
 def fetch_artifacts_for_keys(keys: list[str]) -> list[dict[str, Any]]:
     """Loads RN functionality tickets from Jira. Empty if Jira is not configured or a key 404s.
 
@@ -478,7 +347,6 @@ def fetch_artifacts_for_keys(keys: list[str]) -> list[dict[str, Any]]:
                         children_raw = []
                 children = [_issue_payload(child) for child in children_raw]
                 artifact["children"] = children
-                _attach_user_story(client, artifact)
                 artifact["child_count"] = len(children_raw)
                 artifact["feature_child_count"] = sum(
                     1

@@ -1690,28 +1690,7 @@ def generate_release_app_candidates(
     from app.services.scenario_llm import polish_llm_candidates, rewrite_scenario_candidates
 
     candidates = contextualize_duplicate_titles(candidates)
-    designed = False
-    if scenario_llm and (settings.openai_api_key or "").strip() and jira_artifacts:
-        from app.services.qc_case_design import design_release_cases
-
-        outcome = design_release_cases(
-            jira_artifacts,
-            inventory,
-            release_context,
-            rn_filename or "",
-        )
-        if outcome is not None:
-            candidates = outcome.candidates
-            stats.scenario_ledger = list(outcome.ledger)
-            stats.cruce_rows = list(outcome.cruce_rows)
-            stats.run_warnings = list(outcome.warnings)
-            stats.llm_batches = list(stats.llm_batches or []) + list(outcome.batches)
-            analysis_details.append(outcome.summary)
-            if outcome.warnings:
-                analysis_details.append("Aviso diseño QC: " + " | ".join(outcome.warnings)[:1500])
-            engine = "qc-design"
-            designed = True
-    if not designed and scenario_llm and (settings.openai_api_key or "").strip() and inventory:
+    if scenario_llm and (settings.openai_api_key or "").strip() and inventory:
         rewritten, rows = rewrite_scenario_candidates(candidates, inventory)
         candidates = polish_llm_candidates(quality_gate(contextualize_duplicate_titles(rewritten)))
         stats.llm_batches = list(stats.llm_batches or []) + rows
@@ -1741,8 +1720,7 @@ def generate_release_app_candidates(
             analysis_details.append(f"LLM rechazos primer intento: {first}")
         if final:
             analysis_details.append(f"LLM rechazos finales: {final}")
-    if not designed:
-        fill_scenario_ledger(stats, inventory, candidates)
+    fill_scenario_ledger(stats, inventory, candidates)
     candidates = [row for row in candidates if row.steps]
     stamp_source_types(candidates)
     candidates = stamp_candidates(candidates, functionality_keys, jira_artifacts)
@@ -1755,13 +1733,8 @@ def generate_release_app_candidates(
         candidates=candidates,
     )
     coverage["scenario_ledger"] = list(stats.scenario_ledger)
-    coverage["cruce_rows"] = list(stats.cruce_rows or [])
-    coverage["run_warnings"] = list(stats.run_warnings or [])
     required = [unit.coverage_id for unit in inventory]
-    accounted = set(covered)
-    if designed:
-        accounted.update(outcome.accounted_ids)
-    uncovered = [cid for cid in required if cid not in accounted]
+    uncovered = [cid for cid in required if cid not in set(covered)]
     message = (
         f"Se propusieron {len(candidates)} caso(s) candidato(s). La IA propone; QC decide. "
         "No se crearon Test Cases en la base de datos."

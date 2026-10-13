@@ -18,9 +18,6 @@ class Settings:
     jira_api_token: str = os.getenv("JIRA_API_TOKEN", "")
     openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
     openai_model: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-    # Fallback when the account has no gpt-5 chat model. Temperature stays in 0.2–0.3.
-    openai_qc_model: str = os.getenv("OPENAI_QC_MODEL", "gpt-4o")
-    openai_qc_temperature: float = float(os.getenv("OPENAI_QC_TEMPERATURE", "0.25"))
     openai_base_url: str = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
     rn_storage_dir: str = os.getenv("RN_STORAGE_DIR", "/tmp/caseforge_release_notes")
     # Homologated QC effort indicator (all Release types). Calibrate with real effort later.

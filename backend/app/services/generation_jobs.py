@@ -8,44 +8,11 @@ from typing import Any
 
 from app.db import SessionLocal
 from app.schemas.case_generation import GenerateCasesResponse
-from app.services.qc_case_design import LlmQuotaError
 
 logger = logging.getLogger(__name__)
 
 _lock = threading.Lock()
 _jobs: dict[int, dict[str, Any]] = {}
-
-
-def _stamp_run_warning(release_id: int, warning: str) -> None:
-    from sqlalchemy import select
-    from sqlalchemy.orm.attributes import flag_modified
-
-    from app.models.release_analysis import ReleaseAnalysis
-
-    db = SessionLocal()
-    try:
-        analysis = db.execute(
-            select(ReleaseAnalysis)
-            .where(ReleaseAnalysis.release_id == release_id)
-            .order_by(ReleaseAnalysis.created_at.desc())
-        ).scalars().first()
-        if analysis is None:
-            return
-        raw = dict(analysis.raw_analysis or {})
-        coverage = dict(raw.get("rn_scope_coverage") or {})
-        warnings = [str(item) for item in (coverage.get("run_warnings") or []) if str(item).strip()]
-        if warning not in warnings:
-            warnings.append(warning)
-        coverage["run_warnings"] = warnings
-        raw["rn_scope_coverage"] = coverage
-        analysis.raw_analysis = raw
-        flag_modified(analysis, "raw_analysis")
-        db.commit()
-    except Exception:
-        logger.exception("could not stamp run warning release_id=%s", release_id)
-        db.rollback()
-    finally:
-        db.close()
 
 
 def _persist_matrix_cases(release_id: int) -> None:
@@ -154,7 +121,6 @@ def _run(release_id: int, regenerate: bool) -> None:
         persisted = 0
         empty: list[str] = []
         failed: list[str] = []
-        quota_message: str | None = None
         for index, key in enumerate(keys, start=1):
             _set_job(
                 release_id,
@@ -175,10 +141,6 @@ def _run(release_id: int, regenerate: bool) -> None:
                 persisted += n
                 if not chunk.persisted or n == 0:
                     empty.append(key)
-            except LlmQuotaError as exc:
-                quota_message = str(exc)
-                logger.error("generate-cases aborted release_id=%s key=%s: %s", release_id, key, quota_message)
-                break
             except Exception:
                 logger.exception("background generate-cases failed release_id=%s key=%s", release_id, key)
                 failed.append(key)
@@ -192,16 +154,6 @@ def _run(release_id: int, regenerate: bool) -> None:
             message += f" Sin casos: {', '.join(empty)}."
         if failed:
             message += f" Error: {', '.join(failed)}."
-        if quota_message:
-            _stamp_run_warning(release_id, quota_message)
-            _set_job(
-                release_id,
-                status="ERROR",
-                message=quota_message + " La corrida se detuvo. Revisa el aviso en la hoja Avance.",
-                test_case_count=persisted,
-                chunk_key=None,
-            )
-            return
         if not (keys and len(failed) == len(keys)):
             _persist_matrix_cases(release_id)
         _set_job(

@@ -69,7 +69,6 @@ from app.services.rn_epc_scope import (
     rn_keys_from_normalized,
 )
 from app.services.jira_generation import fetch_issuetypes_for_keys, keep_technical_epic_keys
-from app.services.qc_case_design import LlmQuotaError, merge_cruce_rows
 from app.services.operativa_engine import ENGINE_VERSION as OPERATIVA_ENGINE, generate_operativa_from_matrix
 from app.services.operativa_engine.coverage_matrix import build_coverage_matrix
 from app.services.operativa_engine.matrix_expand import expand_matrix_preview
@@ -823,9 +822,6 @@ def generate_cases_from_rn(
         )
     except HTTPException:
         raise
-    except LlmQuotaError as exc:
-        db.rollback()
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from None
     except Exception:
         logger.exception("generate-cases crashed release_id=%s", release_id)
         db.rollback()
@@ -1159,11 +1155,6 @@ def _generate_cases_from_rn(
             stored_rows,
             coverage_payload.get("scenario_ledger"),
         )
-        stored_cruce = list(stored.get("cruce_rows") or []) if isinstance(stored, dict) else []
-        coverage_payload["cruce_rows"] = merge_cruce_rows(stored_cruce, coverage_payload.get("cruce_rows"))
-        stored_warnings = list(stored.get("run_warnings") or []) if isinstance(stored, dict) else []
-        incoming_warnings = [str(item) for item in (coverage_payload.get("run_warnings") or [])]
-        coverage_payload["run_warnings"] = list(dict.fromkeys([*stored_warnings, *incoming_warnings]))
         proposal.rn_scope_coverage = coverage_payload
     sync_release_rn_epc_identity(db, release.id, analysis, coverage_payload)
     db.commit()

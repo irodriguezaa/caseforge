@@ -130,9 +130,6 @@ class GeneratedCaseCandidate(BaseModel):
     batch_id: str | None = None
     technical_reference: str | None = None
     variant_table: str | None = None
-    qc_tipo: str | None = None
-    qc_brecha: str | None = None
-    qc_complejidad: str | None = None
 
 
 class GenerationStats(BaseModel):
@@ -159,8 +156,6 @@ class GenerationStats(BaseModel):
     llm_batches: list[dict[str, Any]] = Field(default_factory=list)
     coverage_unit_status: dict[str, str] = Field(default_factory=dict)
     scenario_ledger: list[dict[str, Any]] = Field(default_factory=list)
-    cruce_rows: list[dict[str, Any]] = Field(default_factory=list)
-    run_warnings: list[str] = Field(default_factory=list)
 
 
 class GenerateCasesResponse(BaseModel):

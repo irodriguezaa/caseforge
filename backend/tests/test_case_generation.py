@@ -243,7 +243,6 @@ def test_generate_without_stored_pdf_does_not_invent_cases(client, monkeypatch) 
 
 
 def test_llm_structured_payload_is_returned(client, monkeypatch, tmp_path) -> None:
-    monkeypatch.setattr("app.services.scenario_cases.composition_mode", lambda: "flow")
     _store_dir(monkeypatch, tmp_path)
     monkeypatch.setattr(
         "app.services.ai_case_engine.settings",
@@ -326,7 +325,6 @@ def test_llm_structured_payload_is_returned(client, monkeypatch, tmp_path) -> No
 def test_llm_logs_attempt_and_success_without_leaking_api_key(
     client, monkeypatch, tmp_path, caplog
 ) -> None:
-    monkeypatch.setattr("app.services.scenario_cases.composition_mode", lambda: "flow")
     import logging
 
     caplog.set_level(logging.INFO, logger="app.services.ai_case_engine")
@@ -403,7 +401,6 @@ def test_llm_logs_attempt_and_success_without_leaking_api_key(
 def test_llm_error_logs_fallback_without_leaking_api_key(
     client, monkeypatch, tmp_path, caplog
 ) -> None:
-    monkeypatch.setattr("app.services.scenario_cases.composition_mode", lambda: "flow")
     import logging
 
     caplog.set_level(logging.INFO, logger="app.services.ai_case_engine")
@@ -1111,7 +1108,7 @@ def test_export_excel_has_qc_and_zephyr_sheets(client, monkeypatch, tmp_path) ->
     exported = client.get(f"/api/v1/releases/{release_id}/test-cases/export")
     assert exported.status_code == 200
     workbook = load_workbook(io.BytesIO(exported.content))
-    assert workbook.sheetnames == ["Avance", "Test Cases", "Zephyr", "Escenarios de Jira", "Cruce US - TS"]
+    assert workbook.sheetnames == ["Avance", "Test Cases", "Zephyr", "Escenarios de Jira"]
     avance = workbook["Avance"]
     qc = workbook["Test Cases"]
     zephyr = workbook["Zephyr"]

@@ -82,19 +82,6 @@ def split_stored_extras(raw: str | None) -> tuple[str, str]:
     return tech, variants
 
 
-def split_qc_markers(raw: str | None) -> tuple[str, str]:
-    tipo = ""
-    brecha = ""
-    text = raw or ""
-    tipo_match = re.search(r"Tipo de prueba:\s*(.+)", text)
-    if tipo_match:
-        tipo = tipo_match.group(1).strip().splitlines()[0].strip()
-    brecha_match = re.search(r"Brecha:\s*(.+)", text)
-    if brecha_match:
-        brecha = brecha_match.group(1).strip().splitlines()[0].strip()
-    return tipo, brecha
-
-
 def split_stored_test_data(raw: str | None) -> tuple[str, str, str]:
     """Split the persisted test_data blob the same way the case page does."""
     text = (raw or "").strip()
@@ -166,7 +153,6 @@ def parcial_estado(epic: str, ledger: list[dict] | None) -> str:
     key = epic.strip().upper()
     pending = 0
     errors = 0
-    gaps = 0
     for row in ledger or []:
         if not isinstance(row, dict):
             continue
@@ -176,29 +162,15 @@ def parcial_estado(epic: str, ledger: list[dict] | None) -> str:
         estado = str(row.get("estado") or "")
         if estado == "pendiente de revisión QC":
             pending += 1
-        elif estado == "sin cobertura (falla de validación)":
-            gaps += 1
         elif estado.lower().startswith("error"):
             errors += 1
-    missing_story = any(
-        isinstance(row, dict)
-        and _ledger_epic(row).upper() == key
-        and str(row.get("estado") or "") == "sin_user_story"
-        for row in ledger or []
-    )
     parts: list[str] = []
-    if missing_story:
-        parts.append("Sin User Story")
     if pending:
         parts.append(f"{pending} pendiente de revisión QC")
-    if gaps:
-        parts.append(f"{gaps} sin cobertura (falla de validación)")
     if errors:
         parts.append(f"{errors} error")
     if not parts:
         return ""
-    if parts == ["Sin User Story"]:
-        return "Sin User Story"
     return "parcial (" + ", ".join(parts) + ")"
 
 
@@ -338,8 +310,6 @@ QC_HEADERS = [
     "Esfuerzo QC (h)",
     "Referencia técnica",
     "Variantes (condición → resultado)",
-    "Tipo de prueba",
-    "Brecha",
 ]
 
 # Matches the FLAT Zephyr layout that CaseForge already imports (see services/imports.py).
@@ -487,12 +457,11 @@ def build_test_cases_workbook(
     _style_header(
         qc,
         QC_HEADERS,
-        [10, 42, 16, 12, 16, 14, 40, 40, 28, 22, 28, 32, 16, 18, 28, 12, 14, 14, 32, 36, 16, 16],
+        [10, 42, 16, 12, 16, 14, 40, 40, 28, 22, 28, 32, 16, 18, 28, 12, 14, 14, 32, 36],
     )
     for row_index, case in enumerate(ordered, start=2):
         precondition, compact_data, _notes = split_stored_test_data(case.test_data)
         tech, variants = split_stored_extras(case.test_data)
-        tipo, brecha = split_qc_markers(case.test_data)
         values = [
             case.test_case_id,
             _display_case_name(case),
@@ -514,8 +483,6 @@ def build_test_cases_workbook(
             "" if case.estimation_hours is None else float(case.estimation_hours),
             tech,
             variants,
-            tipo,
-            brecha,
         ]
         for col, value in enumerate(values, start=1):
             cell = qc.cell(row_index, col, _excel_value(value))
@@ -523,7 +490,7 @@ def build_test_cases_workbook(
 
     if na_ambiente or any(str(row.get("estado") or "") == "na_ambiente" for row in ledger_rows):
         na_sheet = workbook.create_sheet("No aplicables en ambiente")
-        _style_header(na_sheet, QC_HEADERS, [10, 42, 16, 12, 16, 14, 40, 40, 28, 22, 28, 32, 16, 18, 28, 12, 14, 14, 32, 36, 16, 16])
+        _style_header(na_sheet, QC_HEADERS, [10, 42, 16, 12, 16, 14, 40, 40, 28, 22, 28, 32, 16, 18, 28, 12, 14, 14, 32, 36])
         covered: set[tuple[str, str]] = set()
         next_row = 2
         for case in na_ambiente:
@@ -642,36 +609,6 @@ def build_test_cases_workbook(
         for col, value in enumerate(values, start=1):
             cell = sheet.cell(row_index, col, _excel_value(value))
             _style_cell(cell)
-
-    cruce_rows = []
-    run_warnings: list[str] = []
-    if isinstance(coverage, dict):
-        cruce_rows = [row for row in (coverage.get("cruce_rows") or []) if isinstance(row, dict)]
-        run_warnings = [str(item).strip() for item in (coverage.get("run_warnings") or []) if str(item).strip()]
-    cruce = workbook.create_sheet("Cruce US - TS")
-    _style_header(cruce, ["EPC", "ID", "Situación", "Casos que lo cubren"], [18, 16, 18, 56])
-    gap_fill = PatternFill("solid", fgColor="F4B183")
-    for row_index, row in enumerate(cruce_rows, start=2):
-        values = [
-            row.get("epic") or "",
-            row.get("id") or "",
-            row.get("situacion") or "",
-            row.get("casos") or "",
-        ]
-        highlight = str(row.get("situacion") or "") in {"solo_negocio", "solo_tecnico"}
-        for col, value in enumerate(values, start=1):
-            cell = cruce.cell(row_index, col, _excel_value(value))
-            _style_cell(cell)
-            if highlight:
-                cell.fill = gap_fill
-    if run_warnings:
-        notice_row = (len(progress) + 3) if progress else 2
-        label = avance.cell(notice_row, 1, "Aviso")
-        _style_cell(label, wrap=False)
-        label.font = Font(name="Calibri", size=11, bold=True, color="9C2F2F")
-        notice = avance.cell(notice_row, 6, " | ".join(run_warnings))
-        _style_cell(notice)
-        notice.font = Font(name="Calibri", size=11, color="9C2F2F")
 
     buffer = io.BytesIO()
     workbook.save(buffer)
