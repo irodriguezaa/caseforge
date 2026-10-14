@@ -6,7 +6,7 @@ import { jiraIssueUrl } from "@/lib/jira";
 import type { EpicProgressRow } from "@/lib/qcEffort";
 
 export function EpicProgressPanel({ rows }: { rows: EpicProgressRow[] }): React.ReactElement {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
   const totals = rows.reduce(
     (acc, row) => ({ total: acc.total + row.total, executed: acc.executed + row.executed, hours: acc.hours + row.hours }),
     { total: 0, executed: 0, hours: 0 },
