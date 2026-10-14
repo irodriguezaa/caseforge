@@ -355,3 +355,66 @@ def test_export_adds_v2_columns_only_for_v2_cases():
     _append_v2_columns(sheet, [v2])
     assert [sheet.cell(1, c).value for c in range(3, 7)] == ["Escenario", "Tipo de prueba", "Brecha", "Requiere revisión"]
     assert sheet.cell(2, 4).value == "TTF"
+
+
+# ------------------------------------------------------------------ benchmark
+
+
+def _luminia_book(path):
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Matriz de CP QC"
+    ws.append(["Technical Epic", "Technical Story", "External id", "TC_Name", "#", "Step", "Test Step Description", "Expected Result"])
+    for n in range(1, 11):
+        ws.append(["WEBCL-1", "WEBCL-2", f"CP{n:03d}", f"Caso {n}", n, "Step 1", "Abrir", "Se abre"])
+        ws.append([None, None, None, None, None, "Step 2", "Ver", "Se ve"])
+    wb.save(path)
+
+
+def _qcpulse_book(path, cases):
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Casos"
+    ws.append(["Épica", "Escenario", "Título", "Tipo", "Prioridad", "Complejidad", "Precondiciones", "Pasos", "Resultado esperado"])
+    for title, steps in cases:
+        ws.append(["WEBCL-1", "ESC-01", title, "HPP", "CRITICAL", "BAJA", "", "\n".join(f"{i}. p" for i in range(1, steps + 1)), "\n".join(f"{i}. r" for i in range(1, steps + 1))])
+    wb.save(path)
+
+
+def test_benchmark_deterministic_metrics(tmp_path):
+    from app.services.qc_v2 import benchmark
+
+    _luminia_book(tmp_path / "l.xlsx")
+    _qcpulse_book(tmp_path / "q.xlsx", [("A", 3), ("B", 4), ("C", 2), ("D", 5), ("E", 6)])
+    lum = benchmark.read_luminia(tmp_path / "l.xlsx")
+    qcp = benchmark.read_qcpulse(tmp_path / "q.xlsx")
+    assert len(lum) == 10 and lum[0].steps == ["Abrir", "Ver"]
+    result = benchmark.score(lum, qcp)[0]
+    assert result.ratio == 0.5 and result.checks()["granularidad"] is True
+    assert result.steps_ok == 0.8 and result.checks()["pasos"] is False
+    benchmark.write_report([result], tmp_path / "r.xlsx")
+
+
+def test_benchmark_judge_parsing(tmp_path):
+    from app.services.qc_v2 import benchmark
+
+    _luminia_book(tmp_path / "l.xlsx")
+    _qcpulse_book(tmp_path / "q.xlsx", [("A", 3), ("B", 4)])
+    verdict = {
+        "cobertura": [{"luminia_id": f"CP{n:03d}", "estado": "si" if n <= 9 else "no", "qcpulse_ids": ["Q001"]} for n in range(1, 11)],
+        "pasos_desarrollo": [],
+        "duplicados": [],
+    }
+
+    def chat(messages, *, model, temperature=None):
+        return verdict, LlmMeta(model=model)
+
+    result = benchmark.score(
+        benchmark.read_luminia(tmp_path / "l.xlsx"), benchmark.read_qcpulse(tmp_path / "q.xlsx"), judge=True, chat=chat
+    )[0]
+    assert result.cobertura == 0.9 and result.checks()["cobertura"] is True
+    assert result.solo_qcpulse == ["Q002 — B"]
