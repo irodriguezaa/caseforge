@@ -15,6 +15,15 @@ CÓMO MODELAR
    Un escenario con brecha nunca mezcla elementos en cruce; pero varias brechas equivalentes (mismo comportamiento para distintos tipos de usuario) sí van en un solo escenario.
 6. Si la épica modifica una pantalla o componente existente, agrega UN escenario "No afectación de <componente>" (sus funciones habituales siguen igual) con es_no_afectacion=true. Puede no cubrir ningún CRN/COV.
 7. Un escenario de prueba es un comportamiento funcional, no una verificación suelta. Como referencia, una épica típica tiene entre 3 y 10 escenarios de prueba.
+8. Dimensiones de cobertura. En "condiciones" de cada escenario enumera TODAS las variaciones que un QC Senior probaría, aunque Jira no las escriba como Scenario. Revisa siempre:
+   - Tipos de usuario y estados de cuenta (anónimo, registrado, suscrito, con o sin el derecho, etc.).
+   - Operaciones o regiones, incluida al menos una donde el comportamiento NO debe aparecer.
+   - Estados o tipos del contenido u objeto (por ejemplo: grabado, grabando, por grabar, serie; película, serie, evento).
+   - Todas las pantallas o puntos de entrada donde el usuario ve el comportamiento (lista, detalle, reproducción, búsqueda, enlace externo).
+   - Navegación alrededor del flujo: cancelar a mitad, regresar, botón Atrás, salir y volver a entrar, recargar, accesos sucesivos.
+   - Errores visibles y recuperación (falla del servicio, dato inválido, reintento exitoso después del error).
+   - Diseños o modos de interacción del dispositivo cuando la historia los menciona (por ejemplo cursor vs. táctil).
+   Escribe solo las que apliquen a este escenario, con palabras concretas ("operación distinta a México", "regresar con el botón Atrás del navegador").
 
 QUÉ EXCLUIR (con motivo; se registra igual)
 - telemetria: el resultado solo se ve en eventos, métricas o dashboards (Datadog, Firebase, analítica).

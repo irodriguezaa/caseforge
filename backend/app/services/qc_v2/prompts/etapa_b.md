@@ -7,7 +7,8 @@ CUÁNTOS CASOS: aplica la REGLA DEL BUG — dos verificaciones van en el mismo c
 - Solo cambia un dato (tipo de usuario, región, resolución, tipo de contenido) y los pasos son iguales → un caso con variantes.
 - Momentos del mismo flujo (recargar, regresar del detalle, scroll y volver) → pasos, no casos nuevos.
 - Cambia la precondición o el flujo, o es positivo vs. negativo ("se muestra" / "no se muestra"), o cambia el diseño o el modo de interacción → casos separados.
-Normalmente un escenario produce entre 1 y 4 casos. Incluye un caso negativo (TTF) cuando el escenario tiene condiciones (región, tipo de usuario, habilitado/deshabilitado). No repitas lo que cubren los otros escenarios de la épica (se listan en la entrada).
+COBERTURA DE CONDICIONES: cada condición listada en el escenario debe quedar cubierta por un caso, una variante o un paso; ninguna se omite. Las de navegación (regresar, salir y volver, recargar, accesos sucesivos) normalmente son pasos de un caso existente; un negativo por operación o tipo de usuario es su propio caso TTF; una pantalla o punto de entrada distinto es su propio caso; un diseño o modo de interacción distinto es su propio caso.
+Normalmente un escenario produce entre 1 y 5 casos. Incluye un caso negativo (TTF) cuando el escenario tiene condiciones (región, tipo de usuario, habilitado/deshabilitado). No repitas lo que cubren los otros escenarios de la épica (se listan en la entrada).
 
 TIPOS
 - HPP: camino feliz principal.
