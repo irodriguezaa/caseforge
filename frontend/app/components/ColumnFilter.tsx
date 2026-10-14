@@ -70,18 +70,24 @@ export function ColumnFilter({
     if (!open || !button || !menu) {
       return;
     }
-    function sync(): void {
-      if (button && menu) {
-        placeMenu(button, menu);
-        menu.scrollTop = menuScrollTop.current;
+    const trigger = button;
+    const panel = menu;
+    placeMenu(trigger, panel);
+    panel.scrollTop = menuScrollTop.current;
+    function onScroll(event: Event): void {
+      if (panel.contains(event.target as Node)) {
+        return;
       }
+      placeMenu(trigger, panel);
     }
-    sync();
-    window.addEventListener("scroll", sync, true);
-    window.addEventListener("resize", sync);
+    function onResize(): void {
+      placeMenu(trigger, panel);
+    }
+    window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("resize", onResize);
     return () => {
-      window.removeEventListener("scroll", sync, true);
-      window.removeEventListener("resize", sync);
+      window.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("resize", onResize);
     };
   }, [open, selected, options.length]);
 
@@ -117,7 +123,9 @@ export function ColumnFilter({
       className="col-filter-menu"
       role="listbox"
       aria-label={label}
-      onMouseDown={(event) => event.preventDefault()}
+      onScroll={(event) => {
+        menuScrollTop.current = event.currentTarget.scrollTop;
+      }}
     >
       <label className="col-filter-item">
         <input type="checkbox" checked={allChecked} onChange={toggleAll} />
