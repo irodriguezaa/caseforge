@@ -431,6 +431,23 @@ button.danger:hover:not(:disabled) { background: #d94f4c; }
 .icon-btn.danger:hover:not(:disabled) { background: var(--danger); color: white; }
 .modal-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, .55); z-index: 40; display: flex; align-items: flex-start; justify-content: center; padding: 4vh 16px; overflow: auto; }
 .modal-panel { width: min(760px, 100%); background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 1.25rem 1.35rem 1.4rem; box-shadow: 0 16px 48px rgba(0, 0, 0, .35); }
+.bulk-bar {
+  position: sticky;
+  bottom: 12px;
+  z-index: 20;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  background: var(--surface-1);
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  padding: 10px 14px;
+  margin: 12px 0 4px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .28);
+}
+table.case-grid th.select,
+table.case-grid td.select { width: 36px; text-align: center; }
 
 .card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 1.25rem; margin-bottom: 1.25rem; }
 .test-data-stack { display: flex; flex-direction: column; gap: 0; margin-top: 12px; }

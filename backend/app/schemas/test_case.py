@@ -144,3 +144,28 @@ class BulkCreateError(BaseModel):
 class TestCaseBulkCreateResult(BaseModel):
     created: list[TestCaseReadWithSteps]
     errors: list[BulkCreateError]
+
+
+class TestCaseBulkIds(BaseModel):
+    ids: list[int] = Field(min_length=1)
+
+
+class TestCaseBulkStatusUpdate(TestCaseBulkIds):
+    status: TestCaseStatus
+
+
+class TestCaseBulkItemError(BaseModel):
+    id: int
+    test_case_id: str | None = None
+    message: str
+
+
+class TestCaseBulkStatusResult(BaseModel):
+    updated: list[int]
+    failed: list[TestCaseBulkItemError]
+    status: TestCaseStatus
+
+
+class TestCaseBulkDeleteResult(BaseModel):
+    deleted: list[int]
+    failed: list[TestCaseBulkItemError]

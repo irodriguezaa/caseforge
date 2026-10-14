@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { EditTestCaseModal } from "@/app/components/EditTestCaseModal";
+import { TestCaseBulkBar } from "@/app/components/TestCaseBulkBar";
 import { EpicHoursPanel } from "@/app/components/EpicHoursPanel";
 import { EpicProgressPanel } from "@/app/components/EpicProgressPanel";
 import { ImportTestCasesPanel } from "@/app/components/ImportTestCasesPanel";
@@ -23,6 +24,15 @@ import {
   saveReleaseCaseFilters,
   type ColumnFilterSelection,
 } from "@/lib/releaseCaseFilters";
+import {
+  componentLabel,
+  filterReleaseCases,
+  headerCheckboxState,
+  selectFilteredIds,
+  storyLabel,
+  summarizeBulkResult,
+  toggleSelectedId,
+} from "@/lib/releaseCaseSelection";
 import { MatrixScopeEditor } from "@/app/components/MatrixScopeEditor";
 import { ValidationScopeSelect, ValidationScopeSummary } from "@/app/components/ValidationScopeField";
 import { BE_REGRESIVO_SCOPE_LABEL, OPERATIVA_DEVICE_OPTIONS, SHOW_QCO_ZEPHYR_PUBLISH } from "@/lib/constants";
@@ -63,14 +73,6 @@ function toDateInputValue(isoDate?: string | null): string {
 
 function uniqueSorted(values: string[]): string[] {
   return [...new Set(values.filter(Boolean))].sort((a, b) => a.localeCompare(b, "es"));
-}
-
-function componentLabel(row: TestCase): string {
-  return (row.component || row.technical_epic || "").trim();
-}
-
-function storyLabel(row: TestCase): string {
-  return (row.technical_story || "").trim();
 }
 
 export default function ReleaseDetailPage(): React.ReactElement {
@@ -117,6 +119,10 @@ export default function ReleaseDetailPage(): React.ReactElement {
     description: "",
   });
   const [matrixImpact, setMatrixImpact] = useState<{ caseCount: number; note: string; estimateInSection: boolean } | null>(null);
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkNotice, setBulkNotice] = useState<{ ok: boolean; text: string } | null>(null);
+  const headerSelectRef = useRef<HTMLInputElement>(null);
 
   const load = (): void => {
     setLoadError(null);
@@ -345,6 +351,42 @@ export default function ReleaseDetailPage(): React.ReactElement {
     }
   };
 
+  const handleBulkStatus = async (status: TestCase["status"]): Promise<void> => {
+    if (selectedIds.length === 0 || bulkBusy) return;
+    setBulkBusy(true);
+    setActionError(null);
+    setBulkNotice(null);
+    try {
+      const result = await api.bulkUpdateTestCaseStatus(releaseId, selectedIds, status);
+      const text = summarizeBulkResult("status", result.updated.length, result.failed);
+      setBulkNotice({ ok: result.failed.length === 0, text });
+      setSelectedIds([]);
+      load();
+    } catch (err) {
+      setActionError(err instanceof ApiRequestError ? err.message : "No se pudo cambiar el estado.");
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
+  const handleBulkDelete = async (): Promise<void> => {
+    if (selectedIds.length === 0 || bulkBusy) return;
+    setBulkBusy(true);
+    setActionError(null);
+    setBulkNotice(null);
+    try {
+      const result = await api.bulkDeleteTestCases(releaseId, selectedIds);
+      const text = summarizeBulkResult("delete", result.deleted.length, result.failed);
+      setBulkNotice({ ok: result.failed.length === 0, text });
+      setSelectedIds([]);
+      load();
+    } catch (err) {
+      setActionError(err instanceof ApiRequestError ? err.message : "No se pudo eliminar la selección.");
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
   const matrixCases = useMemo(
     () => testCases.filter((row) => row.source_type === "qc_matrix"),
     [testCases],
@@ -427,30 +469,35 @@ export default function ReleaseDetailPage(): React.ReactElement {
     || columnFilterIsActive(priorityFilter)
     || columnFilterIsActive(statusFilter),
   );
-  const visibleCases = useMemo(() => {
-    const components = componentFilter === null ? null : new Set(componentFilter);
-    const stories = storyFilter === null ? null : new Set(storyFilter);
-    const priorities = priorityFilter === null ? null : new Set(priorityFilter);
-    const statuses = statusFilter === null ? null : new Set(statusFilter);
-    return scopedCases.filter((row) => {
-      if (deviceFilter && (row.device || "").trim() !== deviceFilter) {
-        return false;
-      }
-      if (components && !components.has(componentLabel(row))) {
-        return false;
-      }
-      if (stories && !stories.has(storyLabel(row))) {
-        return false;
-      }
-      if (priorities && !priorities.has(row.priority)) {
-        return false;
-      }
-      if (statuses && !statuses.has(row.status)) {
-        return false;
-      }
-      return true;
-    });
-  }, [scopedCases, deviceFilter, componentFilter, storyFilter, priorityFilter, statusFilter]);
+  const visibleCases = useMemo(
+    () =>
+      filterReleaseCases(scopedCases, {
+        device: deviceFilter,
+        component: componentFilter,
+        story: storyFilter,
+        priority: priorityFilter,
+        status: statusFilter,
+      }),
+    [scopedCases, deviceFilter, componentFilter, storyFilter, priorityFilter, statusFilter],
+  );
+  const filterSignature = JSON.stringify({
+    caseTab,
+    deviceFilter,
+    componentFilter,
+    storyFilter,
+    priorityFilter,
+    statusFilter,
+  });
+  useEffect(() => {
+    setSelectedIds([]);
+  }, [filterSignature, releaseId]);
+  const visibleIds = useMemo(() => selectFilteredIds(visibleCases), [visibleCases]);
+  const headerSelect = headerCheckboxState(visibleIds, selectedIds);
+  useEffect(() => {
+    if (headerSelectRef.current) {
+      headerSelectRef.current.indeterminate = headerSelect.indeterminate;
+    }
+  }, [headerSelect.indeterminate, headerSelect.checked]);
   const rnEpicKeys = useMemo(() => rnScopeEpicKeys(analysis), [analysis]);
   const rnCoverage = useMemo(() => rnScopeCoverage(analysis), [analysis]);
   const epicHours = useMemo(
@@ -484,7 +531,7 @@ export default function ReleaseDetailPage(): React.ReactElement {
   const isBe = Boolean(release.be_release_id);
   const isOperativa = Boolean(release.operativa_release_id);
   const isApp = !isBe && !isOperativa;
-  const caseTableCols = 9;
+  const caseTableCols = 10;
   const backHref = isBe ? "/releases-be" : isOperativa ? "/operativas/release-notes" : "/releases";
   const backLabel = isBe
     ? "← Volver a Release BE"
@@ -1155,9 +1202,37 @@ export default function ReleaseDetailPage(): React.ReactElement {
         </div>
       )}
 
+      {bulkNotice && (
+        <p className={bulkNotice.ok ? "muted" : "error-text"}>{bulkNotice.text}</p>
+      )}
+      {canExecuteCases && selectedIds.length > 0 && (
+        <TestCaseBulkBar
+          count={selectedIds.length}
+          busy={bulkBusy}
+          onClear={() => setSelectedIds([])}
+          onChangeStatus={handleBulkStatus}
+          onDelete={handleBulkDelete}
+        />
+      )}
+
       <table className="case-grid">
         <thead>
           <tr>
+            <th className="select">
+              {canExecuteCases && visibleIds.length > 0 ? (
+                <input
+                  ref={headerSelectRef}
+                  type="checkbox"
+                  checked={headerSelect.checked}
+                  disabled={bulkBusy}
+                  aria-label={`Seleccionar los ${visibleIds.length} resultados filtrados`}
+                  title={`Seleccionar los ${visibleIds.length} resultados filtrados`}
+                  onChange={() =>
+                    setSelectedIds(headerSelect.checked ? [] : visibleIds)
+                  }
+                />
+              ) : null}
+            </th>
             <th>ID</th>
             <th>Nombre</th>
             <th className="steps">Pasos</th>
@@ -1228,6 +1303,17 @@ export default function ReleaseDetailPage(): React.ReactElement {
               className="clickable"
               onClick={() => router.push(`/test-cases/${testCase.id}`)}
             >
+              <td className="select" onClick={(e) => e.stopPropagation()}>
+                {canExecuteCases ? (
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.includes(testCase.id)}
+                    disabled={bulkBusy}
+                    aria-label={`Seleccionar ${testCase.test_case_id}`}
+                    onChange={() => setSelectedIds((current) => toggleSelectedId(current, testCase.id))}
+                  />
+                ) : null}
+              </td>
               <td>{testCase.test_case_id}</td>
               <td>{isOperativa ? stripDeviceFromCaseName(testCase.test_case_name, testCase.device) : testCase.test_case_name}</td>
               <td className={testCase.step_count ? "steps" : "steps muted"} title={`${testCase.step_count ?? 0} pasos`}>

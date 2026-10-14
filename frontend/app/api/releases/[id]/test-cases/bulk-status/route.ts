@@ -1,0 +1,21 @@
+import { NextRequest, NextResponse } from "next/server";
+import { fetchBackend, idAndBody } from "@/lib/backend";
+
+interface RouteParams {
+  params: Promise<{ id: string }>;
+}
+
+export async function POST(request: NextRequest, { params }: RouteParams): Promise<NextResponse> {
+  const { id, body } = await idAndBody(request, params);
+  try {
+    const response = await fetchBackend(`/api/v1/releases/${id}/test-cases/bulk-status`, {
+      method: "POST",
+      body,
+      headers: { "Content-Type": "application/json" },
+    });
+    const payload = await response.json();
+    return NextResponse.json(payload, { status: response.status });
+  } catch {
+    return NextResponse.json({ status: "error", message: "Backend unavailable" }, { status: 503 });
+  }
+}

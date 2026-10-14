@@ -62,6 +62,23 @@ export interface BulkCreateResult {
 export type TestCaseType = "FUNCTIONAL" | "REGRESSION" | "SMOKE" | "UI" | "PERFORMANCE" | "OTHER";
 export type TestCaseStatus = "UNEXECUTED" | "PASS" | "FAIL" | "BLOCKED" | "N_A";
 
+export interface TestCaseBulkItemError {
+  id: number;
+  test_case_id: string | null;
+  message: string;
+}
+
+export interface TestCaseBulkStatusResult {
+  updated: number[];
+  failed: TestCaseBulkItemError[];
+  status: TestCaseStatus;
+}
+
+export interface TestCaseBulkDeleteResult {
+  deleted: number[];
+  failed: TestCaseBulkItemError[];
+}
+
 const RN_SOURCE_TYPE_LABEL: Record<string, string> = {
   functionality: "Funcionalidad",
   nco: "NCO",

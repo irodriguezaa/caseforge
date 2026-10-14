@@ -22,6 +22,11 @@ from app.schemas.test_case import (
     BulkCreateError,
     TestCaseBulkCreate,
     TestCaseBulkCreateResult,
+    TestCaseBulkDeleteResult,
+    TestCaseBulkIds,
+    TestCaseBulkItemError,
+    TestCaseBulkStatusResult,
+    TestCaseBulkStatusUpdate,
     TestCaseCreate,
     TestCaseListItem,
     TestCaseReadWithSteps,
@@ -259,3 +264,90 @@ def delete_test_case(
     _assert_test_case_belongs_to_release(test_case, release_id)
     db.delete(test_case)
     db.commit()
+
+
+def _unique_ids(ids: list[int]) -> list[int]:
+    seen: set[int] = set()
+    ordered: list[int] = []
+    for item in ids:
+        if item in seen:
+            continue
+        seen.add(item)
+        ordered.append(item)
+    return ordered
+
+
+def _lookup_in_release(db: Session, release_id: int, case_id: int) -> tuple[TestCase | None, str | None]:
+    test_case = db.execute(select(TestCase).where(TestCase.id == case_id)).scalar_one_or_none()
+    if test_case is None:
+        return None, "Test case not found."
+    if test_case.release_id != release_id:
+        return None, "Test case not found in this Release."
+    return test_case, None
+
+
+@router.post(
+    "/releases/{release_id}/test-cases/bulk-status",
+    response_model=TestCaseBulkStatusResult,
+)
+def bulk_update_test_case_status(
+    release_id: int,
+    payload: TestCaseBulkStatusUpdate,
+    db: Session = Depends(get_db),
+) -> TestCaseBulkStatusResult:
+    get_release_or_404(release_id, db)
+    updated: list[int] = []
+    failed: list[TestCaseBulkItemError] = []
+    for case_id in _unique_ids(payload.ids):
+        test_case, error = _lookup_in_release(db, release_id, case_id)
+        if test_case is None:
+            failed.append(TestCaseBulkItemError(id=case_id, message=error or "Test case not found."))
+            continue
+        try:
+            test_case.status = payload.status
+            db.commit()
+            updated.append(case_id)
+        except SQLAlchemyError as exc:
+            db.rollback()
+            failed.append(
+                TestCaseBulkItemError(
+                    id=case_id,
+                    test_case_id=test_case.test_case_id,
+                    message=f"No se pudo actualizar el estado ({exc.__class__.__name__}).",
+                )
+            )
+    return TestCaseBulkStatusResult(updated=updated, failed=failed, status=payload.status)
+
+
+@router.post(
+    "/releases/{release_id}/test-cases/bulk-delete",
+    response_model=TestCaseBulkDeleteResult,
+)
+def bulk_delete_test_cases(
+    release_id: int,
+    payload: TestCaseBulkIds,
+    db: Session = Depends(get_db),
+) -> TestCaseBulkDeleteResult:
+    get_release_or_404(release_id, db)
+    deleted: list[int] = []
+    failed: list[TestCaseBulkItemError] = []
+    for case_id in _unique_ids(payload.ids):
+        test_case, error = _lookup_in_release(db, release_id, case_id)
+        if test_case is None:
+            failed.append(TestCaseBulkItemError(id=case_id, message=error or "Test case not found."))
+            continue
+        label = test_case.test_case_id
+        try:
+            db.delete(test_case)
+            db.commit()
+            deleted.append(case_id)
+        except SQLAlchemyError as exc:
+            db.rollback()
+            failed.append(
+                TestCaseBulkItemError(
+                    id=case_id,
+                    test_case_id=label,
+                    message=f"No se pudo eliminar ({exc.__class__.__name__}).",
+                )
+            )
+    return TestCaseBulkDeleteResult(deleted=deleted, failed=failed)

@@ -50,6 +50,8 @@ import type {
   TestCase,
   TestCaseWithSteps,
   TestStep,
+  TestCaseBulkDeleteResult,
+  TestCaseBulkStatusResult,
 } from "@/lib/types";
 
 export class ApiRequestError extends Error {
@@ -454,6 +456,16 @@ export const api = {
       body: JSON.stringify(payload),
     }),
   deleteTestCase: (id: number) => request<void>(`/api/test-cases/${id}`, { method: "DELETE" }),
+  bulkUpdateTestCaseStatus: (releaseId: number, ids: number[], status: TestCase["status"]) =>
+    request<TestCaseBulkStatusResult>(`/api/releases/${releaseId}/test-cases/bulk-status`, {
+      method: "POST",
+      body: JSON.stringify({ ids, status }),
+    }),
+  bulkDeleteTestCases: (releaseId: number, ids: number[]) =>
+    request<TestCaseBulkDeleteResult>(`/api/releases/${releaseId}/test-cases/bulk-delete`, {
+      method: "POST",
+      body: JSON.stringify({ ids }),
+    }),
 
   addStep: (testCaseId: number, payload: TestStepInput) =>
     request<TestStep>(`/api/test-cases/${testCaseId}/steps`, {
