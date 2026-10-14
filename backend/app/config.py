@@ -25,6 +25,19 @@ class Settings:
     qc_release_effort_factor: float = float(os.getenv("QC_RELEASE_EFFORT_FACTOR", "3.0"))
     qc_hours_per_day: float = float(os.getenv("QC_HOURS_PER_DAY", "6"))
     case_composition_mode: str = os.getenv("CASE_COMPOSITION_MODE", "scenario")
+    # QcPulse v2 (dos etapas). "legacy" mantiene el motor actual; "v2" activa backend/app/services/qc_v2.
+    qc_engine: str = os.getenv("QC_ENGINE", "legacy")
+    qc_v2_model_a: str = (
+        os.getenv("OPENAI_QC_MODEL_A") or os.getenv("OPENAI_QC_MODEL") or os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+    )
+    qc_v2_model_b: str = (
+        os.getenv("OPENAI_QC_MODEL_B") or os.getenv("OPENAI_QC_MODEL") or os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+    )
+    qc_v2_temperature: float | None = (
+        float(os.getenv("OPENAI_QC_TEMPERATURE", "0.25")) if os.getenv("OPENAI_QC_TEMPERATURE", "0.25") else None
+    )
+    qc_v2_concurrency: int = int(os.getenv("QC_V2_CONCURRENCY", "5"))
+    qc_v2_timeout: float = float(os.getenv("QC_V2_TIMEOUT", "240"))
     llm_scenario_concurrency: int = int(os.getenv("LLM_SCENARIO_CONCURRENCY", "8"))
     llm_scenario_timeout: float = float(os.getenv("LLM_SCENARIO_TIMEOUT", "45"))
     # Outlook / Microsoft Graph (Calendario QC). MSAL login is not wired yet.
