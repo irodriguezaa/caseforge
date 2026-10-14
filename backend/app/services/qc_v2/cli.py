@@ -161,18 +161,25 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
-    runs = run_epics([k.strip().upper() for k in args.epics], args.device, args.region)
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     label = args.label or f"{args.device}_{datetime.now():%Y%m%d_%H%M}"
-    (out / f"qcv2_{label}.json").write_text(
-        json.dumps([_jsonable(r) for r in runs], ensure_ascii=False, indent=2, default=str), encoding="utf-8"
-    )
-    build_workbook(runs).save(out / f"qcv2_{label}.xlsx")
-    for run in runs:
-        print(run.summary())
-        for warning in run.bundle.warnings:
-            print(f"   aviso: {warning}")
+    runs: list[EpicRun] = []
+    for key in [k.strip().upper() for k in args.epics]:
+        current = run_epics([key], args.device, args.region)
+        runs.extend(current)
+        # Se guarda después de cada épica: si la corrida se corta, lo avanzado no se pierde.
+        (out / f"qcv2_{label}.json").write_text(
+            json.dumps([_jsonable(r) for r in runs], ensure_ascii=False, indent=2, default=str), encoding="utf-8"
+        )
+        build_workbook(runs).save(out / f"qcv2_{label}.xlsx")
+        for run in current:
+            print(run.summary(), flush=True)
+            for warning in run.bundle.warnings:
+                print(f"   aviso: {warning}", flush=True)
+        if any((r.error or "").startswith("corrida detenida") for r in current):
+            print("Corrida detenida (OpenAI sin créditos). Lo generado hasta aquí quedó guardado.")
+            break
     print(f"Listo: {out / f'qcv2_{label}.xlsx'}")
     return 1 if any(r.error for r in runs) else 0
 

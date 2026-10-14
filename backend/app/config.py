@@ -36,6 +36,12 @@ class Settings:
     qc_v2_temperature: float | None = (
         float(os.getenv("OPENAI_QC_TEMPERATURE", "0.25")) if os.getenv("OPENAI_QC_TEMPERATURE", "0.25") else None
     )
+    qc_v2_reasoning_a: str = (
+        os.getenv("OPENAI_QC_REASONING_EFFORT_A") or os.getenv("OPENAI_QC_REASONING_EFFORT") or ""
+    ).strip()
+    qc_v2_reasoning_b: str = (
+        os.getenv("OPENAI_QC_REASONING_EFFORT_B") or os.getenv("OPENAI_QC_REASONING_EFFORT") or ""
+    ).strip()
     qc_v2_concurrency: int = int(os.getenv("QC_V2_CONCURRENCY", "5"))
     qc_v2_timeout: float = float(os.getenv("QC_V2_TIMEOUT", "240"))
     llm_scenario_concurrency: int = int(os.getenv("LLM_SCENARIO_CONCURRENCY", "8"))

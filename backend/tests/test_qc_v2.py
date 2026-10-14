@@ -162,7 +162,11 @@ class _FakeJira:
             "BRFRE-3492": _issue("BRFRE-3492", "Product Brief", "MX | Onboarding"),
         }
         self.children_map = {
-            "WEBCL-1586": [_issue("WEBCL-1587", "Technical Story", "TS externo", description=WEBCL_2061)],
+            "WEBCL-1586": [
+                _issue("WEBCL-1587", "Technical Story", "TS externo", description=WEBCL_2061),
+                _issue("WEBCL-2296", "QA Bug", "bug", description="Scenario: no debe contar"),
+                _issue("WEBCL-2677", "NCO System Demo", "nco", description="Scenario: tampoco"),
+            ],
             "BRFRE-3492": [
                 _issue("BRFRE-3510", "Product Epic", "Actualizar el comportamiento del Centro de Notificaciones de acuerdo al tipo de usuario"),
                 _issue("BRFRE-3382", "Product Epic", "Implementar estado Spotlight en el Centro de Notificaciones"),
@@ -196,6 +200,16 @@ def test_collect_epic_follows_business_branch_and_filters_by_title():
     assert bundle.user_stories[0].tipo_usuario == "Registrado, Suscripto"
     assert bundle.product_brief_key == "BRFRE-3492"
     assert not [w for w in bundle.warnings if "Sin User Story" in w]
+    assert any("1 NCO System Demo, 1 QA Bug" in w for w in bundle.warnings)
+
+
+def test_story_type_filter():
+    assert collect.is_story_type("Technical Story")
+    assert collect.is_story_type("Historia técnica")
+    assert not collect.is_story_type("QA Bug")
+    assert not collect.is_story_type("QC Bug")
+    assert not collect.is_story_type("NCO System Demo")
+    assert not collect.is_story_type("Subtarea")
 
 
 # ------------------------------------------------------------------ stages + engine
@@ -248,7 +262,7 @@ _CASE = {
 def _fake_chat(responses):
     calls = []
 
-    def chat(messages, *, model, temperature=None):
+    def chat(messages, *, model, temperature=None, **kwargs):
         calls.append(messages)
         system = messages[0]["content"]
         payload = responses["a"] if "ESCENARIOS DE PRUEBA" in system else responses["b"]
@@ -319,7 +333,7 @@ def test_complexity_rules():
 
 
 def test_quota_stops_the_run():
-    def chat(messages, *, model, temperature=None):
+    def chat(messages, *, model, temperature=None, **kwargs):
         raise QuotaExhausted("sin créditos")
 
     runs = engine.run_epics(["WEBCL-1586"], "WEB", reader=collect.JiraReader(_FakeJira()), chat=chat)
@@ -420,7 +434,7 @@ def test_benchmark_judge_parsing(tmp_path):
         "duplicados": [],
     }
 
-    def chat(messages, *, model, temperature=None):
+    def chat(messages, *, model, temperature=None, **kwargs):
         return verdict, LlmMeta(model=model)
 
     result = benchmark.score(
@@ -457,3 +471,58 @@ def test_cli_workbook_end_to_end(tmp_path):
     assert "solo técnico" in estados and "cruce" in estados
     json_ready = cli._jsonable(runs[0])
     assert json_ready["epic"] == "WEBCL-1586"
+
+
+
+# ------------------------------------------------------------------ cliente OpenAI
+
+
+def _transport(responses, seen):
+    import httpx
+
+    queue = list(responses)
+
+    def handler(request):
+        seen.append(json.loads(request.content))
+        status, body = queue.pop(0)
+        return httpx.Response(status, json=body)
+
+    return httpx.MockTransport(handler)
+
+
+@pytest.fixture()
+def fake_key():
+    from app.services.qc_v2 import llm
+
+    previous = llm.settings.openai_api_key
+    object.__setattr__(llm.settings, "openai_api_key", "k")
+    yield
+    object.__setattr__(llm.settings, "openai_api_key", previous)
+
+
+def test_llm_drops_unsupported_params_and_parses(fake_key):
+    from app.services.qc_v2 import llm
+
+    ok = {"choices": [{"message": {"content": json.dumps({"casos": []})}}], "usage": {"prompt_tokens": 3, "completion_tokens": 2}}
+    seen: list[dict] = []
+    transport = _transport(
+        [
+            (400, {"error": {"message": "Unsupported parameter: 'temperature'"}}),
+            (400, {"error": {"message": "Unrecognized request argument: reasoning_effort"}}),
+            (200, ok),
+        ],
+        seen,
+    )
+    payload, meta = llm.chat_json([{"role": "user", "content": "json"}], model="m", temperature=0.2, reasoning_effort="low", transport=transport)
+    assert payload == {"casos": []}
+    assert "temperature" in seen[0] and "temperature" not in seen[1]
+    assert "reasoning_effort" in seen[1] and "reasoning_effort" not in seen[2]
+    assert meta.prompt_tokens == 3
+
+
+def test_llm_quota_raises(fake_key):
+    from app.services.qc_v2 import llm
+
+    transport = _transport([(429, {"error": {"code": "insufficient_quota", "message": "You have no credits remaining"}})], [])
+    with pytest.raises(QuotaExhausted):
+        llm.chat_json([{"role": "user", "content": "json"}], model="m", transport=transport)

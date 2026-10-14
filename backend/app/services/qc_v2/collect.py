@@ -246,6 +246,14 @@ class JiraReader:
                 return issues
 
 
+def is_story_type(issuetype: str) -> bool:
+    """Technical Story / Story / Historia. Excluye bugs, NCO, tareas y subtareas."""
+    name = (issuetype or "").strip().lower()
+    if not name or "bug" in name or "sub" in name:
+        return False
+    return "story" in name or "historia" in name
+
+
 def _fields(issue: dict[str, Any]) -> dict[str, Any]:
     return issue.get("fields") or {}
 
@@ -367,10 +375,19 @@ def collect_epic(reader: JiraReader, epic_key: str) -> EpicBundle:
         return bundle
     bundle = EpicBundle(key=epic.get("key") or epic_key, summary=_fields(epic).get("summary") or "")
     counter = _counter("COV")
+    skipped: dict[str, int] = {}
     for child in reader.children(bundle.key):
+        issuetype = _type(child)
+        if not is_story_type(issuetype):
+            # Bugs (QA/QC), NCO, tareas: no son Technical Stories y no definen comportamiento a probar.
+            skipped[issuetype or "sin tipo"] = skipped.get(issuetype or "sin tipo", 0) + 1
+            continue
         story = _tech_story(child, counter)
         if story.scenarios:
             bundle.technical_stories.append(story)
+    if skipped:
+        detail = ", ".join(f"{count} {name}" for name, count in sorted(skipped.items()))
+        bundle.warnings.append(f"Hijos de la épica omitidos por no ser Technical Story: {detail}")
     if not bundle.technical_stories:
         bundle.warnings.append("La épica no tiene Technical Stories con contenido")
     try:

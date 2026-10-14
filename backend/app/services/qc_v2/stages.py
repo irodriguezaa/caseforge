@@ -33,6 +33,12 @@ def _temperature() -> float | None:
     return settings.qc_v2_temperature
 
 
+def _reasoning(stage: str) -> dict[str, str]:
+    """Esfuerzo de razonamiento por etapa (low/medium/high). Vacío = no se envía."""
+    value = settings.qc_v2_reasoning_a if stage == "a" else settings.qc_v2_reasoning_b
+    return {"reasoning_effort": value} if value else {}
+
+
 # ================================================================ Etapa A
 
 
@@ -151,7 +157,7 @@ def run_stage_a(bundle: EpicBundle, ctx: DeviceContext, chat: ChatFn = chat_json
     ]
     model = settings.qc_v2_model_a
     try:
-        payload, meta = chat(messages, model=model, temperature=_temperature())
+        payload, meta = chat(messages, model=model, temperature=_temperature(), **_reasoning("a"))
     except LlmError as exc:
         return StageAResult(error=str(exc))
     result = parse_stage_a(payload, bundle)
@@ -169,7 +175,7 @@ def run_stage_a(bundle: EpicBundle, ctx: DeviceContext, chat: ChatFn = chat_json
             },
         ]
         try:
-            payload2, meta2 = chat(retry, model=model, temperature=_temperature())
+            payload2, meta2 = chat(retry, model=model, temperature=_temperature(), **_reasoning("a"))
             second = parse_stage_a(payload2, bundle)
             second.metas = result.metas + [meta2]
             if len(second.missing) <= len(result.missing) and second.scenarios:
@@ -310,7 +316,7 @@ def _design_one(
     result = StageBResult(scenario_id=scenario.id)
     for attempt in range(2):
         try:
-            payload, meta = chat(messages, model=settings.qc_v2_model_b, temperature=_temperature())
+            payload, meta = chat(messages, model=settings.qc_v2_model_b, temperature=_temperature(), **_reasoning("b"))
         except LlmError as exc:
             result.error = str(exc)
             continue

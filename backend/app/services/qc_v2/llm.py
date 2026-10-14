@@ -45,6 +45,7 @@ def chat_json(
     *,
     model: str,
     temperature: float | None = None,
+    reasoning_effort: str | None = None,
     timeout: float | None = None,
     max_retries: int = 3,
     transport: httpx.BaseTransport | None = None,
@@ -54,6 +55,7 @@ def chat_json(
         raise LlmError("OPENAI_API_KEY no configurada")
     meta = LlmMeta(model=model)
     use_temperature = temperature
+    use_reasoning = (reasoning_effort or "").strip().lower() or None
     body: dict[str, Any] = {
         "model": model,
         "messages": messages,
@@ -71,6 +73,8 @@ def chat_json(
             payload = dict(body)
             if use_temperature is not None:
                 payload["temperature"] = use_temperature
+            if use_reasoning is not None:
+                payload["reasoning_effort"] = use_reasoning
             try:
                 response = client.post(url, json=payload, headers=headers)
             except (httpx.TimeoutException, httpx.TransportError) as exc:
@@ -80,6 +84,10 @@ def chat_json(
             text = response.text
             if response.status_code == 400 and use_temperature is not None and "temperature" in text:
                 use_temperature = None  # modelos de razonamiento no aceptan temperature
+                attempt -= 1
+                continue
+            if response.status_code == 400 and use_reasoning is not None and "reasoning" in text:
+                use_reasoning = None  # el modelo no acepta reasoning_effort
                 attempt -= 1
                 continue
             if response.status_code == 429:
