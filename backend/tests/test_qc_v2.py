@@ -90,6 +90,16 @@ def test_split_criteria_from_adf_ordered_list():
     assert collect.split_criteria(adf) == ["Primero", "Segundo"]
 
 
+def test_split_criteria_from_adf_split_lists():
+    li = lambda text: {"type": "listItem", "content": [{"type": "paragraph", "content": [{"type": "text", "text": text}]}]}
+    adf = {"type": "doc", "content": [
+        {"type": "orderedList", "content": [li("Uno"), li("Dos")]},
+        {"type": "paragraph", "content": [{"type": "text", "text": "nota"}]},
+        {"type": "orderedList", "attrs": {"order": 3}, "content": [li("Tres")]},
+    ]}
+    assert collect.split_criteria(adf) == ["Uno", "Dos", "Tres"]
+
+
 def test_split_criteria_without_numbers_is_one_criterion():
     assert collect.split_criteria("Texto libre sin numeración") == ["Texto libre sin numeración"]
 
@@ -418,3 +428,32 @@ def test_benchmark_judge_parsing(tmp_path):
     )[0]
     assert result.cobertura == 0.9 and result.checks()["cobertura"] is True
     assert result.solo_qcpulse == ["Q002 — B"]
+
+
+def test_cli_workbook_end_to_end(tmp_path):
+    from openpyxl import load_workbook
+
+    from app.services.qc_v2 import cli
+
+    stage_a = {
+        "resumen_funcionalidad": "r",
+        "escenarios": [
+            {"id": "ESC-01", "titulo": "Centro desplegado", "descripcion": "d", "condiciones": [],
+             "cubre_negocio": [f"CRN-{n:03d}" for n in range(1, 8)], "cubre_tecnico": ["COV-001", "COV-002"],
+             "brecha": "ninguna", "es_no_afectacion": False},
+            {"id": "ESC-02", "titulo": "Resolución", "descripcion": "d", "condiciones": [],
+             "cubre_negocio": [], "cubre_tecnico": ["COV-003"], "brecha": "sin_negocio", "es_no_afectacion": False},
+        ],
+        "excluidos": [],
+    }
+    chat = _fake_chat({"a": stage_a, "b": {"casos": [_CASE]}})
+    runs = engine.run_epics(["WEBCL-1586"], "WEB", reader=collect.JiraReader(_FakeJira()), chat=chat)
+    path = tmp_path / "out.xlsx"
+    cli.build_workbook(runs).save(path)
+    wb = load_workbook(path)
+    assert wb.sheetnames == ["Resumen", "Escenarios", "Casos", "Cruce"]
+    assert wb["Casos"].max_row == 3
+    estados = [row[3] for row in wb["Cruce"].iter_rows(min_row=2, values_only=True)]
+    assert "solo técnico" in estados and "cruce" in estados
+    json_ready = cli._jsonable(runs[0])
+    assert json_ready["epic"] == "WEBCL-1586"

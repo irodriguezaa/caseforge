@@ -138,13 +138,16 @@ _TOP_NUMBERED = re.compile(r"^(?:\d+[.)]|#)\s+")
 
 
 def _criteria_from_adf(doc: dict[str, Any]) -> list[str]:
+    """Junta los ítems de TODAS las listas numeradas de primer nivel (Jira parte la lista
+    cuando hay un párrafo en medio: 1-3, párrafo, 4-7)."""
+    items: list[str] = []
     for node in doc.get("content") or []:
         if isinstance(node, dict) and node.get("type") == "orderedList":
-            items = [adf_to_text(child) for child in node.get("content") or []]
-            items = [item.strip() for item in items if item and item.strip()]
-            if items:
-                return items
-    return []
+            for child in node.get("content") or []:
+                text = adf_to_text(child).strip()
+                if text:
+                    items.append(text)
+    return items
 
 
 def split_criteria(value: Any) -> list[str]:
