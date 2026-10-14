@@ -53,6 +53,11 @@ def classify_complexity(candidate: GeneratedCaseCandidate) -> Complexity:
     ALTA: 4+ pasos o confianza baja.
     BLOCKER/CRITICAL no entran aquí; solo eligen la fila de minutos.
     """
+    for rule in candidate.applied_rules or []:
+        if str(rule).startswith("qc-v2:complejidad="):
+            value = str(rule).split("=", 1)[1]
+            if value in ("BAJA", "MEDIA", "ALTA"):
+                return value  # type: ignore[return-value]
     steps = len(candidate.steps)
     if candidate.basic_validation and steps <= 1 and not candidate.requires_condition:
         return "BAJA"

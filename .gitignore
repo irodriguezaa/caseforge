@@ -16,3 +16,7 @@ backend/.pytest_cache/
 # Local tooling
 .DS_Store
 *.zip
+
+# Salidas locales de QcPulse v2 (contienen datos de Jira del cliente; no versionar)
+exports/benchmark/
+exports/qcv2/

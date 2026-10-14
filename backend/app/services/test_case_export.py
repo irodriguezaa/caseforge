@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+from copy import copy
 import json
 import re
 
@@ -396,6 +397,52 @@ def load_release_cases(db: Session, release_id: int) -> list[TestCase]:
     return list(db.execute(stmt).scalars().all())
 
 
+_V2_JUSTIFICATION = re.compile(
+    r"QcPulse v2 · (?P<esc>ESC-[\w-]+) · tipo=(?P<tipo>\w+) · brecha=(?P<brecha>\w+)"
+)
+_V2_HEADERS = ["Escenario", "Tipo de prueba", "Brecha", "Requiere revisión"]
+_V2_BRECHA_LABEL = {
+    "ninguna": "",
+    "sin_tecnico": "Solo negocio (sin Technical Story)",
+    "sin_negocio": "Solo técnico (sin criterio de negocio)",
+    "implicito": "Implícito",
+}
+
+
+def _v2_fields(case: TestCase) -> list[str] | None:
+    match = _V2_JUSTIFICATION.search(case.justification or "")
+    if not match:
+        return None
+    reason = str(getattr(case, "applicability_reason", "") or "")
+    review = reason.split(":", 1)[1].strip() if reason.startswith("requiere revisión") else ""
+    return [
+        match.group("esc"),
+        match.group("tipo"),
+        _V2_BRECHA_LABEL.get(match.group("brecha"), match.group("brecha")),
+        review,
+    ]
+
+
+def _append_v2_columns(sheet, ordered: list[TestCase]) -> None:
+    """Columnas extra solo cuando la Release tiene casos de QcPulse v2 (la hoja legacy no cambia)."""
+    rows = [_v2_fields(case) for case in ordered]
+    if not any(rows):
+        return
+    first = sheet.max_column + 1
+    template = sheet.cell(1, 1)
+    for offset, header in enumerate(_V2_HEADERS):
+        cell = sheet.cell(1, first + offset, header)
+        cell.font = copy(template.font)
+        cell.fill = copy(template.fill)
+        cell.alignment = copy(template.alignment)
+        cell.border = copy(template.border)
+        sheet.column_dimensions[cell.column_letter].width = [12, 14, 34, 36][offset]
+    for row_index, values in enumerate(rows, start=2):
+        for offset, value in enumerate(values or ["", "", "", ""]):
+            cell = sheet.cell(row_index, first + offset, _excel_value(value))
+            _style_cell(cell)
+
+
 def build_test_cases_workbook(
     cases: list[TestCase],
     scope_keys: list[str] | None = None,
@@ -487,6 +534,7 @@ def build_test_cases_workbook(
         for col, value in enumerate(values, start=1):
             cell = qc.cell(row_index, col, _excel_value(value))
             _style_cell(cell)
+    _append_v2_columns(qc, ordered)
 
     if na_ambiente or any(str(row.get("estado") or "") == "na_ambiente" for row in ledger_rows):
         na_sheet = workbook.create_sheet("No aplicables en ambiente")
