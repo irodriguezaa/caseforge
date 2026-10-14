@@ -326,3 +326,32 @@ def test_device_context_groups():
 def test_prompts_exist_and_are_loaded():
     assert "ESCENARIOS DE PRUEBA" in stages.load_prompt("etapa_a.md")
     assert "REGLA DEL BUG" in stages.load_prompt("etapa_b.md")
+
+
+# ------------------------------------------------------------------ export
+
+
+def test_export_adds_v2_columns_only_for_v2_cases():
+    from types import SimpleNamespace
+
+    from openpyxl import Workbook
+
+    from app.services.test_case_export import _append_v2_columns, _v2_fields
+
+    v2 = SimpleNamespace(
+        justification="QcPulse v2 · ESC-03 · tipo=TTF · brecha=sin_tecnico · complejidad=MEDIA covers=CRN-001",
+        applicability_reason="requiere revisión: 2 pasos (esperado 3 a 6)",
+    )
+    legacy = SimpleNamespace(justification="Materialización determinista", applicability_reason=None)
+    assert _v2_fields(legacy) is None
+    assert _v2_fields(v2) == ["ESC-03", "TTF", "Solo negocio (sin Technical Story)", "2 pasos (esperado 3 a 6)"]
+
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.append(["ID", "Nombre"])
+    sheet.append(["QC-001", "x"])
+    _append_v2_columns(sheet, [legacy])
+    assert sheet.max_column == 2  # sin casos v2 la hoja no cambia
+    _append_v2_columns(sheet, [v2])
+    assert [sheet.cell(1, c).value for c in range(3, 7)] == ["Escenario", "Tipo de prueba", "Brecha", "Requiere revisión"]
+    assert sheet.cell(2, 4).value == "TTF"
