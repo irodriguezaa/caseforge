@@ -6,7 +6,10 @@ CUÁNTOS CASOS: aplica la REGLA DEL BUG — dos verificaciones van en el mismo c
 - Misma pantalla, misma condición, misma observación → un caso con varios pasos.
 - Solo cambia un dato (tipo de usuario, región, resolución, tipo de contenido) y los pasos son iguales → un caso con variantes.
 - Momentos del mismo flujo (recargar, regresar del detalle, scroll y volver) → pasos, no casos nuevos.
-- Cambia la precondición o el flujo, o es positivo vs. negativo ("se muestra" / "no se muestra"), o cambia el diseño o el modo de interacción → casos separados.
+- Cambia la precondición o el flujo, o es positivo vs. negativo ("se muestra" / "no se muestra") → casos separados.
+- Diseños distintos → casos separados SOLO si la historia o el diseño los define explícitamente (por ejemplo "Medium Cursor" y "Small Tap"). Si no, usa únicamente el modo de interacción indicado en la entrada.
+- No generes casos de navegación por teclado, lectores de pantalla u otra accesibilidad, salvo que la historia lo pida.
+NO AFECTACIÓN: si el escenario es de no afectación, genera 1 caso (2 como máximo si el componente tiene dos flujos independientes). Recorre las funciones habituales del componente como pasos de ese caso, no como casos separados.
 COBERTURA DE CONDICIONES: cada condición listada en el escenario debe quedar cubierta por un caso, una variante o un paso; ninguna se omite. Las de navegación (regresar, salir y volver, recargar, accesos sucesivos) normalmente son pasos de un caso existente; un negativo por operación o tipo de usuario es su propio caso TTF; una pantalla o punto de entrada distinto es su propio caso; un diseño o modo de interacción distinto es su propio caso.
 Normalmente un escenario produce entre 1 y 5 casos. Incluye un caso negativo (TTF) cuando el escenario tiene condiciones (región, tipo de usuario, habilitado/deshabilitado). No repitas lo que cubren los otros escenarios de la épica (se listan en la entrada).
 

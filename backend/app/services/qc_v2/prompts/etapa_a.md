@@ -22,7 +22,7 @@ CÓMO MODELAR
    - Todas las pantallas o puntos de entrada donde el usuario ve el comportamiento (lista, detalle, reproducción, búsqueda, enlace externo).
    - Navegación alrededor del flujo: cancelar a mitad, regresar, botón Atrás, salir y volver a entrar, recargar, accesos sucesivos.
    - Errores visibles y recuperación (falla del servicio, dato inválido, reintento exitoso después del error).
-   - Diseños o modos de interacción del dispositivo cuando la historia los menciona (por ejemplo cursor vs. táctil).
+   - Diseños distintos solo cuando la historia o el diseño los define explícitamente (por ejemplo Medium Cursor vs. Small Tap). No agregues teclado ni accesibilidad si la historia no los menciona.
    Escribe solo las que apliquen a este escenario, con palabras concretas ("operación distinta a México", "regresar con el botón Atrás del navegador").
 
 QUÉ EXCLUIR (con motivo; se registra igual)

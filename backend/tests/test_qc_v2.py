@@ -343,6 +343,7 @@ def test_quota_stops_the_run():
 def test_device_context_groups():
     assert device_context("ADT").modo_interaccion == "control remoto"
     assert device_context("WEB").grupo_pantalla == "Pantalla mediana"
+    assert device_context("WEB").modo_interaccion == "cursor (mouse)"
     assert device_context("ADR").modo_interaccion == "táctil"
     assert device_context("WIN").metodos_pago == "No transacciona"
 

@@ -39,7 +39,7 @@ def device_context(platform: str | None, region: str | None = None) -> DeviceCon
     if token in _GRANDES or token.startswith("COSHIP"):
         grupo, modo = "Pantalla grande", "control remoto"
     elif token in _MEDIANAS:
-        grupo, modo = "Pantalla mediana", "cursor / teclado"
+        grupo, modo = "Pantalla mediana", "cursor (mouse)"
     elif token in _CHICAS:
         grupo, modo = "Pantalla chica", "táctil"
     else:
