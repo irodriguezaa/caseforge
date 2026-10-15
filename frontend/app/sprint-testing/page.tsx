@@ -5,6 +5,7 @@ import { ExecutivePieChart } from "@/app/components/ExecutivePieChart";
 import { ExecutionPriorityBars } from "@/app/components/ExecutionPriorityBars";
 import { GroupedStackedBars } from "@/app/components/GroupedStackedBars";
 import { api } from "@/lib/api";
+import { JiraFilterLink } from "@/app/components/JiraFilterLink";
 import { jiraIssueUrl } from "@/lib/jira";
 import type { SprintTestingOptions, SprintTestingRead } from "@/lib/types";
 
@@ -250,7 +251,7 @@ export default function SprintTestingPage(): React.ReactElement {
                 Abierto + cerrado = total de Technical Epics del programa.
               </p>
               <p className="muted" style={{ marginTop: 0, fontSize: "11px" }}>
-                Filtro Jira: {data.sprint.filter_id}
+                Filtro Jira: <JiraFilterLink filterId={data.sprint.filter_id} />
               </p>
               <ExecutivePieChart open={totals.open} closed={totals.closed} programs={data.programs} />
             </div>
@@ -276,7 +277,7 @@ export default function SprintTestingPage(): React.ReactElement {
               Issues del Sprint en curso, por dispositivo: Blocker vs no Blocker.
             </p>
             <p className="muted" style={{ marginTop: 0, fontSize: "11px" }}>
-              Filtro Jira: {data.execution.filter_id}
+              Filtro Jira: <JiraFilterLink filterId={data.execution.filter_id} />
             </p>
             {data.execution.programs.length === 0 ? (
               <p className="muted">No hay issues de ejecución para este SWF.</p>

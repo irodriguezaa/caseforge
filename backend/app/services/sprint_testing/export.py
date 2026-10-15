@@ -17,7 +17,18 @@ from pptx.util import Inches, Pt
 
 from app.schemas.sprint_testing import ExecutionIssueRow, SprintTestingRead
 
-ISSUE_HEADERS = ["Key", "Summary", "Issue Type", "Estado", "Prioridad"]
+ISSUE_HEADERS = [
+    "Key",
+    "Summary",
+    "Issue Type",
+    "Prioridad",
+    "Estado",
+    "Creación",
+    "Principal",
+    "Cambio de estado",
+    "Último comentario",
+    "Anidados",
+]
 
 _HEADER_FILL = PatternFill("solid", fgColor="1B2A49")
 _HEADER_FONT = Font(name="Calibri", bold=True, color="FFFFFF", size=11)
@@ -59,7 +70,7 @@ def build_issues_workbook(rows: list[ExecutionIssueRow]) -> bytes:
         cell.font = _HEADER_FONT
         cell.alignment = Alignment(wrap_text=True, vertical="center", horizontal="center")
         cell.border = _THIN
-    widths = [16, 64, 16, 18, 16]
+    widths = [16, 48, 14, 16, 16, 16, 14, 36, 32, 22]
     for index, width in enumerate(widths, start=1):
         sheet.column_dimensions[get_column_letter(index)].width = width
     sheet.row_dimensions[1].height = 28
@@ -67,12 +78,24 @@ def build_issues_workbook(rows: list[ExecutionIssueRow]) -> bytes:
     sheet.auto_filter.ref = f"A1:{get_column_letter(len(ISSUE_HEADERS))}1"
 
     for row_index, row in enumerate(rows, start=2):
-        values = [row.key, row.summary, row.issue_type, row.status, row.priority]
+        values = [
+            row.key,
+            row.summary,
+            row.issue_type,
+            row.priority,
+            row.status,
+            row.created,
+            row.principal,
+            row.status_change,
+            row.last_comment,
+            row.nested_issues,
+        ]
+        wrap_cols = {2, 8, 9, 10}
         for col, value in enumerate(values, start=1):
             cell = sheet.cell(row_index, col, _excel_value(value))
             cell.font = _CELL_FONT
             cell.border = _THIN
-            cell.alignment = Alignment(wrap_text=col == 2, vertical="top")
+            cell.alignment = Alignment(wrap_text=col in wrap_cols, vertical="top")
         sheet.row_dimensions[row_index].height = 36
 
     buffer = io.BytesIO()

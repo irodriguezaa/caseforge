@@ -476,6 +476,8 @@ def test_execution_issue_rows_filter_and_truncate() -> None:
     assert rows[0].status == "In Progress"
     assert rows[0].priority == "Blocker"
     assert rows[0].issue_type == "QA Bug"
+    assert rows[0].created == ""
+    assert rows[0].status_change == ""
     assert rows[1].summary == "Layout"
     assert rows[1].issue_type == "QC Bug"
 
@@ -498,6 +500,11 @@ def test_issues_workbook_headers() -> None:
                 device="ADT / FireTV",
                 program_key="ADTCL",
                 issue_type="QA Bug",
+                created="28/07/2026 16:38",
+                principal="ADTCL-541",
+                status_change="09/10/2026 21:23 · QA Validation → Analysis",
+                last_comment="13/10/2026 13:32 · Itzayana Castro",
+                nested_issues="PLYCL-763, CONCL-1167",
             )
         ]
     )
@@ -506,8 +513,13 @@ def test_issues_workbook_headers() -> None:
     assert [cell.value for cell in sheet[1]] == ISSUE_HEADERS
     assert sheet["A2"].value == "ADTCL-1"
     assert sheet["C2"].value == "QA Bug"
-    assert sheet["D2"].value == "In Progress"
-    assert sheet["E2"].value == "Blocker"
+    assert sheet["D2"].value == "Blocker"
+    assert sheet["E2"].value == "In Progress"
+    assert sheet["F2"].value == "28/07/2026 16:38"
+    assert sheet["G2"].value == "ADTCL-541"
+    assert sheet["H2"].value == "09/10/2026 21:23 · QA Validation → Analysis"
+    assert sheet["I2"].value == "13/10/2026 13:32 · Itzayana Castro"
+    assert sheet["J2"].value == "PLYCL-763, CONCL-1167"
 
 
 def test_executive_pptx_is_one_slide_without_open_column() -> None:

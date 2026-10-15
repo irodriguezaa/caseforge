@@ -41,7 +41,8 @@ import { nextTestCaseId } from "@/lib/testCaseId";
 import { QC_ESTIMATION_TOOLTIP, QC_HOURS_PER_DAY, QC_OPERATIVA_ESTIMATION_TOOLTIP, durationDays, estimateOperativaEffort, estimateReleaseEffortFromCases, estimateReleaseEffortLegacyCount, hoursByTechnicalEpic, progressByTechnicalEpic, rnScopeCoverage, rnScopeEpicKeys, stripDeviceFromCaseName } from "@/lib/qcEffort";
 import { validationScopeHours } from "@/lib/validationScope";
 import type { CoverageMatrixResponse, EpcRead, GenerateCasesResponse, PublishCasesResponse, Release, ReleaseAnalysis, ReleaseStatus, TestCase } from "@/lib/types";
-import { jiraIssueUrl, parseJiraTicketKeys } from "@/lib/jira";
+import { JiraFilterLink } from "@/app/components/JiraFilterLink";
+import { jiraIssueUrl, parseJiraFilterId, parseJiraTicketKeys } from "@/lib/jira";
 import { formatRnSourceType } from "@/lib/types";
 
 const emptyForm = {
@@ -794,7 +795,15 @@ export default function ReleaseDetailPage(): React.ReactElement {
                 />
               ) : (
                 <code style={{ fontSize: "12px", background: "var(--surface-2)", padding: "3px 8px", borderRadius: "4px" }}>
-                  {release.jira_issue_filter || "—"}
+                  {parseJiraFilterId(release.jira_issue_filter) ? (
+                    <JiraFilterLink filterId={parseJiraFilterId(release.jira_issue_filter)} />
+                  ) : release.jira_issue_filter?.startsWith("http") ? (
+                    <a href={release.jira_issue_filter} target="_blank" rel="noopener noreferrer">
+                      {release.jira_issue_filter}
+                    </a>
+                  ) : (
+                    release.jira_issue_filter || "—"
+                  )}
                 </code>
               )}
             </div>

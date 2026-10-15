@@ -228,6 +228,33 @@ def _last_comment(issue: dict[str, Any]) -> tuple[str | None, str | None]:
     return best
 
 
+def _format_jira_clock(raw: str | None) -> str:
+    parsed = _parse_jira_datetime(raw)
+    if parsed is None:
+        return ""
+    return parsed.strftime("%d/%m/%Y %H:%M")
+
+
+def _status_change_label(issue: dict[str, Any]) -> str:
+    when, source, target = _last_status_change(issue)
+    stamp = _format_jira_clock(when)
+    if not stamp:
+        return ""
+    if source and target:
+        return f"{stamp} · {source} → {target}"
+    return stamp
+
+
+def _last_comment_label(issue: dict[str, Any]) -> str:
+    when, author = _last_comment(issue)
+    stamp = _format_jira_clock(when)
+    if not stamp:
+        return ""
+    if author:
+        return f"{stamp} · {author}"
+    return stamp
+
+
 def _nested_issue_keys(issue: dict[str, Any]) -> list[str]:
     own = str(issue.get("key") or "").strip().upper()
     keys: list[str] = []
@@ -276,6 +303,11 @@ def list_execution_issue_rows(swf: SwfDef, issues: list[dict[str, Any]]) -> list
                 device=program.display_name,
                 program_key=program.program_key,
                 issue_type=_issuetype_name(issue),
+                created=_format_jira_clock(_created_at(issue)),
+                principal=_principal_key(issue) or "",
+                status_change=_status_change_label(issue),
+                last_comment=_last_comment_label(issue),
+                nested_issues=", ".join(_nested_issue_keys(issue)),
             )
         )
     rows.sort(key=lambda row: (row.device, row.key))
@@ -288,7 +320,11 @@ def build_execution_issues_xlsx(sprint_id: str, swf_id: str) -> tuple[bytes, str
         raise SprintTestingConfigError(
             f"{sprint.label} aún no tiene un Saved Filter de issues en ejecución."
         )
-    issues = fetch_raw_issues_by_filter(sprint.execution_filter_id, _EXECUTION_FIELDS)
+    issues = fetch_raw_issues_by_filter(
+        sprint.execution_filter_id,
+        _EXECUTION_FIELDS,
+        expand=_EXECUTION_EXPAND,
+    )
     rows = list_execution_issue_rows(swf, issues)
     filename = f"{export_basename(sprint.label, swf.label)}_issues.xlsx"
     return build_issues_workbook(rows), filename

@@ -61,6 +61,11 @@ class ExecutionIssueRow(BaseModel):
     device: str
     program_key: str
     issue_type: str = ""
+    created: str = ""
+    principal: str = ""
+    status_change: str = ""
+    last_comment: str = ""
+    nested_issues: str = ""
 
 
 class ExecutionBlockerRow(BaseModel):

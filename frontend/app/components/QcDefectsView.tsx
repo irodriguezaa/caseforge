@@ -1,12 +1,13 @@
 "use client";
 
 import { RefreshCw } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { BarList } from "@/app/components/BarList";
 import { DonutChart } from "@/app/components/DonutChart";
 import { InfoTooltip } from "@/app/components/InfoTooltip";
 import { LeakTrendChart } from "@/app/components/LeakTrendChart";
 import { StackedBarChart } from "@/app/components/StackedBarChart";
+import { JiraFilterLink } from "@/app/components/JiraFilterLink";
 import { api, ApiRequestError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import type { QcTicketStats, QcTicketView } from "@/lib/types";
@@ -30,8 +31,8 @@ const PRIORITY_COLORS: Record<string, string> = {
 const PRIORITY_CATEGORIES = ["BLOCKER", "CRITICAL", "OTHER"];
 
 const FILTER_TAGS: Record<QcTicketView, { detected: string; leaked: string }> = {
-  OPERATIVAS: { detected: "#112929", leaked: "#113062" },
-  RELEASE: { detected: "#113261", leaked: "#113784" },
+  OPERATIVAS: { detected: "112929", leaked: "113062" },
+  RELEASE: { detected: "113261", leaked: "113784" },
 };
 
 function formatUpdatedAt(date: Date): string {
@@ -75,7 +76,7 @@ export function QcDefectsView({ view }: { view: QcTicketView }): React.ReactElem
   const [swf, setSwf] = useState<SwfFilter>("ALL");
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-  const [refreshSummary, setRefreshSummary] = useState<string | null>(null);
+  const [refreshSummary, setRefreshSummary] = useState<ReactNode>(null);
 
   const load = useCallback((): void => {
     const apiBugType = view === "RELEASE" && bugType !== "ALL" ? bugType : undefined;
@@ -97,10 +98,22 @@ export function QcDefectsView({ view }: { view: QcTicketView }): React.ReactElem
     setError(null);
     try {
       await api.refreshQcTicketsFromJira(view).then((result) => {
-        const byFilter = (result.filters ?? [])
-          .map((item) => `#${item.filter_id}: ${item.jira_count} en Jira → ${item.mapped} cargados`)
-          .join(" · ");
-        setRefreshSummary(byFilter || `Creados ${result.created} · actualizados ${result.updated}`);
+        const filters = result.filters ?? [];
+        setRefreshSummary(
+          filters.length > 0 ? (
+            <>
+              {filters.map((item, index) => (
+                <span key={item.filter_id}>
+                  {index > 0 ? " · " : null}
+                  <JiraFilterLink filterId={item.filter_id} />
+                  {`: ${item.jira_count} en Jira → ${item.mapped} cargados`}
+                </span>
+              ))}
+            </>
+          ) : (
+            `Creados ${result.created} · actualizados ${result.updated}`
+          ),
+        );
       });
       load();
     } catch (err: unknown) {
@@ -206,7 +219,9 @@ export function QcDefectsView({ view }: { view: QcTicketView }): React.ReactElem
                 <span className="chip-dot"><span className="dot critica" />{stats.critical_count} Crítica</span>
                 <span className="chip-dot"><span className="dot otros" />{stats.other_count} Otros</span>
               </div>
-              <div className="kpi-sub">vía {tags.detected}</div>
+              <div className="kpi-sub">
+                vía <JiraFilterLink filterId={tags.detected} />
+              </div>
             </div>
             <div className="kpi-cell">
               <div className="kpi-num">{stats.open_count.toLocaleString("es-MX")}</div>
@@ -228,8 +243,16 @@ export function QcDefectsView({ view }: { view: QcTicketView }): React.ReactElem
                 </div>
                 <div className="kpi-sub">
                   {view === "RELEASE" && stats.genuine_leak_count !== null
-                    ? `de ${stats.leaked_count} brutos · ${stats.leak_rate_percent}% · Fuente: Jira ${tags.leaked}`
-                    : `${stats.leak_rate_percent}% tasa · vía ${tags.leaked}`}
+                    ? (
+                      <>
+                        de {stats.leaked_count} brutos · {stats.leak_rate_percent}% · Fuente: Jira{" "}
+                        <JiraFilterLink filterId={tags.leaked} />
+                      </>
+                    ) : (
+                      <>
+                        {stats.leak_rate_percent}% tasa · vía <JiraFilterLink filterId={tags.leaked} />
+                      </>
+                    )}
                 </div>
               </div>
             )}
