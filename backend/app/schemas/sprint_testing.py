@@ -74,7 +74,10 @@ class ExecutionBlockerRow(BaseModel):
     created: str | None = None
     principal: str | None = None
     status_changed_at: str | None = None
+    status_changed_from: str | None = None
+    status_changed_to: str | None = None
     last_comment_at: str | None = None
+    last_comment_author: str | None = None
     nested_issue_keys: list[str] = Field(default_factory=list)
 
 

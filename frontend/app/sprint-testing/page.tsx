@@ -22,7 +22,37 @@ function formatJiraDateTime(raw: string | null | undefined): string {
     year: "numeric",
     hour: "2-digit",
     minute: "2-digit",
+    hour12: false,
   });
+}
+
+function formatStatusChange(row: {
+  status_changed_at?: string | null;
+  status_changed_from?: string | null;
+  status_changed_to?: string | null;
+}): string {
+  const when = formatJiraDateTime(row.status_changed_at);
+  if (when === "—") {
+    return "—";
+  }
+  if (row.status_changed_from && row.status_changed_to) {
+    return `${when} · ${row.status_changed_from} → ${row.status_changed_to}`;
+  }
+  return when;
+}
+
+function formatLastComment(row: {
+  last_comment_at?: string | null;
+  last_comment_author?: string | null;
+}): string {
+  const when = formatJiraDateTime(row.last_comment_at);
+  if (when === "—") {
+    return "—";
+  }
+  if (row.last_comment_author) {
+    return `${when} · ${row.last_comment_author}`;
+  }
+  return when;
 }
 
 function JiraKeyLink({ issueKey }: { issueKey: string }): React.ReactElement {
@@ -268,12 +298,11 @@ export default function SprintTestingPage(): React.ReactElement {
                         <th>Summary</th>
                         <th>Issue Type</th>
                         <th>Estado</th>
-                        <th>Prioridad</th>
-                        <th>Fecha de creación</th>
+                        <th>Creación</th>
                         <th>Principal</th>
                         <th>Cambio de estado</th>
                         <th>Último comentario</th>
-                        <th>Issues anidados</th>
+                        <th>Anidados</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -286,7 +315,7 @@ export default function SprintTestingPage(): React.ReactElement {
                           return (
                             <Fragment key={program.program_key}>
                               <tr className="group">
-                                <td colSpan={10}>
+                                <td colSpan={9}>
                                   {program.display_name}{" "}
                                   <span className="muted">({program.blocker})</span>
                                 </td>
@@ -299,13 +328,12 @@ export default function SprintTestingPage(): React.ReactElement {
                                     <td>{row.summary}</td>
                                     <td>{row.issue_type || "—"}</td>
                                     <td>{row.status}</td>
-                                    <td>{row.priority || "—"}</td>
                                     <td>{formatJiraDateTime(row.created)}</td>
                                     <td>
                                       {row.principal ? <JiraKeyLink issueKey={row.principal} /> : "—"}
                                     </td>
-                                    <td>{formatJiraDateTime(row.status_changed_at)}</td>
-                                    <td>{formatJiraDateTime(row.last_comment_at)}</td>
+                                    <td>{formatStatusChange(row)}</td>
+                                    <td>{formatLastComment(row)}</td>
                                     <td className="nested">
                                       {row.nested_issue_keys && row.nested_issue_keys.length > 0
                                         ? row.nested_issue_keys.map((nestedKey, index) => (

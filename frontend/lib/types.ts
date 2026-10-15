@@ -917,7 +917,10 @@ export interface SprintTestingBlocker {
   created?: string | null;
   principal?: string | null;
   status_changed_at?: string | null;
+  status_changed_from?: string | null;
+  status_changed_to?: string | null;
   last_comment_at?: string | null;
+  last_comment_author?: string | null;
   nested_issue_keys?: string[];
 }
 

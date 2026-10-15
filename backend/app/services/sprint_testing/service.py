@@ -162,19 +162,6 @@ def _parse_jira_datetime(raw: str | None) -> datetime | None:
             return None
 
 
-def _later_timestamp(*values: str | None) -> str | None:
-    best_raw: str | None = None
-    best_dt: datetime | None = None
-    for raw in values:
-        parsed = _parse_jira_datetime(raw)
-        if parsed is None:
-            continue
-        if best_dt is None or parsed > best_dt:
-            best_dt = parsed
-            best_raw = raw
-    return best_raw
-
-
 def _created_at(issue: dict[str, Any]) -> str | None:
     raw = (issue.get("fields") or {}).get("created")
     return str(raw).strip() if raw else None
@@ -186,27 +173,59 @@ def _principal_key(issue: dict[str, Any]) -> str | None:
     return key or None
 
 
-def _last_status_changed_at(issue: dict[str, Any]) -> str | None:
+def _last_status_change(issue: dict[str, Any]) -> tuple[str | None, str | None, str | None]:
     histories = (issue.get("changelog") or {}).get("histories") or []
-    stamps: list[str | None] = []
+    best_dt: datetime | None = None
+    best: tuple[str | None, str | None, str | None] = (None, None, None)
     for history in histories:
-        items = history.get("items") or []
-        if any(str(item.get("field") or "").strip().lower() == "status" for item in items):
-            stamps.append(history.get("created"))
-    return _later_timestamp(*stamps)
+        when = history.get("created")
+        parsed = _parse_jira_datetime(when)
+        if parsed is None:
+            continue
+        for item in history.get("items") or []:
+            if str(item.get("field") or "").strip().lower() != "status":
+                continue
+            if best_dt is None or parsed > best_dt:
+                best_dt = parsed
+                best = (
+                    str(when) if when else None,
+                    str(item.get("fromString") or "").strip() or None,
+                    str(item.get("toString") or "").strip() or None,
+                )
+    return best
 
 
-def _last_comment_at(issue: dict[str, Any]) -> str | None:
-    stamps: list[str | None] = []
+def _comment_author(raw: Any) -> str | None:
+    if not isinstance(raw, dict):
+        return None
+    name = str(raw.get("displayName") or raw.get("name") or "").strip()
+    return name or None
+
+
+def _last_comment(issue: dict[str, Any]) -> tuple[str | None, str | None]:
+    best_dt: datetime | None = None
+    best: tuple[str | None, str | None] = (None, None)
+
+    def consider(when: str | None, author: str | None) -> None:
+        nonlocal best_dt, best
+        parsed = _parse_jira_datetime(when)
+        if parsed is None:
+            return
+        if best_dt is None or parsed > best_dt:
+            best_dt = parsed
+            best = (when, author)
+
     comments = ((issue.get("fields") or {}).get("comment") or {}).get("comments") or []
     for comment in comments:
-        stamps.append(comment.get("updated") or comment.get("created"))
-    histories = (issue.get("changelog") or {}).get("histories") or []
-    for history in histories:
+        consider(
+            comment.get("updated") or comment.get("created"),
+            _comment_author(comment.get("author")),
+        )
+    for history in (issue.get("changelog") or {}).get("histories") or []:
         items = history.get("items") or []
         if any(str(item.get("field") or "").strip().lower() == "comment" for item in items):
-            stamps.append(history.get("created"))
-    return _later_timestamp(*stamps)
+            consider(history.get("created"), _comment_author(history.get("author")))
+    return best
 
 
 def _nested_issue_keys(issue: dict[str, Any]) -> list[str]:
@@ -304,6 +323,8 @@ def aggregate_execution_issues(
             if is_closed_status(_status_name(issue), _status_category_key(issue)):
                 continue
             blocker += 1
+            status_changed_at, status_from, status_to = _last_status_change(issue)
+            last_comment_at, last_comment_author = _last_comment(issue)
             blockers.append(
                 ExecutionBlockerRow(
                     key=str(issue.get("key") or "").strip().upper(),
@@ -315,8 +336,11 @@ def aggregate_execution_issues(
                     priority=_priority_name(issue),
                     created=_created_at(issue),
                     principal=_principal_key(issue),
-                    status_changed_at=_last_status_changed_at(issue),
-                    last_comment_at=_last_comment_at(issue),
+                    status_changed_at=status_changed_at,
+                    status_changed_from=status_from,
+                    status_changed_to=status_to,
+                    last_comment_at=last_comment_at,
+                    last_comment_author=last_comment_author,
                     nested_issue_keys=_nested_issue_keys(issue),
                 )
             )

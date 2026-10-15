@@ -286,6 +286,7 @@ def test_execution_blockers_include_created_principal_status_comment_and_nested(
                 },
                 {
                     "created": "2026-10-01T10:00:00.000-0300",
+                    "author": {"displayName": "Someone Else"},
                     "items": [{"field": "Comment"}],
                 },
             ]
@@ -301,8 +302,16 @@ def test_execution_blockers_include_created_principal_status_comment_and_nested(
             "comment": {
                 "total": 2,
                 "comments": [
-                    {"created": "2026-08-01T10:00:00.000-0300", "updated": "2026-08-01T10:00:00.000-0300"},
-                    {"created": "2026-10-13T13:32:40.365-0300", "updated": "2026-10-13T13:32:40.365-0300"},
+                    {
+                        "created": "2026-08-01T10:00:00.000-0300",
+                        "updated": "2026-08-01T10:00:00.000-0300",
+                        "author": {"displayName": "Other"},
+                    },
+                    {
+                        "created": "2026-10-13T13:32:40.365-0300",
+                        "updated": "2026-10-13T13:32:40.365-0300",
+                        "author": {"displayName": "Itzayana Castro"},
+                    },
                 ],
             },
             "issuelinks": [
@@ -328,7 +337,10 @@ def test_execution_blockers_include_created_principal_status_comment_and_nested(
     assert row.created == "2026-07-28T16:38:26.826-0300"
     assert row.principal == "ADTCL-541"
     assert row.status_changed_at == "2026-10-09T21:23:45.759-0300"
+    assert row.status_changed_from == "QA Validation"
+    assert row.status_changed_to == "Analysis"
     assert row.last_comment_at == "2026-10-13T13:32:40.365-0300"
+    assert row.last_comment_author == "Itzayana Castro"
     assert row.nested_issue_keys == ["PLYCL-763", "CONCL-1167"]
 
 
