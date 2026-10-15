@@ -355,7 +355,11 @@ def count_open_blocker_issues(filter_id: str) -> int:
         return total
 
 
-def fetch_raw_issues_by_filter(filter_id: str, fields: list[str]) -> list[dict[str, Any]]:
+def fetch_raw_issues_by_filter(
+    filter_id: str,
+    fields: list[str],
+    expand: list[str] | None = None,
+) -> list[dict[str, Any]]:
     """All issues in a saved filter. Paginates with nextPageToken; dedupes by key."""
     ensure_authenticated()
     collected: list[dict[str, Any]] = []
@@ -369,6 +373,8 @@ def fetch_raw_issues_by_filter(filter_id: str, fields: list[str]) -> list[dict[s
                 "maxResults": _SEARCH_PAGE_SIZE,
                 "fields": fields,
             }
+            if expand:
+                body["expand"] = ",".join(expand)
             if next_page_token:
                 body["nextPageToken"] = next_page_token
             response = client.post("/rest/api/3/search/jql", json=body)

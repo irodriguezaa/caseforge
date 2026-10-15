@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+from datetime import datetime
 from typing import Any
 
 from app.schemas.sprint_testing import (
@@ -28,7 +30,20 @@ from app.services.sprint_testing.classify import (
 from app.services.sprint_testing.export import build_executive_pptx, build_issues_workbook
 
 _ISSUE_FIELDS = ["summary", "issuetype", "status", "project"]
-_EXECUTION_FIELDS = ["summary", "status", "project", "priority", "issuetype"]
+_EXECUTION_FIELDS = [
+    "summary",
+    "status",
+    "project",
+    "priority",
+    "issuetype",
+    "created",
+    "parent",
+    "comment",
+    "issuelinks",
+]
+_EXECUTION_EXPAND = ["changelog"]
+_NESTED_LINK_TYPE = "nested for resolution"
+_JIRA_OFFSET_RE = re.compile(r"([+-])(\d{2})(\d{2})$")
 
 
 class SprintTestingConfigError(ValueError):
@@ -131,6 +146,87 @@ def _summary(issue: dict[str, Any]) -> str:
     return str(fields.get("summary") or "").strip()
 
 
+def _parse_jira_datetime(raw: str | None) -> datetime | None:
+    if not raw:
+        return None
+    text = raw.strip().replace("Z", "+00:00")
+    match = _JIRA_OFFSET_RE.search(text)
+    if match:
+        text = text[: match.start()] + f"{match.group(1)}{match.group(2)}:{match.group(3)}"
+    try:
+        return datetime.fromisoformat(text)
+    except ValueError:
+        try:
+            return datetime.strptime(text[:19], "%Y-%m-%dT%H:%M:%S")
+        except ValueError:
+            return None
+
+
+def _later_timestamp(*values: str | None) -> str | None:
+    best_raw: str | None = None
+    best_dt: datetime | None = None
+    for raw in values:
+        parsed = _parse_jira_datetime(raw)
+        if parsed is None:
+            continue
+        if best_dt is None or parsed > best_dt:
+            best_dt = parsed
+            best_raw = raw
+    return best_raw
+
+
+def _created_at(issue: dict[str, Any]) -> str | None:
+    raw = (issue.get("fields") or {}).get("created")
+    return str(raw).strip() if raw else None
+
+
+def _principal_key(issue: dict[str, Any]) -> str | None:
+    parent = (issue.get("fields") or {}).get("parent") or {}
+    key = str(parent.get("key") or "").strip().upper()
+    return key or None
+
+
+def _last_status_changed_at(issue: dict[str, Any]) -> str | None:
+    histories = (issue.get("changelog") or {}).get("histories") or []
+    stamps: list[str | None] = []
+    for history in histories:
+        items = history.get("items") or []
+        if any(str(item.get("field") or "").strip().lower() == "status" for item in items):
+            stamps.append(history.get("created"))
+    return _later_timestamp(*stamps)
+
+
+def _last_comment_at(issue: dict[str, Any]) -> str | None:
+    stamps: list[str | None] = []
+    comments = ((issue.get("fields") or {}).get("comment") or {}).get("comments") or []
+    for comment in comments:
+        stamps.append(comment.get("updated") or comment.get("created"))
+    histories = (issue.get("changelog") or {}).get("histories") or []
+    for history in histories:
+        items = history.get("items") or []
+        if any(str(item.get("field") or "").strip().lower() == "comment" for item in items):
+            stamps.append(history.get("created"))
+    return _later_timestamp(*stamps)
+
+
+def _nested_issue_keys(issue: dict[str, Any]) -> list[str]:
+    own = str(issue.get("key") or "").strip().upper()
+    keys: list[str] = []
+    seen: set[str] = set()
+    for link in (issue.get("fields") or {}).get("issuelinks") or []:
+        link_type = str((link.get("type") or {}).get("name") or "").strip().lower()
+        if link_type != _NESTED_LINK_TYPE:
+            continue
+        for side in ("outwardIssue", "inwardIssue"):
+            other = link.get(side) or {}
+            key = str(other.get("key") or "").strip().upper()
+            if not key or key == own or key in seen:
+                continue
+            seen.add(key)
+            keys.append(key)
+    return keys
+
+
 def _resolve_sprint_swf(sprint_id: str, swf_id: str) -> tuple[SprintDef, SwfDef]:
     sprint = get_sprint(sprint_id)
     if sprint is None:
@@ -216,6 +312,12 @@ def aggregate_execution_issues(
                     program_key=program.program_key,
                     display_name=program.display_name,
                     issue_type=_issuetype_name(issue),
+                    priority=_priority_name(issue),
+                    created=_created_at(issue),
+                    principal=_principal_key(issue),
+                    status_changed_at=_last_status_changed_at(issue),
+                    last_comment_at=_last_comment_at(issue),
+                    nested_issue_keys=_nested_issue_keys(issue),
                 )
             )
         programs.append(
@@ -245,7 +347,11 @@ def build_sprint_testing(sprint_id: str, swf_id: str) -> SprintTestingRead:
     issues = fetch_raw_issues_by_filter(sprint.filter_id, _ISSUE_FIELDS)
     payload = aggregate_issues(sprint.id, sprint.label, sprint.filter_id, swf, issues)
     if sprint.execution_filter_id:
-        execution_issues = fetch_raw_issues_by_filter(sprint.execution_filter_id, _EXECUTION_FIELDS)
+        execution_issues = fetch_raw_issues_by_filter(
+            sprint.execution_filter_id,
+            _EXECUTION_FIELDS,
+            expand=_EXECUTION_EXPAND,
+        )
         payload.execution = aggregate_execution_issues(sprint.execution_filter_id, swf, execution_issues)
     return payload
 

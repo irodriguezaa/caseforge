@@ -246,14 +246,12 @@ table.activity tr.clickable { cursor: pointer; }
 table.activity tr.clickable:hover { background: var(--surface-2); }
 table.activity a { color: var(--accent); text-decoration: none; font-weight: 600; }
 table.activity a:hover { text-decoration: underline; }
-table.activity.blockers { table-layout: fixed; }
-table.activity.blockers th:nth-child(1),
-table.activity.blockers td:nth-child(1) { width: 13%; white-space: nowrap; }
-table.activity.blockers th:nth-child(3),
-table.activity.blockers td:nth-child(3) { width: 13%; white-space: nowrap; }
-table.activity.blockers th:nth-child(4),
-table.activity.blockers td:nth-child(4) { width: 16%; white-space: nowrap; }
-table.activity.blockers td:nth-child(2) { overflow-wrap: anywhere; }
+.blockers-wrap { overflow-x: auto; }
+table.activity.blockers { table-layout: auto; min-width: 1280px; }
+table.activity.blockers th,
+table.activity.blockers td { white-space: nowrap; }
+table.activity.blockers td:nth-child(2) { white-space: normal; min-width: 220px; overflow-wrap: anywhere; }
+table.activity.blockers td.nested { white-space: normal; min-width: 140px; }
 table.activity.blockers tr.group td {
   font-weight: 600;
   font-size: 12.5px;

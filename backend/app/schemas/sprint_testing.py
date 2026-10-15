@@ -70,6 +70,12 @@ class ExecutionBlockerRow(BaseModel):
     program_key: str = ""
     display_name: str = ""
     issue_type: str = ""
+    priority: str = ""
+    created: str | None = None
+    principal: str | None = None
+    status_changed_at: str | None = None
+    last_comment_at: str | None = None
+    nested_issue_keys: list[str] = Field(default_factory=list)
 
 
 class ExecutionMetrics(BaseModel):

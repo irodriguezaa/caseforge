@@ -8,6 +8,35 @@ import { api } from "@/lib/api";
 import { jiraIssueUrl } from "@/lib/jira";
 import type { SprintTestingOptions, SprintTestingRead } from "@/lib/types";
 
+function formatJiraDateTime(raw: string | null | undefined): string {
+  if (!raw) {
+    return "—";
+  }
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) {
+    return raw;
+  }
+  return parsed.toLocaleString("es-MX", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function JiraKeyLink({ issueKey }: { issueKey: string }): React.ReactElement {
+  const href = jiraIssueUrl(issueKey);
+  if (!href) {
+    return <>{issueKey}</>;
+  }
+  return (
+    <a href={href} target="_blank" rel="noopener noreferrer" title={`Abrir ${issueKey} en Jira`}>
+      {issueKey}
+    </a>
+  );
+}
+
 export default function SprintTestingPage(): React.ReactElement {
   const [options, setOptions] = useState<SprintTestingOptions | null>(null);
   const [sprint, setSprint] = useState("44");
@@ -231,6 +260,7 @@ export default function SprintTestingPage(): React.ReactElement {
                 {data.execution.blockers.length === 0 ? (
                   <p className="muted">No hay Blockers para este SWF.</p>
                 ) : (
+                  <div className="blockers-wrap">
                   <table className="activity blockers">
                     <thead>
                       <tr>
@@ -238,6 +268,12 @@ export default function SprintTestingPage(): React.ReactElement {
                         <th>Summary</th>
                         <th>Issue Type</th>
                         <th>Estado</th>
+                        <th>Prioridad</th>
+                        <th>Fecha de creación</th>
+                        <th>Principal</th>
+                        <th>Cambio de estado</th>
+                        <th>Último comentario</th>
+                        <th>Issues anidados</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -250,35 +286,44 @@ export default function SprintTestingPage(): React.ReactElement {
                           return (
                             <Fragment key={program.program_key}>
                               <tr className="group">
-                                <td colSpan={4}>
+                                <td colSpan={10}>
                                   {program.display_name}{" "}
                                   <span className="muted">({program.blocker})</span>
                                 </td>
                               </tr>
-                              {rows.map((row) => {
-                                const href = jiraIssueUrl(row.key);
-                                return (
+                              {rows.map((row) => (
                                   <tr key={`${program.program_key}-${row.key}`}>
                                     <td>
-                                      {href ? (
-                                        <a href={href} target="_blank" rel="noopener noreferrer" title={`Abrir ${row.key} en Jira`}>
-                                          {row.key}
-                                        </a>
-                                      ) : (
-                                        row.key
-                                      )}
+                                      <JiraKeyLink issueKey={row.key} />
                                     </td>
                                     <td>{row.summary}</td>
                                     <td>{row.issue_type || "—"}</td>
                                     <td>{row.status}</td>
+                                    <td>{row.priority || "—"}</td>
+                                    <td>{formatJiraDateTime(row.created)}</td>
+                                    <td>
+                                      {row.principal ? <JiraKeyLink issueKey={row.principal} /> : "—"}
+                                    </td>
+                                    <td>{formatJiraDateTime(row.status_changed_at)}</td>
+                                    <td>{formatJiraDateTime(row.last_comment_at)}</td>
+                                    <td className="nested">
+                                      {row.nested_issue_keys && row.nested_issue_keys.length > 0
+                                        ? row.nested_issue_keys.map((nestedKey, index) => (
+                                            <Fragment key={nestedKey}>
+                                              {index > 0 ? ", " : null}
+                                              <JiraKeyLink issueKey={nestedKey} />
+                                            </Fragment>
+                                          ))
+                                        : "—"}
+                                    </td>
                                   </tr>
-                                );
-                              })}
+                              ))}
                             </Fragment>
                           );
                         })}
                     </tbody>
                   </table>
+                  </div>
                 )}
               </>
             )}

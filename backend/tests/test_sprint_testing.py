@@ -268,6 +268,70 @@ def test_execution_blockers_omit_done_rollout_and_canceled() -> None:
     assert [row.key for row in payload.blockers] == ["ADTCL-1", "ADTCL-6"]
 
 
+def test_execution_blockers_include_created_principal_status_comment_and_nested() -> None:
+    hitss = get_swf("hitss")
+    assert hitss is not None
+
+    issue = {
+        "key": "ADTCL-2483",
+        "changelog": {
+            "histories": [
+                {
+                    "created": "2026-07-28T16:47:56.584-0300",
+                    "items": [{"field": "status", "fromString": "To Do", "toString": "Analysis"}],
+                },
+                {
+                    "created": "2026-10-09T21:23:45.759-0300",
+                    "items": [{"field": "status", "fromString": "QA Validation", "toString": "Analysis"}],
+                },
+                {
+                    "created": "2026-10-01T10:00:00.000-0300",
+                    "items": [{"field": "Comment"}],
+                },
+            ]
+        },
+        "fields": {
+            "issuetype": {"name": "QA Bug"},
+            "status": {"name": "Analysis"},
+            "project": {"key": "ADTCL"},
+            "priority": {"name": "Supone un impedimento"},
+            "summary": "Panel de Audio",
+            "created": "2026-07-28T16:38:26.826-0300",
+            "parent": {"key": "ADTCL-541", "fields": {"summary": "Feature"}},
+            "comment": {
+                "total": 2,
+                "comments": [
+                    {"created": "2026-08-01T10:00:00.000-0300", "updated": "2026-08-01T10:00:00.000-0300"},
+                    {"created": "2026-10-13T13:32:40.365-0300", "updated": "2026-10-13T13:32:40.365-0300"},
+                ],
+            },
+            "issuelinks": [
+                {
+                    "type": {"name": "Blocks", "outward": "blocks"},
+                    "outwardIssue": {"key": "QA-5453"},
+                },
+                {
+                    "type": {"name": "Nested for Resolution", "outward": "Nested for Resolution"},
+                    "outwardIssue": {"key": "PLYCL-763"},
+                },
+                {
+                    "type": {"name": "Nested for Resolution", "inward": "Nested for Resolution"},
+                    "inwardIssue": {"key": "CONCL-1167"},
+                },
+            ],
+        },
+    }
+    payload = aggregate_execution_issues("117704", hitss, [issue])
+    row = payload.blockers[0]
+    assert row.key == "ADTCL-2483"
+    assert row.priority == "Supone un impedimento"
+    assert row.created == "2026-07-28T16:38:26.826-0300"
+    assert row.principal == "ADTCL-541"
+    assert row.status_changed_at == "2026-10-09T21:23:45.759-0300"
+    assert row.last_comment_at == "2026-10-13T13:32:40.365-0300"
+    assert row.nested_issue_keys == ["PLYCL-763", "CONCL-1167"]
+
+
 def test_sprint_46_is_not_actionable(client) -> None:
     response = client.get("/api/v1/sprint-testing", params={"sprint": "46", "swf": "hitss"})
     assert response.status_code == 400

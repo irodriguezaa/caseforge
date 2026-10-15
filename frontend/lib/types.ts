@@ -913,6 +913,12 @@ export interface SprintTestingBlocker {
   program_key?: string;
   display_name?: string;
   issue_type?: string;
+  priority?: string;
+  created?: string | null;
+  principal?: string | null;
+  status_changed_at?: string | null;
+  last_comment_at?: string | null;
+  nested_issue_keys?: string[];
 }
 
 export interface SprintTestingExecutionProgram {
