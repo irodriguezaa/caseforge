@@ -309,6 +309,52 @@ def test_stats_bug_type_qc_excludes_qa_and_leaked_tickets(client) -> None:
     assert all_stats["leaked_count"] == 1
 
 
+def test_stats_swf_filter_scopes_volume_and_leak(client) -> None:
+    csv_text = CSV_HEADER + (
+        "REL-H,QC Bug,CENAM,Impedimento,Finalizada,10/ene/26 10:00 AM,,,,\n"
+        "REL-T,QC Bug,ATSCL,Critical,Finalizada,10/ene/26 10:00 AM,,,,\n"
+        "REL-N,QC Bug,IMDCL,Critical,Finalizada,10/ene/26 10:00 AM,,,,\n"
+        "REL-E,QC Bug,TVOSPR,Otros,Finalizada,10/ene/26 10:00 AM,,,,\n"
+    )
+    preview = _upload(client, csv_text, view="RELEASE", source="QC_DETECTED").json()
+    assert preview["errors"] == []
+    client.post("/api/v1/qc-tickets/bulk", json=preview["valid"])
+
+    leaked_csv = (
+        'Clave de incidencia,Clave del proyecto,Prioridad,Estado,Creada,"Enlace a la incidencia (Relates)"\n'
+        "REL-LH,CENAM,Critical,Finalizada,15/abr/26 10:00 AM,\n"
+        "REL-LT,ATSCL,Critical,Finalizada,15/abr/26 10:00 AM,\n"
+    )
+    leaked_preview = _upload(client, leaked_csv, view="RELEASE", source="LEAKED").json()
+    client.post("/api/v1/qc-tickets/bulk", json=leaked_preview["valid"])
+
+    hitss = client.get("/api/v1/qc-tickets/stats", params={"view": "RELEASE", "swf": "HITSS"}).json()
+    assert hitss["total"] == 1
+    assert hitss["by_swf"] == {"HITSS": 1}
+    assert hitss["leaked_count"] == 1
+    assert hitss["leak_by_swf"] == {"HITSS": 1}
+
+    tata = client.get("/api/v1/qc-tickets/stats", params={"view": "RELEASE", "swf": "TATA"}).json()
+    assert tata["total"] == 1
+    assert tata["by_swf"] == {"TATA": 1}
+    assert tata["leaked_count"] == 1
+
+    nubiral = client.get("/api/v1/qc-tickets/stats", params={"view": "RELEASE", "swf": "NUBIRAL"}).json()
+    assert nubiral["total"] == 1
+    assert nubiral["leaked_count"] == 0
+
+    neoris = client.get("/api/v1/qc-tickets/stats", params={"view": "RELEASE", "swf": "NEORIS"}).json()
+    assert neoris["total"] == 1
+    assert neoris["by_swf"] == {"NEORIS": 1}
+
+    all_stats = client.get("/api/v1/qc-tickets/stats", params={"view": "RELEASE"}).json()
+    assert all_stats["total"] == 4
+    assert all_stats["leaked_count"] == 2
+
+    bad = client.get("/api/v1/qc-tickets/stats", params={"view": "RELEASE", "swf": "OTROS"})
+    assert bad.status_code == 400
+
+
 def test_list_qc_tickets_bug_type_filter(client) -> None:
     csv_text = CSV_HEADER + (
         "REL-50,QC Bug,CENAM,Impedimento,Finalizada,10/ene/26 10:00 AM,,,,\n"

@@ -12,6 +12,9 @@ import { useAuth } from "@/lib/auth";
 import type { QcTicketStats, QcTicketView } from "@/lib/types";
 
 type BugTypeFilter = "ALL" | "QC" | "QA";
+type SwfFilter = "ALL" | "HITSS" | "NEORIS" | "TATA" | "NUBIRAL";
+
+const RELEASE_SWF_FILTERS: SwfFilter[] = ["HITSS", "NEORIS", "TATA", "NUBIRAL"];
 
 function sortedEntries(record: Record<string, number>): { label: string; value: number }[] {
   return Object.entries(record)
@@ -69,21 +72,23 @@ export function QcDefectsView({ view }: { view: QcTicketView }): React.ReactElem
   const [stats, setStats] = useState<QcTicketStats | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [bugType, setBugType] = useState<BugTypeFilter>("ALL");
+  const [swf, setSwf] = useState<SwfFilter>("ALL");
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [refreshSummary, setRefreshSummary] = useState<string | null>(null);
 
   const load = useCallback((): void => {
     const apiBugType = view === "RELEASE" && bugType !== "ALL" ? bugType : undefined;
+    const apiSwf = view === "RELEASE" && swf !== "ALL" ? swf : undefined;
     api
-      .getQcTicketStats(view, undefined, apiBugType)
+      .getQcTicketStats(view, undefined, apiBugType, apiSwf)
       .then((data) => {
         setStats(data);
         setError(null);
         setLastUpdated(new Date());
       })
       .catch((err: unknown) => setError(err instanceof Error ? err.message : "Error"));
-  }, [view, bugType]);
+  }, [view, bugType, swf]);
 
   useEffect(load, [load]);
 
@@ -157,16 +162,33 @@ export function QcDefectsView({ view }: { view: QcTicketView }): React.ReactElem
       </div>
 
       {view === "RELEASE" && (
-        <div className="tabnav">
-          <button type="button" className={bugType === "QC" ? "active" : ""} onClick={() => setBugType("QC")}>
-            QC Bugs
-          </button>
-          <button type="button" className={bugType === "QA" ? "active" : ""} onClick={() => setBugType("QA")}>
-            QA Bugs
-          </button>
-          <button type="button" className={bugType === "ALL" ? "active" : ""} onClick={() => setBugType("ALL")}>
-            QA + QC Bugs
-          </button>
+        <div className="kpi-filters">
+          <div className="tabnav">
+            <button type="button" className={bugType === "QC" ? "active" : ""} onClick={() => setBugType("QC")}>
+              QC Bugs
+            </button>
+            <button type="button" className={bugType === "QA" ? "active" : ""} onClick={() => setBugType("QA")}>
+              QA Bugs
+            </button>
+            <button type="button" className={bugType === "ALL" ? "active" : ""} onClick={() => setBugType("ALL")}>
+              QA + QC Bugs
+            </button>
+          </div>
+          <div className="tabnav" role="group" aria-label="SWF">
+            <button type="button" className={swf === "ALL" ? "active" : ""} onClick={() => setSwf("ALL")}>
+              Todos
+            </button>
+            {RELEASE_SWF_FILTERS.map((value) => (
+              <button
+                key={value}
+                type="button"
+                className={swf === value ? "active" : ""}
+                onClick={() => setSwf(value)}
+              >
+                {value}
+              </button>
+            ))}
+          </div>
         </div>
       )}
 

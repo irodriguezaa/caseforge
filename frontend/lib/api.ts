@@ -595,10 +595,11 @@ export const api = {
   },
   bulkCreateQcTickets: (tickets: QcTicketCreate[]) =>
     request<QcTicketBulkCreateResult>("/api/qc-tickets/bulk", { method: "POST", body: JSON.stringify(tickets) }),
-  getQcTicketStats: (view: QcTicketView, cluster?: string, bugType?: "QC" | "QA") => {
+  getQcTicketStats: (view: QcTicketView, cluster?: string, bugType?: "QC" | "QA", swf?: string) => {
     const params = new URLSearchParams({ view });
     if (cluster) params.set("cluster", cluster);
     if (bugType) params.set("bug_type", bugType);
+    if (swf) params.set("swf", swf);
     return request<QcTicketStats>(`/api/qc-tickets/stats?${params.toString()}`);
   },
   refreshQcTicketsFromJira: (view: QcTicketView) =>

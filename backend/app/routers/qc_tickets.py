@@ -38,6 +38,8 @@ router = APIRouter(
 )
 logger = logging.getLogger(__name__)
 
+RELEASE_SWF_FILTERS = ("HITSS", "NEORIS", "TATA", "NUBIRAL")
+
 
 @router.post("/import/preview", response_model=QcTicketImportPreviewResponse)
 async def preview_qc_ticket_import(
@@ -164,6 +166,7 @@ def list_qc_tickets(
     source: QcTicketSource | None = Query(default=None),
     is_open: bool | None = Query(default=None),
     bug_type: str | None = Query(default=None, description="RELEASE only: 'QC' or 'QA'."),
+    swf: str | None = Query(default=None, description="HITSS, NEORIS, TATA or NUBIRAL."),
     db: Session = Depends(get_db),
 ) -> list[QcTicket]:
     stmt = select(QcTicket).order_by(QcTicket.created_date.desc())
@@ -175,6 +178,7 @@ def list_qc_tickets(
         stmt = stmt.where(QcTicket.source == source)
     if is_open is not None:
         stmt = stmt.where(QcTicket.is_open == is_open)
+    stmt = _apply_swf_filter(stmt, swf)
     tickets = list(db.execute(stmt).scalars().all())
     if view == QcTicketView.RELEASE and bug_type in ("QC", "QA"):
         tickets = [
@@ -182,6 +186,17 @@ def list_qc_tickets(
             if t.source == QcTicketSource.QC_DETECTED and _matches_bug_type(t, bug_type)
         ]
     return tickets
+
+
+def _apply_swf_filter(stmt, swf: str | None):
+    if swf is None or swf == "" or swf == "ALL":
+        return stmt
+    if swf not in RELEASE_SWF_FILTERS:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail="SWF debe ser HITSS, NEORIS, TATA o NUBIRAL.",
+        )
+    return stmt.where(QcTicket.swf == swf)
 
 
 def _matches_bug_type(ticket: QcTicket, bug_type: str) -> bool:
@@ -203,6 +218,7 @@ def get_qc_ticket_stats(
     view: QcTicketView = Query(...),
     cluster: str | None = Query(default=None),
     bug_type: str | None = Query(default=None, description="RELEASE only: 'QC', 'QA', or None/'ALL' for both (default)."),
+    swf: str | None = Query(default=None, description="HITSS, NEORIS, TATA or NUBIRAL."),
     db: Session = Depends(get_db),
 ) -> QcTicketStats:
     """Split by view -- Operativas and Release use different backlog rules and SWF derivations,
@@ -217,6 +233,7 @@ def get_qc_ticket_stats(
     stmt = select(QcTicket).where(QcTicket.view == view)
     if cluster is not None:
         stmt = stmt.where(QcTicket.cluster == cluster)
+    stmt = _apply_swf_filter(stmt, swf)
     tickets = list(db.execute(stmt).scalars().all())
 
     if view == QcTicketView.RELEASE and bug_type in ("QC", "QA"):
