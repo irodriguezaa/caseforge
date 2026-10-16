@@ -107,6 +107,14 @@ Feature: Leyenda
     Then se muestra el espacio vacío
 """
 
+ST_REMOTE = """
+Feature: Configuración remota
+  Scenario: Sin configuración remota
+    Given la configuración remota no se logra obtener
+    When el usuario abre el flujo
+    Then se muestra el estado vacío en pantalla
+"""
+
 
 def test_x1_sheet_accumulates_scenarios_from_every_epc(monkeypatch) -> None:
     artifacts = [
@@ -143,19 +151,24 @@ def test_x1_regenerating_one_epc_does_not_duplicate(monkeypatch) -> None:
 
 
 def test_x2_na_in_rn_is_on_ledger_and_na_sheet(monkeypatch) -> None:
-    artifacts = [_epic("EPC-B", [_story("ST-NA", "Feature leyenda", ST_NA), _story("ST-B", "Feature ficha", ST_B)])]
+    artifacts = [
+        _epic(
+            "EPC-B",
+            [_story("ST-REMOTE", "Feature configuración remota", ST_REMOTE), _story("ST-B", "Feature ficha", ST_B)],
+        )
+    ]
     result = _generate(monkeypatch, artifacts)
     ledger = result.generation_stats.scenario_ledger
     na_rows = [row for row in ledger if row.get("estado") == "na_ambiente"]
     assert na_rows
-    assert any("Llave remota" in (row.get("scenario") or "") for row in na_rows)
+    assert any("configuración remota" in (row.get("scenario") or "").lower() for row in na_rows)
     book = load_workbook(
         io.BytesIO(build_test_cases_workbook([], scenario_ledger=ledger))
     )
     assert "No aplicables en ambiente" in book.sheetnames
     na_sheet = book["No aplicables en ambiente"]
     names = [na_sheet.cell(index, 2).value for index in range(2, na_sheet.max_row + 1)]
-    assert any(name and "Llave remota" in name for name in names)
+    assert any(name and "configuración remota" in name.lower() for name in names)
     assert any(row.get("estado") == "na_ambiente" for row in result.rn_scope_coverage["scenario_ledger"])
 
 
@@ -187,7 +200,7 @@ def test_x2_na_survives_deterministic_and_is_not_sent_to_llm() -> None:
     from app.services.gherkin_coverage import build_coverage_inventory
 
     stats = GenerationStats()
-    artifacts = [_epic("EPC-1", [_story("ST-NA", "Feature leyenda", ST_NA)])]
+    artifacts = [_epic("EPC-1", [_story("ST-REMOTE", "Feature configuración remota", ST_REMOTE)])]
     units = build_coverage_inventory(artifacts, "rn.pdf", stats=stats)
     na_units = [unit for unit in units if unit.applicability == "na_ambiente"]
     assert na_units
@@ -195,6 +208,17 @@ def test_x2_na_survives_deterministic_and_is_not_sent_to_llm() -> None:
     cases = candidates_from_jira_artifacts(artifacts, "rn.pdf", [], lambda *_a: None, stats=stats)
     assert any(row.get("estado") == "na_ambiente" for row in stats.scenario_ledger)
     assert all((case.applicability or "") != "na_ambiente" or case.applicability == "na_ambiente" for case in cases)
+
+
+def test_x2_missing_key_is_not_materialized() -> None:
+    from app.services.gherkin_coverage import build_coverage_inventory
+
+    stats = GenerationStats()
+    artifacts = [_epic("EPC-1", [_story("ST-NA", "Feature leyenda", ST_NA)])]
+    units = build_coverage_inventory(artifacts, "rn.pdf", stats=stats)
+    assert units == []
+    assert any("Llave remota" in (row.get("scenario") or "") for row in stats.scenario_ledger)
+    assert not any(row.get("estado") == "na_ambiente" for row in stats.scenario_ledger)
 
 
 def _case(**kwargs):

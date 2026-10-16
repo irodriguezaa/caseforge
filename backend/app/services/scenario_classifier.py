@@ -111,6 +111,14 @@ _KEY_TOKEN_SCENARIO = re.compile(
     r"/apa/metadata|apa/metadata",
     re.IGNORECASE,
 )
+_KEY_DROP_SCENARIO = re.compile(
+    r"no se logra obtener una llave|"
+    r"la llave se encuentra vac[ií]a|"
+    r"llave.{0,80}(inexistente|vac[ií]a|no se encuentra|faltante|no encontrada)|"
+    r"(mostrar|mostrarse|muestra) la llave|"
+    r"espacio donde.{0,80}(mostrarse la leyenda|la llave)",
+    re.IGNORECASE,
+)
 _PRODUCT_CONTROL_UX = re.compile(
     r"\b(bot[oó]n|carrusel|mosaico|control player|mini ?epg|"
     r"gu[ií]a de (tv|programaci)|canales recientes|"
@@ -535,6 +543,17 @@ def _classify_gherkin_role(title: str, body: str) -> ScenarioClassification:
             reason="Métrica, analytics o telemetría sin consecuencia observable de QC.",
         )
 
+    if _KEY_DROP_SCENARIO.search(title) or _KEY_DROP_SCENARIO.search(blob):
+        return ScenarioClassification(
+            role="C",
+            given=given,
+            when=when,
+            then=then,
+            technical_notes=technical + then or [title],
+            special_condition=special_pre,
+            normal_precondition=normal_pre,
+            reason="Llave vacía/faltante o token de leyenda; QC Legacy no materializa.",
+        )
     if (_KEY_TOKEN_SCENARIO.search(title) or _KEY_TOKEN_SCENARIO.search(blob)) and not has_obs:
         if not _PRODUCT_CONTROL_UX.search(blob):
             return ScenarioClassification(
@@ -678,7 +697,10 @@ def classify_scenario(title: str, body: str) -> ScenarioClassification:
     clf.qc_condition = obs.condition
     if obs.observables and not clf.observable_then:
         clf.observable_then = list(obs.observables)
-    if (
+    if _KEY_DROP_SCENARIO.search(title) or _KEY_DROP_SCENARIO.search(body or ""):
+        clf.role = "C"
+        clf.qc_relevance = "IMPLEMENTATION_ONLY"
+    elif (
         clf.observable_then
         and _KEY_TOKEN_SCENARIO.search(title)
         and clf.qc_relevance in {"QC_FUNCTIONAL", "QC_REGRESSION", "QC_VARIANT"}

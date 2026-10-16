@@ -86,12 +86,7 @@ def test_when_technical_puts_condition_in_precondition_not_step() -> None:
             ]
         )
     )
-    assert len(gated) == 2
-    for row in gated:
-        assert row.steps[0].action == STABLE_GENERIC_STEP
-        assert "cuando" not in row.steps[0].action.lower()
-        blob = f"{row.precondition} {row.test_data} {row.name}".lower()
-        assert "llave" in blob or "vacía" in blob or "no se logra" in blob
+    assert gated == []
 
 
 def test_when_technical_plus_recoverable_user_action() -> None:
@@ -211,9 +206,9 @@ def test_last_resort_does_not_invent_a_user_action() -> None:
 def test_inventory_volume_and_roles_unchanged() -> None:
     units = build_coverage_inventory(_artifacts(), "rn.pdf")
     scenarios = {unit.scenario for unit in units}
-    assert "No se logra obtener una llave" in scenarios
-    assert "La llave se encuentra vacía" in scenarios
-    assert len(units) == 9
+    assert "No se logra obtener una llave" not in scenarios
+    assert "La llave se encuentra vacía" not in scenarios
+    assert len(units) == 6
     assert all(unit.role in {"A", "G"} for unit in units)
 
 

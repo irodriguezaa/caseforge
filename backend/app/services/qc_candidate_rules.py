@@ -35,6 +35,21 @@ _QA_PROCESS = re.compile(
     r"habilita el despliegue|reporta antes del despliegue|proceso de QA",
     re.IGNORECASE,
 )
+_KEY_CONFIG = re.compile(
+    r"no se logra obtener una llave|"
+    r"la llave se encuentra vac[ií]a|"
+    r"llave.{0,80}(inexistente|vac[ií]a|no se encuentra|faltante|no encontrada)|"
+    r"alta de llaves|"
+    r"construcci[oó]n de la llave|"
+    r"la llave resuelta|"
+    r"llaves de configuraci[oó]n|"
+    r"creaci[oó]n de llaves|"
+    r"registro de llaves|"
+    r"\bappkeys\b|"
+    r"espacio donde.{0,80}(mostrarse la leyenda|la llave)|"
+    r"(mostrar|mostrarse|muestra) la llave",
+    re.IGNORECASE,
+)
 _EVENT_TITLE = re.compile(
     r"se registra evento|evento de (selecci|anal[ií]tica|inicio|[eé]xito|error|clic)|"
     r"transmisi[oó]n y persistencia del evento|la estructura del evento|"
@@ -83,23 +98,49 @@ def normalize(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip().lower()
 
 
+def is_key_config_scenario(title: str, body: str) -> bool:
+    """Legacy QC does not materialize empty/missing keys, key setup, or leyenda-token Gherkin."""
+    return bool(_KEY_CONFIG.search(f"{title}\n{body}"))
+
+
+def is_key_config_candidate(candidate: GeneratedCaseCandidate) -> bool:
+    blob = f"{candidate.name} {candidate.justification} {candidate.evidence}"
+    steps = " ".join(f"{step.action} {step.expected_result}" for step in candidate.steps)
+    return is_key_config_scenario(candidate.name, f"{steps} {blob}")
+
+
+def _then_text(body: str) -> str:
+    lines: list[str] = []
+    for line in (body or "").splitlines():
+        if re.match(r"^\s*(Then|Entonces|And|Y|Pero|But)\b", line, re.IGNORECASE):
+            lines.append(line)
+    return "\n".join(lines)
+
+
 def is_metrics_or_qa_process(title: str, body: str) -> bool:
     blob = f"{title}\n{body}"
     if _QA_PROCESS.search(blob):
         return True
-    if _INTERNAL_ONLY.search(title) and not re.search(r"no bloquea", blob, re.IGNORECASE):
-        return True
-    if _EVENT_TITLE.search(title) and not re.search(r"no bloquea", blob, re.IGNORECASE):
-        return True
-    if _METRICS_ONLY.search(blob) and not (
-        _USER_OBSERVABLE.search(blob) or re.search(r"no bloquea", blob, re.I)
-    ):
-        return True
-    if _METRICS_ONLY.search(title) and not (
-        _USER_OBSERVABLE.search(blob) or re.search(r"no bloquea", blob, re.I)
-    ):
-        return True
-    return False
+    if re.search(r"no bloquea", blob, re.IGNORECASE):
+        return False
+    then = _then_text(body) or body
+    non_metrics_ux = bool(
+        _USER_OBSERVABLE.search(then)
+        and re.search(
+            r"muestra|oculta|abre|cierra|redirige|comprobante|banner|modal|"
+            r"layout|error visible|pantalla|ticket|ficha",
+            then,
+            re.IGNORECASE,
+        )
+    )
+    looks_metrics = bool(
+        _INTERNAL_ONLY.search(title)
+        or _EVENT_TITLE.search(title)
+        or _METRICS_ONLY.search(title)
+        or _METRICS_ONLY.search(then)
+        or _EVENT_TITLE.search(then)
+    )
+    return looks_metrics and not non_metrics_ux
 
 
 def is_metrics_only_candidate(candidate: GeneratedCaseCandidate) -> bool:
@@ -724,7 +765,7 @@ def apply_qc_rules(
 ) -> list[GeneratedCaseCandidate]:
     kept: list[tuple[str, GeneratedCaseCandidate]] = []
     for candidate in candidates:
-        if is_metrics_only_candidate(candidate):
+        if is_key_config_candidate(candidate) or is_metrics_only_candidate(candidate):
             continue
         if is_accessibility_audit_only(candidate, release_context):
             continue

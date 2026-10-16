@@ -460,8 +460,8 @@ Scenario Outline: Validar respuesta de PIN
     assert len(units) == 1
 
 
-def test_legend_key_template_is_dropped_on_banner_feature_not_ticket() -> None:
-    """Stock leyenda-key Gherkin is QC on Ticket/leyenda Features, not on a banner Feature."""
+def test_legend_key_template_is_dropped_on_banner_and_ticket() -> None:
+    """Stock leyenda-key Gherkin is not QC on banner or Ticket Features."""
     banner_gherkin = """
 Feature: Implementar banner con políticas de cookies
   Scenario: Mostrar automáticamente el banner informativo de cookies
@@ -517,8 +517,7 @@ Feature: Pantalla de Ticket
         for unit in banner_units
         if "llave" in (unit.scenario or "").lower()
     ]
-    assert legend
-    assert all(unit.applicability == "na_ambiente" for unit in legend)
+    assert legend == []
     assert any("banner" in (unit.scenario or "").lower() for unit in banner_units)
     assert any("redir" in (unit.scenario or "").lower() for unit in banner_units)
     assert any(
@@ -554,7 +553,7 @@ Feature: Pantalla de Ticket
         "rn.pdf",
     )
     ticket_names = {(unit.scenario or "") for unit in ticket_units}
-    assert "No se logra obtener una llave" in ticket_names
+    assert "No se logra obtener una llave" not in ticket_names
 
 
 def test_page_load_when_is_preserved_as_entry_action() -> None:

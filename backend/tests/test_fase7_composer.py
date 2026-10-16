@@ -178,7 +178,7 @@ Scenario: Ver detalle
     assert not any("(" in name and name.rstrip()[-2].isdigit() for name in names)
 
 
-def test_75_legend_template_is_na_ambiente_not_silent_drop() -> None:
+def test_75_legend_template_is_not_materialized() -> None:
     description = """
 Feature: Implementar banner con políticas de cookies
   Scenario: Mostrar banner
@@ -196,8 +196,7 @@ Feature: Implementar banner con políticas de cookies
         stats=stats,
     )
     legend = [unit for unit in units if "no se logra obtener una llave" in (unit.scenario or "").lower()]
-    assert legend
-    assert all(unit.applicability == "na_ambiente" for unit in legend)
+    assert legend == []
 
 
 def test_76_every_functional_scenario_has_ledger_state() -> None:

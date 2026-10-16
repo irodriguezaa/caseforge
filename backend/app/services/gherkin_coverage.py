@@ -349,11 +349,12 @@ def _implementation_without_ux(title: str, body: str, user_action: str | None) -
 
 
 def _orphan_config_key(title: str, body: str) -> bool:
-    """STB leyenda 'llave' is QC; cookie/appKey 'llave' without leyenda UX is not."""
-    blob = f"{title or ''}\n{body or ''}"
-    if not _KEY_DEGRADATION.search(blob):
-        return False
-    return not bool(_LEYENDA_KEY_UX.search(blob))
+    """Any llave Gherkin (empty, missing, setup, leyenda token) is out of Legacy QC."""
+    from app.services.qc_candidate_rules import is_key_config_scenario
+
+    return is_key_config_scenario(title, body) or bool(
+        _KEY_DEGRADATION.search(f"{title or ''}\n{body or ''}")
+    )
 
 
 def _legend_template_off_surface(story: dict[str, Any] | None, title: str, body: str) -> bool:
@@ -376,10 +377,14 @@ def _non_qc_inventory_reason(
     story: dict[str, Any] | None = None,
 ) -> str | None:
     blob = f"{title or ''}\n{body or ''}"
+    from app.services.qc_candidate_rules import is_key_config_scenario, is_metrics_or_qa_process
+
+    if is_key_config_scenario(title, body) or _orphan_config_key(title, body):
+        return "llave de configuración/metadata; QC no materializa llaves"
+    if is_metrics_or_qa_process(title, body):
+        return "métricas/analytics/proceso QA; QC no materializa"
     if _legend_template_off_surface(story, title, body):
         return "plantilla de leyenda/llave fuera de la superficie funcional de la Story"
-    if _orphan_config_key(title, body):
-        return "llave de configuración/consentimiento sin UX de leyenda"
     if _http_or_api_only(blob):
         return "HTTP/API sin UX observable"
     if _pure_config_only(blob):
@@ -1018,7 +1023,7 @@ _SCROLL = re.compile(r"\bscroll\b", re.IGNORECASE)
 _KEY_DEGRADATION = re.compile(
     r"no se logra obtener una llave|"
     r"la llave se encuentra vac[ií]a|"
-    r"llave (inexistente|vac[ií]a|no se encuentra)",
+    r"llave.{0,80}(inexistente|vac[ií]a|no se encuentra|faltante|no encontrada)",
     re.IGNORECASE,
 )
 
@@ -1126,6 +1131,8 @@ def _units_from_story_blocks(
     stats: GenerationStats,
     seq_holder: list[int],
 ) -> list[CoverageUnit]:
+    from app.services.qc_candidate_rules import is_key_config_scenario, is_metrics_or_qa_process
+
     units: list[CoverageUnit] = []
     story_key = story.get("key") or epic_key
     story_context = _story_context_precondition(story)
@@ -1158,8 +1165,20 @@ def _units_from_story_blocks(
                 observable_then=then_ux,
                 qc_observables=list(clf.qc_observables or then_ux),
             )
+        if clf.qc_relevance == "QC_VARIANT" and not re.search(
+            r"muestra|oculta|render|visualiza|redirige|layout",
+            block.get("body") or "",
+            re.I,
+        ):
+            clf = replace(clf, role="B", qc_relevance="CONFIG_ONLY")
+        drop_key_or_metrics = is_key_config_scenario(
+            block["title"], block["body"]
+        ) or is_metrics_or_qa_process(block["title"], block["body"])
+        if drop_key_or_metrics:
+            clf = replace(clf, role="C", qc_relevance="IMPLEMENTATION_ONLY")
         if (
             then_ux
+            and not drop_key_or_metrics
             and not _is_coverable(clf)
             and clf.role == "C"
             and (
@@ -1176,6 +1195,9 @@ def _units_from_story_blocks(
                 qc_relevance="QC_FUNCTIONAL",
             )
         classified.append((block, clf))
+        if drop_key_or_metrics:
+            record_classification(stats, clf, block["title"])
+            continue
         if _is_coverable(clf):
             continue
         record_classification(stats, clf, block["title"])
@@ -1233,7 +1255,7 @@ def _units_from_story_blocks(
                     f"{story_key}: {block.get('title')}: Then técnico sin efecto visible en la historia"
                 )
         repaired.append((block, clf))
-    classified = repaired
+    classified = _merge_scroll_family(repaired)
 
     for block, clf in classified:
         title = block["title"]
@@ -1259,16 +1281,33 @@ def _units_from_story_blocks(
         )
         if looks_like_invalid_lead(title) and source_origin != "gherkin":
             continue
+        if (clf.role == "B" or clf.qc_relevance == "CONFIG_ONLY") and not _is_coverable(clf):
+            stats.scenario_ledger.append(
+                {
+                    "story": story_key or "",
+                    "epic": epic_key or "",
+                    "scenario": title,
+                    "estado": "verificación técnica",
+                    "motivo": clf.reason or "configuración/definición sin TC independiente",
+                    "case_id": "",
+                }
+            )
+            continue
         noise = _non_qc_inventory_reason(title, body, user_action, story=story)
-        if noise and (
-            _legend_template_off_surface(story, title, body) or _orphan_config_key(title, body)
-        ):
-            extra_rules = list(dict.fromkeys([*extra_rules, "na-ambiente"]))
-            na_kwargs = {
-                "applicability": "na_ambiente",
-                "applicability_reason": f"na_ambiente: {noise}",
-            }
-        elif not _is_coverable(clf):
+        if noise:
+            stats.inventory_exclusions.append(f"{story_key}: {title}: {noise}")
+            stats.scenario_ledger.append(
+                {
+                    "story": story_key or "",
+                    "epic": epic_key or "",
+                    "scenario": title,
+                    "estado": "verificación técnica",
+                    "motivo": noise,
+                    "case_id": "",
+                }
+            )
+            continue
+        if not _is_coverable(clf):
             pick = _pick_translated_observable(blob, observable_pool)
             notes = list(clf.technical_notes or [])
             extra = extract_technical(blob)
