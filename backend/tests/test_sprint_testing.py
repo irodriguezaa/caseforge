@@ -344,12 +344,6 @@ def test_execution_blockers_include_created_principal_status_comment_and_nested(
     assert row.nested_issue_keys == ["PLYCL-763", "CONCL-1167"]
 
 
-def test_sprint_46_is_not_actionable(client) -> None:
-    response = client.get("/api/v1/sprint-testing", params={"sprint": "46", "swf": "hitss"})
-    assert response.status_code == 400
-    assert "Saved Filter" in response.json()["detail"]
-
-
 def test_options_mark_future_sprints(client) -> None:
     response = client.get("/api/v1/sprint-testing/options")
     assert response.status_code == 200
@@ -361,7 +355,9 @@ def test_options_mark_future_sprints(client) -> None:
     assert by_id["45"]["actionable"] is True
     assert by_id["45"]["filter_id"] == "117703"
     assert by_id["45"]["execution_filter_id"] == "117796"
-    assert by_id["46"]["actionable"] is False
+    assert by_id["46"]["actionable"] is True
+    assert by_id["46"]["filter_id"] == "117859"
+    assert by_id["46"]["execution_filter_id"] is None
 
 
 def test_tester_and_consulta_cannot_read(client) -> None:
