@@ -237,6 +237,27 @@ def test_be_create_persists_matrix_cases_per_device(client) -> None:
     assert "Dispositivo: WEB" in (matrix_rows[0]["test_data"] or "")
 
 
+def test_generate_be_release_loads_matrix_after_create(client) -> None:
+    created = client.post("/api/v1/releases-be").json()
+    client.patch(
+        f"/api/v1/releases-be/{created['id']}",
+        json={"name": "BE-GENERATE", "swf": "BE Hitss", "regresivo_scope": "Smoke Test"},
+    )
+    qc = client.post(f"/api/v1/releases-be/{created['id']}/create-release")
+    assert qc.status_code == 201, qc.text
+    assert client.get(f"/api/v1/releases/{qc.json()['id']}/test-cases").json() == []
+
+    _publish(client)
+    generated = client.post(f"/api/v1/releases/{qc.json()['id']}/generate-cases?background=true")
+    assert generated.status_code == 200, generated.text
+    body = generated.json()
+    assert body["status"] == "DONE"
+    assert body["engine"] == "qc_matrix"
+    assert body["test_case_count"] == 1
+    rows = client.get(f"/api/v1/releases/{qc.json()['id']}/test-cases").json()
+    assert [row["test_case_id"] for row in rows if row["source_type"] == "qc_matrix"] == ["SM-001"]
+
+
 def test_na_scope_does_not_persist_matrix_cases(client, db_session) -> None:
     _publish(client)
     release = _release(client, "N/A", ["ACC"])

@@ -232,20 +232,6 @@ export default function ReleaseDetailPage(): React.ReactElement {
     setActionError(null);
     setGenerateResult(null);
     setShowAnalysisDetails(false);
-    if (release?.be_release_id) {
-      setGenerateResult({
-        status: "INFO",
-        message: "Flujo de generación desde Matriz QC preparado. Completo, Smoke o Acotado se conectarán en la siguiente fase.",
-        release_id: releaseId,
-        release_name: release.name,
-        validation_type: release.validation_type ?? null,
-        has_analysis: false,
-        engine: "be",
-        candidates: [],
-        persisted: false,
-      });
-      return;
-    }
     const hasEngineCases = testCases.some((row) => row.generated_by_engine);
     if (regenerate && hasEngineCases) {
       const confirmed = window.confirm(

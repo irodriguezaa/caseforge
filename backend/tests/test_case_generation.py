@@ -107,17 +107,20 @@ def test_generate_without_analysis_returns_404(client, monkeypatch) -> None:
     assert response.status_code == 404
 
 
-def test_generate_rejects_be_release(client, monkeypatch) -> None:
+def test_generate_be_release_uses_qc_matrix(client, monkeypatch) -> None:
     _disable_llm(monkeypatch)
     draft = client.post("/api/v1/releases-be").json()
     client.patch(
         f"/api/v1/releases-be/{draft['id']}",
-        json={"name": "BE-GEN", "swf": "BE Hitss", "regresivo_scope": "COMPLETO"},
+        json={"name": "BE-GEN", "swf": "BE Hitss", "regresivo_scope": "Smoke Test"},
     )
     qc = client.post(f"/api/v1/releases-be/{draft['id']}/create-release").json()
     response = client.post(f"/api/v1/releases/{qc['id']}/generate-cases")
-    assert response.status_code == 400
-    assert "Release BE" in response.json()["detail"]
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["status"] == "DONE"
+    assert body["engine"] == "qc_matrix"
+    assert "matriz QC" in body["message"]
 
 
 def test_generate_operativa_uses_matrix_pipeline(client, monkeypatch) -> None:

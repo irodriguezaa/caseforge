@@ -799,6 +799,53 @@ def _current_qa_qc_block(db: Session, release: Release) -> GenerateCasesResponse
     return _incomplete_qa_qc_response(release)
 
 
+def _generate_be_matrix_cases(release: Release, db: Session) -> GenerateCasesResponse:
+    """Persist QC matrix cases for the BE scope on every mapped OTT/IPTV device."""
+    from app.services.qc_matrix_persist import persist_selected_matrix_cases
+
+    be = db.get(BeRelease, release.be_release_id) if release.be_release_id else None
+    if be is not None:
+        if not (release.validation_type or "").strip() and be.regresivo_scope:
+            release.validation_type = be.regresivo_scope
+        if release.qc_matrix_touched_modules is None and be.qc_matrix_touched_modules:
+            release.qc_matrix_touched_modules = be.qc_matrix_touched_modules
+    scope = (release.validation_type or "").strip()
+    if not scope:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail="El Alcance QC es obligatorio para generar casos de la matriz.",
+        )
+    if scope == "N/A":
+        return GenerateCasesResponse(
+            status="DONE",
+            message="N/A no incorpora casos de la matriz QC.",
+            release_id=release.id,
+            release_name=release.name,
+            validation_type=scope,
+            has_analysis=False,
+            engine="qc_matrix",
+            persisted=False,
+            test_case_count=0,
+        )
+    count = persist_selected_matrix_cases(db, release)
+    db.commit()
+    verb = "Se generó" if count == 1 else "Se generaron"
+    return GenerateCasesResponse(
+        status="DONE",
+        message=(
+            f"{verb} {count} casos de matriz QC ({scope}) "
+            "en todos los dispositivos OTT/IPTV."
+        ),
+        release_id=release.id,
+        release_name=release.name,
+        validation_type=scope,
+        has_analysis=False,
+        engine="qc_matrix",
+        persisted=count > 0,
+        test_case_count=count,
+    )
+
+
 @router.post("/{release_id}/generate-cases", response_model=GenerateCasesResponse)
 def generate_cases_from_rn(
     release_id: int,
@@ -809,8 +856,10 @@ def generate_cases_from_rn(
     db: Session = Depends(get_db),
 ) -> GenerateCasesResponse:
     """Generate functional Test Cases: Apps from RN/Jira, Operativas from QC-selected BRFs."""
+    release = get_release_or_404(release_id, db)
+    if release.be_release_id is not None:
+        return _generate_be_matrix_cases(release, db)
     if background and not (functionality_key or "").strip():
-        release = get_release_or_404(release_id, db)
         if release.be_release_id is None and release.operativa_release_id is None:
             blocked = _current_qa_qc_block(db, release)
             if blocked:
@@ -859,10 +908,7 @@ def _generate_cases_from_rn(
 ) -> GenerateCasesResponse:
     release = get_release_or_404(release_id, db)
     if release.be_release_id is not None:
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST,
-            detail="La generación de casos desde Matriz QC de Release BE se conectará en una fase posterior.",
-        )
+        return _generate_be_matrix_cases(release, db)
     if release.operativa_release_id is not None:
         return _generate_operativa_cases(release, regenerate, db)
     analysis = (
