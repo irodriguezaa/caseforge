@@ -173,6 +173,9 @@ def _apply(
     case.source_type = MATRIX_SOURCE
     case.generated_by_engine = False
     case.estimation_hours = None
+    if include_device:
+        device = (item.get("platform") or item.get("device_code") or "").strip()
+        case.device = device[:80] or None
 
 
 def _title(item: dict) -> str:

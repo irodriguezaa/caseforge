@@ -386,7 +386,11 @@ export default function ReleaseDetailPage(): React.ReactElement {
   useEffect(() => {
     if (!matrixTabLabel) setCaseTab("rn");
   }, [matrixTabLabel]);
-  const scopedCases = caseTab === "matrix" ? matrixCases : rnCases;
+  const scopedCases = release?.be_release_id
+    ? testCases
+    : caseTab === "matrix"
+      ? matrixCases
+      : rnCases;
   const deviceOptions = useMemo(() => {
     const labels = new Set<string>();
     for (const row of testCases) {
