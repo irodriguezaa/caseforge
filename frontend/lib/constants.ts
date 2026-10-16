@@ -46,12 +46,7 @@ export const BE_SWF_OPTIONS = ["BE Hitss", "BE Nubiral", "BE Neoris"] as const;
 export const BE_CLUSTER_TODOS = "Todos" as const;
 export const BE_CLUSTER_INDIVIDUAL = ["Global", "AUP", "CENAM", "Andina", "Dominicana"] as const;
 export const BE_CLUSTER_OPTIONS = [BE_CLUSTER_TODOS, ...BE_CLUSTER_INDIVIDUAL] as const;
-export const BE_REGRESIVO_SCOPES = ["COMPLETO", "SMOKE", "ACOTADO"] as const;
-export const BE_REGRESIVO_SCOPE_LABEL: Record<(typeof BE_REGRESIVO_SCOPES)[number], string> = {
-  COMPLETO: "Completo",
-  SMOKE: "Smoke",
-  ACOTADO: "Acotado",
-};
+export const BE_REGRESIVO_SCOPES = ["Smoke Test", "Pruebas Acotadas", "Regresión completa", "N/A"] as const;
 
 /** QCO_ZEPHYR_PUBLISH — UI oculta. Código vivo: POST /publish-qco, zephyr_publish, zephyr_mapping.
  *  Retomar cuando QC defina formato Zephyr (Scale), no issues QCO/Test provisionales. */

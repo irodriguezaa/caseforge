@@ -6,9 +6,13 @@ from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 
 class BeRegresivoScope(str, Enum):
-    COMPLETO = "COMPLETO"
-    SMOKE = "SMOKE"
-    ACOTADO = "ACOTADO"
+    SMOKE_TEST = "Smoke Test"
+    PRUEBAS_ACOTADAS = "Pruebas Acotadas"
+    REGRESION_COMPLETA = "Regresión completa"
+    NA = "N/A"
+
+
+BE_QC_SCOPE_VALUES = {item.value for item in BeRegresivoScope}
 
 BE_SWF_VALUES = {"BE Hitss", "BE Nubiral", "BE Neoris"}
 BE_CLUSTER_TODOS = "Todos"
@@ -65,6 +69,7 @@ class BeReleaseRead(BaseModel):
     pdf_filename: str | None
     regresivo_scope: BeRegresivoScope | None
     affected_component: str | None
+    qc_matrix_touched_modules: list[str] | None = None
     start_date: date | None = None
     end_date: date | None = None
     qc_release_id: int | None = None
@@ -94,6 +99,7 @@ class BeReleaseUpdate(BaseModel):
     description: str | None = None
     regresivo_scope: BeRegresivoScope | None = None
     affected_component: str | None = None
+    qc_matrix_touched_modules: list[str] | None = None
     start_date: date | None = None
     end_date: date | None = None
 
@@ -124,6 +130,20 @@ class BeReleaseUpdate(BaseModel):
     @classmethod
     def clusters_must_be_known_and_exclusive(cls, value: list[str] | None) -> list[str] | None:
         return normalize_be_clusters(value)
+
+    @field_validator("regresivo_scope", mode="before")
+    @classmethod
+    def scope_must_be_known(cls, value: object) -> object:
+        if value is None or value == "":
+            return None
+        if isinstance(value, BeRegresivoScope):
+            return value
+        text = str(value).strip()
+        legacy = {"COMPLETO": "Regresión completa", "SMOKE": "Smoke Test", "ACOTADO": "Pruebas Acotadas"}
+        text = legacy.get(text, text)
+        if text not in BE_QC_SCOPE_VALUES:
+            raise ValueError("Alcance QC debe ser Smoke Test, Pruebas Acotadas, Regresión completa o N/A.")
+        return text
 
 
 class BeAnalysisResult(BaseModel):

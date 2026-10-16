@@ -21,7 +21,7 @@ from app.schemas.qc_matrix import (
     QcMatrixSummary,
 )
 from app.services.qc_matrix_io import import_matrix, parse_upload, publish_version, version_to_workbook
-from app.services.qc_matrix_selection import pin_published_matrix, select_matrix_cases
+from app.services.qc_matrix_selection import pin_published_matrix, select_be_matrix_cases, select_matrix_cases
 
 router = APIRouter(prefix="/api/v1/qc-matrices", tags=["qc-matrices"])
 
@@ -110,13 +110,23 @@ def preview_matrix_selection(
         pinned = release.qc_matrix_version_id
         if raw_analysis is None and release.analyses:
             raw_analysis = release.analyses[0].raw_analysis
+    raw = raw_analysis if isinstance(raw_analysis, dict) else None
+    if (platform or "").strip() == "BE":
+        return select_be_matrix_cases(
+            db,
+            validation_type=validation_type,
+            touched_modules=touched,
+            template_values=templates,
+            raw_analysis=raw,
+            pinned_version_id=None,
+        )
     return select_matrix_cases(
         db,
         platform=platform,
         validation_type=validation_type,
         touched_modules=touched,
         template_values=templates,
-        raw_analysis=raw_analysis if isinstance(raw_analysis, dict) else None,
+        raw_analysis=raw,
         pinned_version_id=pinned,
     )
 
@@ -129,21 +139,33 @@ def save_matrix_selection(
     _: AuthUser = Depends(require_status_change),
 ) -> dict:
     release = get_release_or_404(release_id, db)
-    if release.be_release_id is not None or release.operativa_release_id is not None:
-        raise HTTPException(status.HTTP_409_CONFLICT, detail="La matriz QC aplica a Releases App.")
+    if release.operativa_release_id is not None:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail="La matriz QC aplica a Releases App y BE.")
     release.qc_matrix_touched_modules = payload.touched_modules
     release.qc_matrix_template_values = payload.template_values or None
-    pin_published_matrix(db, release)
+    is_be = release.be_release_id is not None or (release.platform or "").strip() == "BE"
+    if not is_be:
+        pin_published_matrix(db, release)
     db.commit()
     db.refresh(release)
     raw = release.analyses[0].raw_analysis if release.analyses else None
+    parsed = raw if isinstance(raw, dict) else None
+    if is_be:
+        return select_be_matrix_cases(
+            db,
+            validation_type=release.validation_type,
+            touched_modules=release.qc_matrix_touched_modules,
+            template_values=release.qc_matrix_template_values,
+            raw_analysis=parsed,
+            pinned_version_id=None,
+        )
     return select_matrix_cases(
         db,
         platform=release.platform,
         validation_type=release.validation_type,
         touched_modules=release.qc_matrix_touched_modules,
         template_values=release.qc_matrix_template_values,
-        raw_analysis=raw if isinstance(raw, dict) else None,
+        raw_analysis=parsed,
         pinned_version_id=release.qc_matrix_version_id,
     )
 

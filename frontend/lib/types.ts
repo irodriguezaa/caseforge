@@ -1,6 +1,7 @@
 export type ReleaseStatus = "DRAFT" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
 export type ReleaseType = "NUEVO" | "REVALIDACION";
 export type AuthRole = "jefe" | "lider" | "tester" | "consulta";
+export type BeRegresivoScope = "Smoke Test" | "Pruebas Acotadas" | "Regresión completa" | "N/A";
 
 export interface AuthUser {
   email: string;
@@ -282,7 +283,7 @@ export interface Release {
   be_release_id: number | null;
   deliverable_name?: string | null;
   swf?: string | null;
-  regresivo_scope?: "COMPLETO" | "SMOKE" | "ACOTADO" | null;
+  regresivo_scope?: BeRegresivoScope | null;
   affected_component?: string | null;
   created_at: string;
   updated_at: string;
@@ -727,7 +728,6 @@ export interface EpcUpdate {
   dispositivos_aplicables?: string[];
 }
 
-export type BeRegresivoScope = "COMPLETO" | "SMOKE" | "ACOTADO";
 export type BeSwf = "BE Hitss" | "BE Nubiral" | "BE Neoris";
 
 export type BeCluster = "Todos" | "Global" | "AUP" | "CENAM" | "Andina" | "Dominicana";
@@ -742,6 +742,7 @@ export interface BeReleaseRead {
   pdf_filename: string | null;
   regresivo_scope: BeRegresivoScope | null;
   affected_component: string | null;
+  qc_matrix_touched_modules?: string[] | null;
   start_date: string | null;
   end_date: string | null;
   qc_release_id?: number | null;
@@ -756,6 +757,7 @@ export interface BeReleaseUpdate {
   description?: string | null;
   regresivo_scope?: BeRegresivoScope | null;
   affected_component?: string | null;
+  qc_matrix_touched_modules?: string[] | null;
   start_date?: string | null;
   end_date?: string | null;
 }

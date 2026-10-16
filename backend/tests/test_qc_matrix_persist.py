@@ -220,6 +220,23 @@ def test_regenerate_keeps_executed_matrix_cases(client, db_session) -> None:
     assert after == {"RG-001": "BLOCKED", "RG-002": "N_A"}
 
 
+def test_be_create_persists_matrix_cases_per_device(client) -> None:
+    _publish(client)
+    created = client.post("/api/v1/releases-be").json()
+    patched = client.patch(
+        f"/api/v1/releases-be/{created['id']}",
+        json={"name": "BE-MATRIX", "swf": "BE Hitss", "regresivo_scope": "Smoke Test"},
+    )
+    assert patched.status_code == 200, patched.text
+    qc = client.post(f"/api/v1/releases-be/{created['id']}/create-release")
+    assert qc.status_code == 201, qc.text
+    assert qc.json()["validation_type"] == "Smoke Test"
+    rows = client.get(f"/api/v1/releases/{qc.json()['id']}/test-cases").json()
+    matrix_rows = [row for row in rows if row["source_type"] == "qc_matrix"]
+    assert [row["test_case_id"] for row in matrix_rows] == ["SM-001"]
+    assert "Dispositivo: WEB" in (matrix_rows[0]["test_data"] or "")
+
+
 def test_na_scope_does_not_persist_matrix_cases(client, db_session) -> None:
     _publish(client)
     release = _release(client, "N/A", ["ACC"])

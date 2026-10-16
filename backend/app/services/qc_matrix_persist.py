@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.models.release import Release
 from app.models.test_case import TestCase, TestCasePriority, TestCaseStatus, TestCaseType
 from app.models.test_step import TestStep
-from app.services.qc_matrix_selection import select_matrix_cases
+from app.services.qc_matrix_selection import select_be_matrix_cases, select_matrix_cases
 
 MATRIX_SOURCE = "qc_matrix"
 SCOPE_PREFIX = {
@@ -28,7 +28,7 @@ _STEP_NUMBER = re.compile(r"^\d+[\.\)\-]\s*")
 
 def persist_selected_matrix_cases(db: Session, release: Release) -> int:
     """Create or refresh matrix test cases for the Release scope. Returns how many exist afterwards."""
-    if release.be_release_id is not None or release.operativa_release_id is not None:
+    if release.operativa_release_id is not None:
         return 0
     prefix = SCOPE_PREFIX.get((release.validation_type or "").strip())
     if prefix is None:
@@ -37,15 +37,26 @@ def persist_selected_matrix_cases(db: Session, release: Release) -> int:
     if release.analyses:
         stored = release.analyses[0].raw_analysis
         raw = stored if isinstance(stored, dict) else None
-    preview = select_matrix_cases(
-        db,
-        platform=release.platform,
-        validation_type=release.validation_type,
-        touched_modules=release.qc_matrix_touched_modules,
-        template_values=release.qc_matrix_template_values,
-        raw_analysis=raw,
-        pinned_version_id=release.qc_matrix_version_id,
-    )
+    is_be = release.be_release_id is not None or (release.platform or "").strip() == "BE"
+    if is_be:
+        preview = select_be_matrix_cases(
+            db,
+            validation_type=release.validation_type,
+            touched_modules=release.qc_matrix_touched_modules,
+            template_values=release.qc_matrix_template_values,
+            raw_analysis=raw,
+            pinned_version_id=None,
+        )
+    else:
+        preview = select_matrix_cases(
+            db,
+            platform=release.platform,
+            validation_type=release.validation_type,
+            touched_modules=release.qc_matrix_touched_modules,
+            template_values=release.qc_matrix_template_values,
+            raw_analysis=raw,
+            pinned_version_id=release.qc_matrix_version_id,
+        )
     existing = list(
         db.execute(
             select(TestCase)
@@ -68,17 +79,17 @@ def persist_selected_matrix_cases(db: Session, release: Release) -> int:
     )
     wanted: set[str] = set()
     for item in preview["cases"]:
-        identity = _identity(item)
+        identity = _identity(item, include_device=is_be)
         wanted.add(identity)
         current = by_identity.get(identity)
         if current is None:
             label = _next_label(prefix, used_ids)
             used_ids.append(label)
-            created = _build(release.id, label, identity, item, preview, release.cluster)
+            created = _build(release.id, label, identity, item, preview, release.cluster, include_device=is_be)
             db.add(created)
             continue
         if current.status == TestCaseStatus.UNEXECUTED:
-            _apply(current, item, preview, release.cluster)
+            _apply(current, item, preview, release.cluster, include_device=is_be)
             _replace_steps(db, current, item)
     for row in existing:
         if row.group_id not in wanted and row.status == TestCaseStatus.UNEXECUTED:
@@ -87,10 +98,13 @@ def persist_selected_matrix_cases(db: Session, release: Release) -> int:
     return len(wanted)
 
 
-def _identity(item: dict) -> str:
+def _identity(item: dict, *, include_device: bool = False) -> str:
     base = (item.get("base_id") or "sin-id").strip()
     provider = (item.get("provider") or "").strip()
-    return f"{base}|{provider}"[:80]
+    if not include_device:
+        return f"{base}|{provider}"[:80]
+    device = (item.get("device_code") or item.get("platform") or "").strip()
+    return f"{base}|{provider}|{device}"[:80]
 
 
 def _label_prefix(test_case_id: str) -> str:
@@ -108,7 +122,16 @@ def _next_label(prefix: str, used_ids: list[str]) -> str:
     return f"{prefix}-{highest + 1:03d}"
 
 
-def _build(release_id: int, label: str, identity: str, item: dict, preview: dict, cluster: str | None) -> TestCase:
+def _build(
+    release_id: int,
+    label: str,
+    identity: str,
+    item: dict,
+    preview: dict,
+    cluster: str | None,
+    *,
+    include_device: bool = False,
+) -> TestCase:
     case = TestCase(
         release_id=release_id,
         test_case_id=label,
@@ -122,12 +145,19 @@ def _build(release_id: int, label: str, identity: str, item: dict, preview: dict
         group_id=identity,
         estimation_hours=None,
     )
-    _apply(case, item, preview, cluster)
+    _apply(case, item, preview, cluster, include_device=include_device)
     case.steps = _step_rows(item)
     return case
 
 
-def _apply(case: TestCase, item: dict, preview: dict, cluster: str | None) -> None:
+def _apply(
+    case: TestCase,
+    item: dict,
+    preview: dict,
+    cluster: str | None,
+    *,
+    include_device: bool = False,
+) -> None:
     title = _title(item)
     users = [str(value) for value in (item.get("user_types") or []) if str(value).strip()]
     case.component = ((item.get("module_name") or item.get("module_key") or "General").strip())[:150]
@@ -139,7 +169,7 @@ def _apply(case: TestCase, item: dict, preview: dict, cluster: str | None) -> No
     case.technical_story = ((item.get("base_id") or "").strip() or None)
     case.test_data = _precondition(item, users, cluster)
     case.scenario_origin = _trace(item, preview)
-    case.group_id = _identity(item)
+    case.group_id = _identity(item, include_device=include_device)
     case.source_type = MATRIX_SOURCE
     case.generated_by_engine = False
     case.estimation_hours = None
@@ -161,14 +191,19 @@ def _precondition(item: dict, users: list[str], cluster: str | None) -> str:
     provider = (item.get("provider") or "").strip()
     if provider:
         parts.append(f"Proveedor: {provider}")
+    device = (item.get("device_code") or item.get("platform") or "").strip()
+    if device:
+        parts.append(f"Dispositivo: {device}")
     return "Precondición: " + " · ".join(parts)
 
 
 def _trace(item: dict, preview: dict) -> str:
-    code = preview.get("matrix_code") or "matriz"
-    version = preview.get("matrix_version") or "sin versión"
+    code = item.get("matrix_code") or preview.get("matrix_code") or "matriz"
+    version = item.get("matrix_version") or preview.get("matrix_version") or "sin versión"
     base = (item.get("base_id") or "sin id").strip()
-    return f"Matriz {code} {version} · id base {base}"
+    device = (item.get("device_code") or "").strip()
+    suffix = f" · {device}" if device else ""
+    return f"Matriz {code} {version} · id base {base}{suffix}"
 
 
 def _priority(severity: str | None) -> TestCasePriority:

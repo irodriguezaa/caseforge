@@ -12,6 +12,7 @@ type ValidationScopeSelectProps = {
   helpId: string;
   onChange: (value: string) => void;
   style?: React.CSSProperties;
+  labels?: readonly string[];
 };
 
 export function ValidationScopeSelect({
@@ -20,8 +21,12 @@ export function ValidationScopeSelect({
   helpId,
   onChange,
   style,
+  labels,
 }: ValidationScopeSelectProps): React.ReactElement {
-  const choices = validationScopeChoices(value);
+  const catalog = labels ? [...labels] : null;
+  const choices = catalog
+    ? [...catalog, ...(value.trim() && !catalog.includes(value) ? [value] : [])]
+    : validationScopeChoices(value);
   return (
     <select
       id={id}

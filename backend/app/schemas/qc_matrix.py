@@ -67,6 +67,13 @@ class QcMatrixCasePreview(BaseModel):
     region: str | None = None
     provider: str | None = None
     pending_templates: list[str] = Field(default_factory=list)
+    platform: str | None = None
+    device_code: str | None = None
+    matrix_code: str | None = None
+    matrix_version: str | None = None
+    device_note: str = ""
+    user_types: list[str] = Field(default_factory=list)
+    module_name: str = ""
 
 
 class QcMatrixPreviewModule(QcMatrixModuleRead):

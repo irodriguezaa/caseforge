@@ -64,6 +64,14 @@ export const VALIDATION_SCOPES: readonly ValidationScope[] = [
   },
 ] as const;
 
+/** Subset used by Release BE. Same labels and matrix rules as App; devices are all OTT/IPTV. */
+export const BE_VALIDATION_SCOPE_LABELS = [
+  "Smoke Test",
+  "Pruebas Acotadas",
+  "Regresión completa",
+  "N/A",
+] as const;
+
 const SCOPE_BY_LABEL = new Map(VALIDATION_SCOPES.map((scope) => [scope.label, scope]));
 
 export function validationScopeByLabel(value: string | null | undefined): ValidationScope | null {

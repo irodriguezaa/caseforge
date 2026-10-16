@@ -326,3 +326,30 @@ def test_selection_columns_migration_is_reversible() -> None:
     columns = {column["name"] for column in inspect(engine).get_columns("releases")}
     assert "qc_matrix_touched_modules" in columns
     assert "qc_matrix_template_values" in columns
+
+
+def test_be_preview_unions_unique_mapped_devices(client) -> None:
+    _publish(client)
+    preview = client.post(
+        "/api/v1/qc-matrices/preview",
+        json={"platform": "BE", "validation_type": "Smoke Test"},
+    )
+    assert preview.status_code == 200, preview.text
+    body = preview.json()
+    assert body["platform"] == "BE"
+    assert body["device_code"] == "ALL"
+    assert [row["base_id"] for row in body["cases"]] == ["NAV-SMK"]
+    assert body["cases"][0]["device_code"] == "WEB"
+    assert "dispositivos" in body["impact_summary"]
+    assert body["show_module_selector"] is False
+
+    acotadas = client.post(
+        "/api/v1/qc-matrices/preview",
+        json={"platform": "BE", "validation_type": "Pruebas Acotadas", "touched_modules": ["NAV"]},
+    )
+    assert acotadas.status_code == 200, acotadas.text
+    ids = {(row["base_id"], row["device_code"]) for row in acotadas.json()["cases"]}
+    assert ("NAV-SMK", "WEB") in ids
+    assert ("NAV-MX", "WEB") in ids
+    assert ("NAV-WIN", "WIN") in ids
+    assert acotadas.json()["show_module_selector"] is True

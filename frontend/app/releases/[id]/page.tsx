@@ -35,7 +35,7 @@ import {
 } from "@/lib/releaseCaseSelection";
 import { MatrixScopeEditor } from "@/app/components/MatrixScopeEditor";
 import { ValidationScopeSelect, ValidationScopeSummary } from "@/app/components/ValidationScopeField";
-import { BE_REGRESIVO_SCOPE_LABEL, OPERATIVA_DEVICE_OPTIONS, SHOW_QCO_ZEPHYR_PUBLISH } from "@/lib/constants";
+import { OPERATIVA_DEVICE_OPTIONS, SHOW_QCO_ZEPHYR_PUBLISH } from "@/lib/constants";
 import { calculateBusinessDays } from "@/lib/dateUtils";
 import { nextTestCaseId } from "@/lib/testCaseId";
 import { QC_ESTIMATION_TOOLTIP, QC_HOURS_PER_DAY, QC_OPERATIVA_ESTIMATION_TOOLTIP, durationDays, estimateOperativaEffort, estimateReleaseEffortFromCases, estimateReleaseEffortLegacyCount, hoursByTechnicalEpic, progressByTechnicalEpic, rnScopeCoverage, rnScopeEpicKeys, stripDeviceFromCaseName } from "@/lib/qcEffort";
@@ -638,19 +638,11 @@ export default function ReleaseDetailPage(): React.ReactElement {
                 <span style={{ fontWeight: 600 }}>{release.cluster ?? "—"}</span>
               </div>
               <div>
-                <span className="muted" style={{ display: "block", fontSize: "11px", textTransform: "uppercase" }}>Alcance de regresivo</span>
+                <span className="muted" style={{ display: "block", fontSize: "11px", textTransform: "uppercase" }}>Alcance QC</span>
                 <span style={{ fontWeight: 600 }}>
-                  {release.regresivo_scope
-                    ? BE_REGRESIVO_SCOPE_LABEL[release.regresivo_scope]
-                    : "—"}
+                  {release.validation_type || release.regresivo_scope || "—"}
                 </span>
               </div>
-              {release.regresivo_scope === "ACOTADO" && (
-                <div style={{ gridColumn: "1 / -1" }}>
-                  <span className="muted" style={{ display: "block", fontSize: "11px", textTransform: "uppercase" }}>Componente / Funcionalidad Afectada</span>
-                  <span style={{ fontWeight: 600 }}>{release.affected_component ?? "—"}</span>
-                </div>
-              )}
             </>
           ) : (
             <>
@@ -752,11 +744,17 @@ export default function ReleaseDetailPage(): React.ReactElement {
               )}
             </>
           )}
-          {isApp && (
+          {(isApp || isBe) && (
             <div style={{ gridColumn: "1 / -1" }}>
               <ValidationScopeSummary
                 id="planning-validation-help"
-                value={editingPlanning && canEditAppsPlanning ? planningForm.validationType : release.validation_type}
+                value={
+                  isBe
+                    ? (release.validation_type || release.regresivo_scope)
+                    : editingPlanning && canEditAppsPlanning
+                      ? planningForm.validationType
+                      : release.validation_type
+                }
                 qcResources={editingPlanning && canEditAppsPlanning ? planningForm.qcResources : release.qc_resources}
                 matrixCaseCount={matrixImpact?.caseCount}
                 matrixNote={matrixImpact?.note}
@@ -767,9 +765,11 @@ export default function ReleaseDetailPage(): React.ReactElement {
                 platform={release.platform}
                 cluster={release.cluster}
                 validationType={
-                  editingPlanning && canEditAppsPlanning
-                    ? planningForm.validationType
-                    : (release.validation_type ?? "")
+                  isBe
+                    ? (release.validation_type || release.regresivo_scope || "")
+                    : editingPlanning && canEditAppsPlanning
+                      ? planningForm.validationType
+                      : (release.validation_type ?? "")
                 }
                 rawAnalysis={analysis?.raw_analysis}
                 releaseId={release.id}

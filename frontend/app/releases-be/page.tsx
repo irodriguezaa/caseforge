@@ -4,12 +4,15 @@ import { FileText, Upload } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { MatrixScopeEditor } from "@/app/components/MatrixScopeEditor";
 import { StatusBadge } from "@/app/components/StatusBadge";
+import { ValidationScopeSelect, ValidationScopeSummary } from "@/app/components/ValidationScopeField";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { BE_CLUSTER_OPTIONS, BE_CLUSTER_TODOS, BE_REGRESIVO_SCOPE_LABEL, BE_REGRESIVO_SCOPES, BE_SWF_OPTIONS } from "@/lib/constants";
+import { BE_CLUSTER_OPTIONS, BE_CLUSTER_TODOS, BE_SWF_OPTIONS } from "@/lib/constants";
 import { calculateBusinessDays } from "@/lib/dateUtils";
 import type { BeCluster, BeRegresivoScope, BeReleaseRead, BeReleaseUpdate } from "@/lib/types";
+import { BE_VALIDATION_SCOPE_LABELS } from "@/lib/validationScope";
 
 type RnSource = "with_rn" | "without_rn" | null;
 
@@ -127,12 +130,8 @@ export default function ReleaseBePage(): React.ReactElement {
   const clusterLabel = (clusters: string[] | null | undefined): string =>
     clusters && clusters.length > 0 ? clusters.join(", ") : "—";
 
-  const regresivoScopeLabel = (scope: string | null | undefined): string => {
-    if (scope === "COMPLETO" || scope === "SMOKE" || scope === "ACOTADO") {
-      return BE_REGRESIVO_SCOPE_LABEL[scope];
-    }
-    return "—";
-  };
+  const regresivoScopeLabel = (scope: string | null | undefined): string =>
+    (scope ?? "").trim() || "—";
 
   const listedReleases = rows.filter((row) => row.qc_release_id);
   const businessDays = calculateBusinessDays(beRelease?.start_date ?? "", beRelease?.end_date ?? "");
@@ -350,23 +349,35 @@ export default function ReleaseBePage(): React.ReactElement {
             <h2>Paso 3. Configuración</h2>
           </div>
           <div className="form-field">
-            <label htmlFor="be-scope">Alcance de regresivo</label>
-            <select
+            <label htmlFor="be-scope">Alcance QC</label>
+            <ValidationScopeSelect
               id="be-scope"
+              helpId="be-scope-help"
               value={beRelease.regresivo_scope ?? ""}
-              onChange={(e) =>
+              labels={BE_VALIDATION_SCOPE_LABELS}
+              onChange={(value) =>
                 void patchRelease({
-                  regresivo_scope: (e.target.value || null) as BeRegresivoScope | null,
+                  regresivo_scope: (value || null) as BeRegresivoScope | null,
                 })
               }
-            >
-              <option value="">Selecciona…</option>
-              {BE_REGRESIVO_SCOPES.map((scope) => (
-                <option key={scope} value={scope}>
-                  {BE_REGRESIVO_SCOPE_LABEL[scope]}
-                </option>
-              ))}
-            </select>
+            />
+          </div>
+          <div className="form-field full" style={{ marginTop: "12px" }}>
+            <ValidationScopeSummary
+              id="be-scope-help"
+              value={beRelease.regresivo_scope}
+              hideEstimate
+            />
+            <MatrixScopeEditor
+              platform="BE"
+              cluster={clusterLabel(beRelease.clusters) === "—" ? null : clusterLabel(beRelease.clusters)}
+              validationType={beRelease.regresivo_scope ?? ""}
+              touchedModules={beRelease.qc_matrix_touched_modules ?? null}
+              templateValues={null}
+              onTouchedModules={(modules) => void patchRelease({ qc_matrix_touched_modules: modules })}
+              onTemplateValues={() => undefined}
+              onPreview={() => undefined}
+            />
           </div>
           <div className="form-grid" style={{ marginTop: "12px" }}>
             <div className="form-field">
@@ -404,17 +415,6 @@ export default function ReleaseBePage(): React.ReactElement {
               </div>
             </div>
           </div>
-          {beRelease.regresivo_scope === "ACOTADO" && (
-            <div className="form-field full" style={{ marginTop: "12px" }}>
-              <label htmlFor="be-component">Componente / Funcionalidad Afectada:</label>
-              <textarea
-                id="be-component"
-                placeholder="Ej. Login, autenticación, playback, pagos..."
-                defaultValue={beRelease.affected_component ?? ""}
-                onBlur={(e) => void patchRelease({ affected_component: e.target.value || null })}
-              />
-            </div>
-          )}
         </div>
       )}
 

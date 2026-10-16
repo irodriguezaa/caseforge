@@ -63,7 +63,7 @@ def test_list_releases_excludes_be_by_default_and_includes_with_flag(client) -> 
     be_draft = client.post("/api/v1/releases-be").json()
     client.patch(
         f"/api/v1/releases-be/{be_draft['id']}",
-        json={"name": "BE Hidden", "regresivo_scope": "COMPLETO"},
+        json={"name": "BE Hidden", "swf": "BE Hitss", "regresivo_scope": "Regresión completa"},
     )
     be = client.post(f"/api/v1/releases-be/{be_draft['id']}/create-release").json()
 

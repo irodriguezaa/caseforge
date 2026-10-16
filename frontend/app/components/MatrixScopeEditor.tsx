@@ -149,7 +149,9 @@ export function MatrixScopeEditor({
         {preview.matrix_code ? (
           <>
             <p>
-              Matriz {preview.matrix_code} {preview.matrix_version} · {preview.platform} · Cluster: {cluster?.trim() || "—"}
+              Matriz {preview.matrix_code} {preview.matrix_version} ·{" "}
+              {preview.platform === "BE" ? "todos los dispositivos OTT/IPTV" : preview.platform} · Cluster:{" "}
+              {cluster?.trim() || "—"}
             </p>
             <p>
               {scopeName}: {caseLabel(preview.case_count)} de {quantity(moduleCount, "módulo", "módulos")}
@@ -191,7 +193,8 @@ export function MatrixScopeEditor({
     <div className="scope-note" style={{ marginTop: "0.6rem" }}>
       {preview.matrix_code ? (
         <p className="matrix-context">
-          Matriz {preview.matrix_code} {preview.matrix_version} · Dispositivo: {preview.platform} · Cluster:{" "}
+          Matriz {preview.matrix_code} {preview.matrix_version} ·{" "}
+          {preview.platform === "BE" ? "todos los dispositivos OTT/IPTV" : `Dispositivo: ${preview.platform}`} · Cluster:{" "}
           {cluster?.trim() || "—"}.
         </p>
       ) : preview.note ? (

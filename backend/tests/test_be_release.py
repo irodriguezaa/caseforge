@@ -93,7 +93,7 @@ def test_patch_header_and_scope(client) -> None:
             "name": "BE-BILLING",
             "swf": "BE Hitss",
             "description": "Notas de alcance",
-            "regresivo_scope": "ACOTADO",
+            "regresivo_scope": "Pruebas Acotadas",
             "affected_component": "Login",
         },
     )
@@ -103,7 +103,7 @@ def test_patch_header_and_scope(client) -> None:
     assert body["name"] == "BE-BILLING"
     assert body["swf"] == "BE Hitss"
     assert body["description"] == "Notas de alcance"
-    assert body["regresivo_scope"] == "ACOTADO"
+    assert body["regresivo_scope"] == "Pruebas Acotadas"
     assert body["affected_component"] == "Login"
 
 
@@ -111,15 +111,25 @@ def test_patch_scope_completo_clears_component(client) -> None:
     created = client.post("/api/v1/releases-be").json()
     client.patch(
         f"/api/v1/releases-be/{created['id']}",
-        json={"regresivo_scope": "ACOTADO", "affected_component": "Pagos"},
+        json={"regresivo_scope": "Pruebas Acotadas", "affected_component": "Pagos"},
     )
+    response = client.patch(
+        f"/api/v1/releases-be/{created['id']}",
+        json={"regresivo_scope": "Regresión completa"},
+    )
+    assert response.status_code == 200
+    assert response.json()["regresivo_scope"] == "Regresión completa"
+    assert response.json()["affected_component"] is None
+
+
+def test_patch_maps_legacy_scope_codes(client) -> None:
+    created = client.post("/api/v1/releases-be").json()
     response = client.patch(
         f"/api/v1/releases-be/{created['id']}",
         json={"regresivo_scope": "COMPLETO"},
     )
-    assert response.status_code == 200
-    assert response.json()["regresivo_scope"] == "COMPLETO"
-    assert response.json()["affected_component"] is None
+    assert response.status_code == 200, response.text
+    assert response.json()["regresivo_scope"] == "Regresión completa"
 
 
 def test_patch_rejects_unknown_swf(client) -> None:
@@ -193,7 +203,7 @@ def test_create_qc_release_copies_clusters_label(client) -> None:
         json={
             "name": "BE-CLUSTERS",
             "swf": "BE Hitss",
-            "regresivo_scope": "SMOKE",
+            "regresivo_scope": "Smoke Test",
             "clusters": ["CENAM", "AUP"],
         },
     )
@@ -213,7 +223,7 @@ def test_create_qc_release_with_todos_cluster(client) -> None:
         json={
             "name": "BE-TODOS",
             "swf": "BE Neoris",
-            "regresivo_scope": "COMPLETO",
+            "regresivo_scope": "Regresión completa",
             "clusters": ["Todos"],
         },
     )
@@ -226,7 +236,7 @@ def test_create_qc_release_without_pdf(client) -> None:
     created = client.post("/api/v1/releases-be").json()
     client.patch(
         f"/api/v1/releases-be/{created['id']}",
-        json={"name": "BE-NO-RN", "entregable": "Core API", "swf": "BE Nubiral", "regresivo_scope": "SMOKE"},
+        json={"name": "BE-NO-RN", "entregable": "Core API", "swf": "BE Nubiral", "regresivo_scope": "Smoke Test"},
     )
     response = client.post(f"/api/v1/releases-be/{created['id']}/create-release")
     assert response.status_code == 201
@@ -236,10 +246,10 @@ def test_create_qc_release_without_pdf(client) -> None:
     assert body["name"] == "BE-NO-RN"
     assert body["be_release_id"] == created["id"]
     assert body["swf"] == "BE Nubiral"
-    assert body["regresivo_scope"] == "SMOKE"
+    assert body["regresivo_scope"] == "Smoke Test"
     assert body["deliverable_name"] == "Core API"
     assert body["qc_resources"] is None
-    assert body["validation_type"] is None
+    assert body["validation_type"] == "Smoke Test"
     assert body["operativa_release_id"] is None
     assert body["start_date"] is None
     assert body["end_date"] is None
@@ -258,7 +268,7 @@ def test_create_qc_release_copies_dates_and_business_days(client) -> None:
         json={
             "name": "BE-DATES",
             "swf": "BE Hitss",
-            "regresivo_scope": "SMOKE",
+            "regresivo_scope": "Smoke Test",
             "start_date": "2026-09-07",
             "end_date": "2026-09-11",
         },
@@ -280,7 +290,7 @@ def test_patch_dates_after_create_syncs_qc_release(client) -> None:
     created = client.post("/api/v1/releases-be").json()
     client.patch(
         f"/api/v1/releases-be/{created['id']}",
-        json={"name": "BE-SYNC-DATES", "swf": "BE Neoris", "regresivo_scope": "COMPLETO"},
+        json={"name": "BE-SYNC-DATES", "swf": "BE Neoris", "regresivo_scope": "Regresión completa"},
     )
     qc = client.post(f"/api/v1/releases-be/{created['id']}/create-release").json()
     assert qc["start_date"] is None
@@ -300,7 +310,7 @@ def test_create_qc_release_is_idempotent(client) -> None:
     created = client.post("/api/v1/releases-be").json()
     client.patch(
         f"/api/v1/releases-be/{created['id']}",
-        json={"name": "BE-ONCE", "swf": "BE Neoris", "regresivo_scope": "COMPLETO"},
+        json={"name": "BE-ONCE", "swf": "BE Neoris", "regresivo_scope": "Regresión completa"},
     )
     first = client.post(f"/api/v1/releases-be/{created['id']}/create-release")
     assert first.status_code == 201
@@ -324,15 +334,15 @@ def test_create_qc_release_requires_name_scope_and_swf(client) -> None:
     assert missing_scope.status_code == 400
 
 
-def test_create_qc_release_acotado_requires_component(client) -> None:
+def test_create_qc_release_acotado_requires_modules(client) -> None:
     created = client.post("/api/v1/releases-be").json()
     client.patch(
         f"/api/v1/releases-be/{created['id']}",
-        json={"name": "BE-ACOTADO", "swf": "BE Hitss", "regresivo_scope": "ACOTADO"},
+        json={"name": "BE-ACOTADO", "swf": "BE Hitss", "regresivo_scope": "Pruebas Acotadas"},
     )
     response = client.post(f"/api/v1/releases-be/{created['id']}/create-release")
     assert response.status_code == 400
-    assert "Acotado" in response.json()["detail"]
+    assert "módulos" in response.json()["detail"]
 
 
 def test_be_release_is_excluded_from_apps_list(client) -> None:
@@ -344,7 +354,7 @@ def test_be_release_is_excluded_from_apps_list(client) -> None:
     created = client.post("/api/v1/releases-be").json()
     client.patch(
         f"/api/v1/releases-be/{created['id']}",
-        json={"name": "BE-HIDDEN", "swf": "BE Neoris", "regresivo_scope": "SMOKE"},
+        json={"name": "BE-HIDDEN", "swf": "BE Neoris", "regresivo_scope": "Smoke Test"},
     )
     qc = client.post(f"/api/v1/releases-be/{created['id']}/create-release")
     assert qc.status_code == 201
@@ -374,7 +384,7 @@ def test_list_be_release_exposes_qc_release_id_after_create(client) -> None:
     created = client.post("/api/v1/releases-be").json()
     client.patch(
         f"/api/v1/releases-be/{created['id']}",
-        json={"name": "BE-OPEN", "swf": "BE Hitss", "regresivo_scope": "SMOKE", "clusters": ["AUP"]},
+        json={"name": "BE-OPEN", "swf": "BE Hitss", "regresivo_scope": "Smoke Test", "clusters": ["AUP"]},
     )
     qc = client.post(f"/api/v1/releases-be/{created['id']}/create-release")
     assert qc.status_code == 201, qc.text
@@ -405,7 +415,7 @@ def test_delete_be_qc_release_removes_be_row_and_keeps_others(client) -> None:
     keep = client.post("/api/v1/releases-be").json()
     client.patch(
         f"/api/v1/releases-be/{keep['id']}",
-        json={"name": "BE-KEEP", "swf": "BE Neoris", "regresivo_scope": "COMPLETO"},
+        json={"name": "BE-KEEP", "swf": "BE Neoris", "regresivo_scope": "Regresión completa"},
     )
     keep_qc = client.post(f"/api/v1/releases-be/{keep['id']}/create-release")
     assert keep_qc.status_code == 201
@@ -413,7 +423,7 @@ def test_delete_be_qc_release_removes_be_row_and_keeps_others(client) -> None:
     target = client.post("/api/v1/releases-be").json()
     client.patch(
         f"/api/v1/releases-be/{target['id']}",
-        json={"name": "BE-DROP", "swf": "BE Hitss", "regresivo_scope": "SMOKE", "clusters": ["Todos"]},
+        json={"name": "BE-DROP", "swf": "BE Hitss", "regresivo_scope": "Smoke Test", "clusters": ["Todos"]},
     )
     target_qc = client.post(f"/api/v1/releases-be/{target['id']}/create-release")
     assert target_qc.status_code == 201
@@ -434,7 +444,7 @@ def test_delete_be_qc_release_via_release_endpoint_also_removes_be_row(client) -
     created = client.post("/api/v1/releases-be").json()
     client.patch(
         f"/api/v1/releases-be/{created['id']}",
-        json={"name": "BE-VIA-REL", "swf": "BE Nubiral", "regresivo_scope": "SMOKE"},
+        json={"name": "BE-VIA-REL", "swf": "BE Nubiral", "regresivo_scope": "Smoke Test"},
     )
     qc = client.post(f"/api/v1/releases-be/{created['id']}/create-release").json()
     response = client.delete(f"/api/v1/releases/{qc['id']}")
@@ -446,7 +456,7 @@ def test_can_delete_in_progress_be_release(client) -> None:
     created = client.post("/api/v1/releases-be").json()
     client.patch(
         f"/api/v1/releases-be/{created['id']}",
-        json={"name": "BE-LIVE", "swf": "BE Hitss", "regresivo_scope": "SMOKE"},
+        json={"name": "BE-LIVE", "swf": "BE Hitss", "regresivo_scope": "Smoke Test"},
     )
     qc = client.post(f"/api/v1/releases-be/{created['id']}/create-release").json()
     client.patch(f"/api/v1/releases/{qc['id']}", json={"status": "IN_PROGRESS"})
@@ -460,7 +470,7 @@ def test_can_delete_cancelled_be_release(client) -> None:
     created = client.post("/api/v1/releases-be").json()
     client.patch(
         f"/api/v1/releases-be/{created['id']}",
-        json={"name": "BE-CANCELLED", "swf": "BE Hitss", "regresivo_scope": "SMOKE"},
+        json={"name": "BE-CANCELLED", "swf": "BE Hitss", "regresivo_scope": "Smoke Test"},
     )
     qc = client.post(f"/api/v1/releases-be/{created['id']}/create-release").json()
     client.patch(f"/api/v1/releases/{qc['id']}", json={"status": "CANCELLED"})

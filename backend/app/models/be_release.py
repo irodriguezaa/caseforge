@@ -30,9 +30,10 @@ class BeRelease(Base):
     # Optional: some BE regresivos arrive with no Release Note.
     pdf_filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
-    # COMPLETO | SMOKE | ACOTADO — stored as text (not Release.validation_type).
-    regresivo_scope: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # App validation labels: Smoke Test | Pruebas Acotadas | Regresión completa | N/A.
+    regresivo_scope: Mapped[str | None] = mapped_column(String(80), nullable=True)
     affected_component: Mapped[str | None] = mapped_column(Text, nullable=True)
+    qc_matrix_touched_modules: Mapped[list | None] = mapped_column(JSON, nullable=True)
 
     # Paso 3: ventana QC (mismos campos que Operativa / Apps). Días hábiles se calculan al crear el QC Release.
     start_date: Mapped[date | None] = mapped_column(Date, nullable=True)

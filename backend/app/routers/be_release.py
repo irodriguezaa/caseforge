@@ -1,6 +1,6 @@
 """Release BE router -- optional RN, header/config, create QC Release.
 
-NOT implemented: Matriz QC, generación de casos, estimación, recursos QC.
+Matriz QC uses App scope labels on every mapped OTT/IPTV device.
 """
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
@@ -23,6 +23,8 @@ from app.schemas.be_release import (
     be_clusters_as_release_label,
 )
 from app.schemas.release import ReleaseRead
+from app.services.be_rn_analyzer import extract_be_rn_header
+from app.services.qc_matrix_persist import persist_selected_matrix_cases
 from app.services.release_note_analyzer import calculate_business_days
 
 router = APIRouter(prefix="/api/v1/releases-be", tags=["releases-be"])
@@ -109,13 +111,14 @@ def create_qc_release_from_be(be_release_id: int, db: Session = Depends(get_db))
     if not be_release.regresivo_scope:
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
-            detail="El Alcance de regresivo es obligatorio para crear el Release BE.",
+            detail="El Alcance QC es obligatorio para crear el Release BE.",
         )
-    if be_release.regresivo_scope == BeRegresivoScope.ACOTADO.value:
-        if not be_release.affected_component or not be_release.affected_component.strip():
+    if be_release.regresivo_scope == BeRegresivoScope.PRUEBAS_ACOTADAS.value:
+        modules = [str(key).strip() for key in (be_release.qc_matrix_touched_modules or []) if str(key).strip()]
+        if not modules:
             raise HTTPException(
                 status.HTTP_400_BAD_REQUEST,
-                detail="Componente / Funcionalidad Afectada es obligatorio cuando el alcance es Acotado.",
+                detail="Pruebas Acotadas requiere los módulos de la matriz QC.",
             )
 
     deliverable = _resolve_deliverable(be_release.entregable, db)
@@ -130,7 +133,8 @@ def create_qc_release_from_be(be_release_id: int, db: Session = Depends(get_db))
         end_date=be_release.end_date,
         execution_days=execution_days or None,
         qc_resources=None,
-        validation_type=None,
+        validation_type=be_release.regresivo_scope,
+        qc_matrix_touched_modules=be_release.qc_matrix_touched_modules,
         deliverable_id=deliverable.id if deliverable else None,
         be_release_id=be_release.id,
     )
@@ -150,6 +154,7 @@ def create_qc_release_from_be(be_release_id: int, db: Session = Depends(get_db))
             detail="A release with this name, version and platform already exists.",
         ) from exc
 
+    persist_selected_matrix_cases(db, release)
     db.commit()
     db.refresh(release)
     return to_release_read(release)
@@ -184,17 +189,25 @@ def update_be_release(
     if "regresivo_scope" in updates and updates["regresivo_scope"] is not None:
         scope = updates["regresivo_scope"]
         updates["regresivo_scope"] = scope.value if isinstance(scope, BeRegresivoScope) else scope
-        if updates["regresivo_scope"] != BeRegresivoScope.ACOTADO.value and "affected_component" not in updates:
+        if (
+            updates["regresivo_scope"] != BeRegresivoScope.PRUEBAS_ACOTADAS.value
+            and "affected_component" not in updates
+        ):
             updates["affected_component"] = None
     for field, value in updates.items():
         setattr(be_release, field, value)
     qc_release = be_release.qc_release
-    if qc_release is not None and {"start_date", "end_date"} & updates.keys():
-        qc_release.start_date = be_release.start_date
-        qc_release.end_date = be_release.end_date
-        qc_release.execution_days = calculate_business_days(
-            be_release.start_date, be_release.end_date
-        ) or None
+    if qc_release is not None:
+        if "regresivo_scope" in updates:
+            qc_release.validation_type = be_release.regresivo_scope
+        if "qc_matrix_touched_modules" in updates:
+            qc_release.qc_matrix_touched_modules = be_release.qc_matrix_touched_modules
+        if {"start_date", "end_date"} & updates.keys():
+            qc_release.start_date = be_release.start_date
+            qc_release.end_date = be_release.end_date
+            qc_release.execution_days = calculate_business_days(
+                be_release.start_date, be_release.end_date
+            ) or None
     db.commit()
     db.refresh(be_release)
     return be_release

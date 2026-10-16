@@ -39,6 +39,8 @@ PLATFORM_MATRIX: dict[str, tuple[str, str]] = {
     "IPTV AOSP": ("IPTV", "STB TATA"),
 }
 
+BE_PLATFORM = "BE"
+
 TATA_STV_WITHOUT_COLUMN = (
     "STV Tata Samsung",
     "STV Tata Hisense",
@@ -258,6 +260,130 @@ def select_matrix_cases(
         "note": note,
         "impact_summary": summary,
         "show_module_selector": scope in _SELECTOR_SCOPES,
+        "deduplicated": False,
+    }
+
+
+def unique_matrix_devices() -> list[tuple[str, str, str]]:
+    """One (platform, matrix, device) per matrix column. Kepler shares FireTV's FTV column."""
+    seen: set[tuple[str, str]] = set()
+    targets: list[tuple[str, str, str]] = []
+    for platform, (matrix_code, device_code) in PLATFORM_MATRIX.items():
+        key = (matrix_code, device_code)
+        if key in seen:
+            continue
+        seen.add(key)
+        targets.append((platform, matrix_code, device_code))
+    return targets
+
+
+def select_be_matrix_cases(
+    db: Session,
+    *,
+    validation_type: str | None,
+    touched_modules: list[str] | None,
+    template_values: dict[str, str] | None,
+    raw_analysis: dict | None,
+    pinned_version_id: int | None,
+) -> dict[str, Any]:
+    """Same App scope rules, run on every mapped OTT/IPTV device. The backend is what changed."""
+    targets = unique_matrix_devices()
+    merged_cases: list[dict[str, Any]] = []
+    modules_by_key: dict[str, dict[str, Any]] = {}
+    suggestions_by_key: dict[str, dict[str, Any]] = {}
+    suggested_order: list[str] = []
+    touched_union: list[str] = []
+    related_union: list[str] = []
+    notes: list[str] = []
+    versions: list[str] = []
+    payment: list[str] = []
+    providers: list[str] = []
+    last_good: dict[str, Any] | None = None
+    for platform, matrix_code, device_code in targets:
+        preview = select_matrix_cases(
+            db,
+            platform=platform,
+            validation_type=validation_type,
+            touched_modules=touched_modules,
+            template_values=template_values,
+            raw_analysis=raw_analysis,
+            pinned_version_id=pinned_version_id,
+        )
+        if preview.get("matrix_code"):
+            version = f"{preview.get('matrix_code')} {preview.get('matrix_version') or ''}".strip()
+            if version not in versions:
+                versions.append(version)
+            last_good = preview
+        note = (preview.get("note") or "").strip()
+        if note:
+            notes.append(note)
+        for row in preview.get("cases") or []:
+            stamped = dict(row)
+            stamped["platform"] = platform
+            stamped["device_code"] = preview.get("device_code") or device_code
+            stamped["matrix_code"] = preview.get("matrix_code") or matrix_code
+            stamped["matrix_version"] = preview.get("matrix_version") or ""
+            merged_cases.append(stamped)
+        for module in preview.get("modules") or []:
+            key = module["module_key"]
+            existing = modules_by_key.get(key)
+            if existing is None:
+                modules_by_key[key] = dict(module)
+            else:
+                existing["device_case_count"] = int(existing.get("device_case_count") or 0) + int(
+                    module.get("device_case_count") or 0
+                )
+        for item in preview.get("suggestions") or []:
+            key = item["module_key"]
+            if key not in suggestions_by_key:
+                suggestions_by_key[key] = item
+                suggested_order.append(key)
+        for key in preview.get("touched_modules") or []:
+            if key not in touched_union:
+                touched_union.append(key)
+        for key in preview.get("related_modules") or []:
+            if key not in related_union:
+                related_union.append(key)
+        for method in preview.get("payment_methods_mx") or []:
+            if method not in payment:
+                payment.append(method)
+        for name in preview.get("providers_applied") or []:
+            if name not in providers:
+                providers.append(name)
+
+    scope = (validation_type or "").strip()
+    count = len(merged_cases)
+    unique_notes = list(dict.fromkeys(notes))
+    note = ""
+    if count == 0:
+        if scope == "N/A":
+            note = "No se incorporan casos de matriz por este concepto."
+        elif unique_notes:
+            note = unique_notes[0]
+    verb = "Se agregará" if count == 1 else "Se agregarán"
+    summary = f"{verb} {_quantity(count, 'caso', 'casos')} en {_quantity(len(targets), 'dispositivo', 'dispositivos')} OTT/IPTV."
+    base = last_good or _empty(BE_PLATFORM, validation_type, note=note)
+    return {
+        **base,
+        "platform": BE_PLATFORM,
+        "device_code": "ALL",
+        "matrix_code": "OTT+IPTV" if versions else "",
+        "matrix_version_id": None,
+        "matrix_version": ", ".join(versions),
+        "validation_type": scope,
+        "suggested_modules": suggested_order,
+        "suggestions": [suggestions_by_key[key] for key in suggested_order],
+        "touched_modules": touched_union,
+        "related_modules": related_union,
+        "payment_methods_mx": payment,
+        "transactions_included": bool(payment),
+        "providers_applied": providers,
+        "modules": list(modules_by_key.values()),
+        "case_count": count,
+        "cases": merged_cases,
+        "note": note,
+        "impact_summary": summary if scope not in {"", "N/A"} else "",
+        "show_module_selector": scope == "Pruebas Acotadas" and bool(modules_by_key),
         "deduplicated": False,
     }
 
