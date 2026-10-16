@@ -72,6 +72,19 @@ export const BE_VALIDATION_SCOPE_LABELS = [
   "N/A",
 ] as const;
 
+/** BE effort is the Alcance QC only. It does not use the test-case count. */
+export const BE_QC_SCOPE_HOURS: Record<(typeof BE_VALIDATION_SCOPE_LABELS)[number], number> = {
+  "Smoke Test": 3,
+  "Pruebas Acotadas": 2,
+  "Regresión completa": 8,
+  "N/A": 0,
+};
+
+export function beQcScopeHours(value: string | null | undefined): number {
+  const key = (value ?? "").trim() as (typeof BE_VALIDATION_SCOPE_LABELS)[number];
+  return BE_QC_SCOPE_HOURS[key] ?? 0;
+}
+
 const SCOPE_BY_LABEL = new Map(VALIDATION_SCOPES.map((scope) => [scope.label, scope]));
 
 export function validationScopeByLabel(value: string | null | undefined): ValidationScope | null {

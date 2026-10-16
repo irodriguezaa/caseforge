@@ -38,8 +38,8 @@ import { ValidationScopeSelect, ValidationScopeSummary } from "@/app/components/
 import { OPERATIVA_DEVICE_OPTIONS, SHOW_QCO_ZEPHYR_PUBLISH } from "@/lib/constants";
 import { calculateBusinessDays } from "@/lib/dateUtils";
 import { nextTestCaseId } from "@/lib/testCaseId";
-import { QC_ESTIMATION_TOOLTIP, QC_HOURS_PER_DAY, QC_OPERATIVA_ESTIMATION_TOOLTIP, durationDays, estimateOperativaEffort, estimateReleaseEffortFromCases, estimateReleaseEffortLegacyCount, hoursByTechnicalEpic, progressByTechnicalEpic, rnScopeCoverage, rnScopeEpicKeys, stripDeviceFromCaseName } from "@/lib/qcEffort";
-import { validationScopeHours } from "@/lib/validationScope";
+import { QC_ESTIMATION_TOOLTIP, QC_HOURS_PER_DAY, QC_OPERATIVA_ESTIMATION_TOOLTIP, durationDays, estimateOperativaEffort, estimateReleaseEffortFromCases, hoursByTechnicalEpic, progressByTechnicalEpic, rnScopeCoverage, rnScopeEpicKeys, stripDeviceFromCaseName } from "@/lib/qcEffort";
+import { beQcScopeHours, validationScopeHours } from "@/lib/validationScope";
 import type { CoverageMatrixResponse, EpcRead, GenerateCasesResponse, PublishCasesResponse, Release, ReleaseAnalysis, ReleaseStatus, TestCase } from "@/lib/types";
 import { JiraFilterLink } from "@/app/components/JiraFilterLink";
 import { jiraIssueUrl, parseJiraFilterId, parseJiraTicketKeys } from "@/lib/jira";
@@ -386,21 +386,25 @@ export default function ReleaseDetailPage(): React.ReactElement {
   useEffect(() => {
     if (!matrixTabLabel) setCaseTab("rn");
   }, [matrixTabLabel]);
-  const scopedCases = release?.be_release_id
-    ? testCases
-    : caseTab === "matrix"
-      ? matrixCases
-      : rnCases;
+  const scopedCases = useMemo(() => {
+    if (release?.be_release_id) {
+      return testCases.map((row) => {
+        const device = beMatrixDevice(row);
+        return device === (row.device || "").trim() ? row : { ...row, device: device || null };
+      });
+    }
+    return caseTab === "matrix" ? matrixCases : rnCases;
+  }, [release?.be_release_id, testCases, caseTab, matrixCases, rnCases]);
   const deviceOptions = useMemo(() => {
     const labels = new Set<string>();
-    for (const row of testCases) {
+    for (const row of scopedCases) {
       const label = (row.device || "").trim();
       if (label) {
         labels.add(label);
       }
     }
     return [...labels].sort((a, b) => a.localeCompare(b, "es"));
-  }, [testCases]);
+  }, [scopedCases]);
   const componentOptions = useMemo(
     () => uniqueSorted(scopedCases.map((row) => componentLabel(row))),
     [scopedCases],
@@ -522,7 +526,7 @@ export default function ReleaseDetailPage(): React.ReactElement {
   const isBe = Boolean(release.be_release_id);
   const isOperativa = Boolean(release.operativa_release_id);
   const isApp = !isBe && !isOperativa;
-  const caseTableCols = 10;
+  const caseTableCols = isBe ? 9 : 10;
   const backHref = isBe ? "/releases-be" : isOperativa ? "/operativas/release-notes" : "/releases";
   const backLabel = isBe
     ? "← Volver a Release BE"
@@ -531,17 +535,20 @@ export default function ReleaseDetailPage(): React.ReactElement {
       : "← Volver a Releases";
   const hasEngineCases = testCases.some((row) => row.generated_by_engine);
   const canEditAppsPlanning = isApp && release.status === "IN_PROGRESS" && canChangeReleaseStatus;
-  const { hours: caseHours, days: estimationDays } = isOperativa
+  const { hours: caseHours, days: caseDays } = isOperativa
     ? estimateOperativaEffort(visibleCases)
     : isApp
       ? estimateReleaseEffortFromCases(visibleCases)
-      : estimateReleaseEffortLegacyCount(visibleCases.length);
-  const scopeHours = isApp
-    ? validationScopeHours(
-        editingPlanning && canEditAppsPlanning ? planningForm.validationType : release.validation_type,
-      )
-    : 0;
-  const estimationHours = caseHours + scopeHours;
+      : { hours: 0, days: 0 };
+  const scopeHours = isBe
+    ? beQcScopeHours(release.validation_type || release.regresivo_scope)
+    : isApp
+      ? validationScopeHours(
+          editingPlanning && canEditAppsPlanning ? planningForm.validationType : release.validation_type,
+        )
+      : 0;
+  const estimationHours = isBe ? scopeHours : caseHours + scopeHours;
+  const estimationDays = isBe ? scopeHours / QC_HOURS_PER_DAY : caseDays;
   const qcResources =
     isApp && editingPlanning ? Math.max(1, Number(planningForm.qcResources) || 1) : (release.qc_resources ?? 1);
   const liveExecutionDays =
@@ -1072,7 +1079,7 @@ export default function ReleaseDetailPage(): React.ReactElement {
                     { label: "Recursos QC", value: String(qcResources) },
                   ]
                 : [
-                    { label: "Esfuerzo estimado QC", value: `${estimationHours.toFixed(1)} h`, tip: QC_ESTIMATION_TOOLTIP },
+                    { label: "Esfuerzo estimado QC", value: `${estimationHours.toFixed(1)} h`, tip: BE_QC_ESTIMATION_TOOLTIP },
                     { label: "≈ Días QC", value: estimationDays.toFixed(1) },
                   ]),
             { label: "UNEXECUTED", value: String(statusCounts.UNEXECUTED || 0) },
@@ -1261,6 +1268,8 @@ export default function ReleaseDetailPage(): React.ReactElement {
                   "Technical Story"
                 )}
               </th>
+            ) : isBe ? (
+              <th>Dispositivo</th>
             ) : (
               <>
                 <th>Ecosistema</th>
@@ -1334,6 +1343,8 @@ export default function ReleaseDetailPage(): React.ReactElement {
               )}
               {isApp ? (
                 <td>{testCase.technical_story?.trim() || "—"}</td>
+              ) : isBe ? (
+                <td>{testCase.device?.trim() || "—"}</td>
               ) : (
                 <>
                   <td>{testCase.ecosystem ?? "—"}</td>
@@ -1424,6 +1435,24 @@ const MATRIX_SCOPE_LABELS = new Set([
   "No Afectación",
   "Regresión completa",
 ]);
+
+const BE_QC_ESTIMATION_TOOLTIP =
+  "Release BE: el esfuerzo es el del Alcance QC (Smoke Test 3 h, Pruebas Acotadas 2 h, Regresión completa 8 h). No depende del número de casos. Días QC = horas / 6.";
+
+function beMatrixDevice(row: TestCase): string {
+  const stored = (row.device || "").trim();
+  if (stored) return stored;
+  const fromData = (row.test_data || "").match(/Dispositivo:\s*([^·\n]+)/i);
+  if (fromData?.[1]?.trim()) return fromData[1].trim();
+  const originParts = (row.scenario_origin || "").split("·").map((part) => part.trim()).filter(Boolean);
+  const originTail = originParts.at(-1) ?? "";
+  if (originTail && !originTail.toLocaleLowerCase("es").startsWith("id base") && originTail.length <= 40) {
+    return originTail;
+  }
+  const groupParts = (row.group_id || "").split("|");
+  const groupTail = groupParts.length >= 3 ? groupParts[groupParts.length - 1].trim() : "";
+  return groupTail;
+}
 
 function matrixScopeLabel(release: Release | null): string | null {
   if (!release || release.be_release_id || release.operativa_release_id) return null;
