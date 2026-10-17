@@ -6,21 +6,20 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ReleaseAnalysisCard } from "@/app/components/ReleaseAnalysisCard";
 import { StatusBadge } from "@/app/components/StatusBadge";
+import { StatusListFilter } from "@/app/components/StatusListFilter";
 import { api, ApiRequestError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { MatrixScopeEditor } from "@/app/components/MatrixScopeEditor";
 import { ValidationScopeSelect, ValidationScopeSummary } from "@/app/components/ValidationScopeField";
 import { DEVICE_OPTIONS, RELEASE_CLUSTER_OPTIONS } from "@/lib/constants";
 import { calculateBusinessDays } from "@/lib/dateUtils";
-import type { DeliverableReleaseSummary, ReleaseAnalysis, ReleaseStatus, ReleaseType, ReleaseWithCounts } from "@/lib/types";
-
-const STATUS_FILTERS: { value: "" | ReleaseStatus; label: string }[] = [
-  { value: "", label: "TODOS" },
-  { value: "DRAFT", label: "DRAFT" },
-  { value: "IN_PROGRESS", label: "IN PROGRESS" },
-  { value: "COMPLETED", label: "COMPLETED" },
-  { value: "CANCELLED", label: "CANCELLED" },
-];
+import {
+  matchesReleaseListStatus,
+  RELEASE_LIST_STATUS_STORAGE,
+  RELEASE_LIST_STATUS_VALUES,
+} from "@/lib/releaseListStatusFilter";
+import { usePersistedStatusFilter } from "@/lib/usePersistedStatusFilter";
+import type { DeliverableReleaseSummary, ReleaseAnalysis, ReleaseType, ReleaseWithCounts } from "@/lib/types";
 
 const emptyForm = {
   name: "",
@@ -58,7 +57,10 @@ export default function ReleasesPage(): React.ReactElement {
   const { canLoadRn, canSeeDashboard } = useAuth();
 
   const [releases, setReleases] = useState<ReleaseWithCounts[]>([]);
-  const [statusFilter, setStatusFilter] = useState<"" | ReleaseStatus>("");
+  const [statusFilter, setStatusFilter] = usePersistedStatusFilter(
+    RELEASE_LIST_STATUS_STORAGE.apps,
+    RELEASE_LIST_STATUS_VALUES,
+  );
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -98,8 +100,7 @@ export default function ReleasesPage(): React.ReactElement {
   useEffect(loadReleases, []);
 
   const visibleReleases = useMemo(() => {
-    if (!statusFilter) return releases;
-    return releases.filter((release) => release.status === statusFilter);
+    return releases.filter((release) => matchesReleaseListStatus(release.status, statusFilter));
   }, [releases, statusFilter]);
 
   // Calculate business days dynamically
@@ -672,19 +673,7 @@ export default function ReleasesPage(): React.ReactElement {
       <div className="section-header">
         <h2>Listado de Releases ({visibleReleases.length})</h2>
         <div className="filter-bar">
-          <label className="muted" style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            Estado
-            <select
-              value={statusFilter}
-              onChange={(event) => setStatusFilter(event.target.value as "" | ReleaseStatus)}
-            >
-              {STATUS_FILTERS.map((item) => (
-                <option key={item.label} value={item.value}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
-          </label>
+          <StatusListFilter selected={statusFilter} onChange={setStatusFilter} />
         </div>
       </div>
 

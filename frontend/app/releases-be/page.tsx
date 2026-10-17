@@ -3,14 +3,21 @@
 import { FileText, Upload } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { MatrixScopeEditor } from "@/app/components/MatrixScopeEditor";
 import { StatusBadge } from "@/app/components/StatusBadge";
+import { StatusListFilter } from "@/app/components/StatusListFilter";
 import { ValidationScopeSelect, ValidationScopeSummary } from "@/app/components/ValidationScopeField";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { BE_CLUSTER_OPTIONS, BE_CLUSTER_TODOS, BE_SWF_OPTIONS } from "@/lib/constants";
 import { calculateBusinessDays } from "@/lib/dateUtils";
+import {
+  matchesReleaseListStatus,
+  RELEASE_LIST_STATUS_STORAGE,
+  RELEASE_LIST_STATUS_VALUES,
+} from "@/lib/releaseListStatusFilter";
+import { usePersistedStatusFilter } from "@/lib/usePersistedStatusFilter";
 import type { BeCluster, BeRegresivoScope, BeReleaseRead, BeReleaseUpdate } from "@/lib/types";
 import { BE_VALIDATION_SCOPE_LABELS } from "@/lib/validationScope";
 
@@ -28,6 +35,10 @@ export default function ReleaseBePage(): React.ReactElement {
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [beRelease, setBeRelease] = useState<BeReleaseRead | null>(null);
   const [rows, setRows] = useState<BeReleaseRead[]>([]);
+  const [statusFilter, setStatusFilter] = usePersistedStatusFilter(
+    RELEASE_LIST_STATUS_STORAGE.be,
+    RELEASE_LIST_STATUS_VALUES,
+  );
   const [loadingList, setLoadingList] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -133,7 +144,11 @@ export default function ReleaseBePage(): React.ReactElement {
   const regresivoScopeLabel = (scope: string | null | undefined): string =>
     (scope ?? "").trim() || "—";
 
-  const listedReleases = rows.filter((row) => row.qc_release_id);
+  const createdReleases = useMemo(() => rows.filter((row) => row.qc_release_id), [rows]);
+  const listedReleases = useMemo(
+    () => createdReleases.filter((row) => matchesReleaseListStatus(row.qc_release_status, statusFilter)),
+    [createdReleases, statusFilter],
+  );
   const businessDays = calculateBusinessDays(beRelease?.start_date ?? "", beRelease?.end_date ?? "");
 
   const formatDate = (iso: string | null | undefined): string => {
@@ -442,6 +457,9 @@ export default function ReleaseBePage(): React.ReactElement {
 
       <div className="section-header">
         <h2>Listado de Release BE ({listedReleases.length})</h2>
+        <div className="filter-bar">
+          <StatusListFilter selected={statusFilter} onChange={setStatusFilter} />
+        </div>
       </div>
       {loadingList && <p className="muted">Cargando…</p>}
       {listError && <p className="error-text">{listError}</p>}
@@ -491,7 +509,9 @@ export default function ReleaseBePage(): React.ReactElement {
               {listedReleases.length === 0 && (
                 <tr>
                   <td colSpan={8} className="muted">
-                    No hay Release BE todavía.
+                    {createdReleases.length === 0
+                      ? "No hay Release BE todavía."
+                      : "No hay releases con este estado."}
                   </td>
                 </tr>
               )}

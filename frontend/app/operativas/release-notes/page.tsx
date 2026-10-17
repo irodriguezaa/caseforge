@@ -3,13 +3,21 @@
 import { FileText, Upload } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { OperativaEpcTable } from "@/app/components/OperativaEpcTable";
 import { StatusBadge } from "@/app/components/StatusBadge";
+import { StatusListFilter } from "@/app/components/StatusListFilter";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { CLUSTERS } from "@/lib/constants";
 import { calculateBusinessDays } from "@/lib/dateUtils";
+import {
+  matchesReleaseListStatus,
+  OPE_LIST_STATUS_VALUES,
+  opeReleaseListStatus,
+  RELEASE_LIST_STATUS_STORAGE,
+} from "@/lib/releaseListStatusFilter";
+import { usePersistedStatusFilter } from "@/lib/usePersistedStatusFilter";
 import type { EpcUpdate, OperativaReleaseRead, OperativaReleaseUpdate } from "@/lib/types";
 
 export default function OperativaReleaseNotesPage(): React.ReactElement {
@@ -22,6 +30,10 @@ export default function OperativaReleaseNotesPage(): React.ReactElement {
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [operativaRelease, setOperativaRelease] = useState<OperativaReleaseRead | null>(null);
   const [releases, setReleases] = useState<OperativaReleaseRead[]>([]);
+  const [statusFilter, setStatusFilter] = usePersistedStatusFilter(
+    RELEASE_LIST_STATUS_STORAGE.ope,
+    OPE_LIST_STATUS_VALUES,
+  );
   const [loadingList, setLoadingList] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -144,6 +156,13 @@ export default function OperativaReleaseNotesPage(): React.ReactElement {
   };
 
   const includedEpcs = operativaRelease?.epcs.filter((e) => e.include_in_qc) ?? [];
+  const visibleReleases = useMemo(
+    () =>
+      releases.filter((row) =>
+        matchesReleaseListStatus(opeReleaseListStatus(row.qc_release_status), statusFilter),
+      ),
+    [releases, statusFilter],
+  );
   const businessDays = calculateBusinessDays(
     operativaRelease?.start_date ?? "",
     operativaRelease?.end_date ?? ""
@@ -397,7 +416,10 @@ export default function OperativaReleaseNotesPage(): React.ReactElement {
       )}
 
       <div className="section-header">
-        <h2>Listado de Releases ({releases.length})</h2>
+        <h2>Listado de Releases ({visibleReleases.length})</h2>
+        <div className="filter-bar">
+          <StatusListFilter selected={statusFilter} onChange={setStatusFilter} includePending />
+        </div>
       </div>
 
       {loadingList && <p className="muted">Cargando releases…</p>}
@@ -416,7 +438,7 @@ export default function OperativaReleaseNotesPage(): React.ReactElement {
               </tr>
             </thead>
             <tbody>
-              {releases.map((row) => {
+              {visibleReleases.map((row) => {
                 const releaseId = qcReleaseId(row);
                 return (
                 <tr
@@ -439,10 +461,12 @@ export default function OperativaReleaseNotesPage(): React.ReactElement {
                 </tr>
                 );
               })}
-              {releases.length === 0 && (
+              {visibleReleases.length === 0 && (
                 <tr>
                   <td colSpan={5} className="muted">
-                    No hay releases todavía.
+                    {releases.length === 0
+                      ? "No hay releases todavía."
+                      : "No hay releases con este estado."}
                   </td>
                 </tr>
               )}

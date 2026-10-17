@@ -13,6 +13,7 @@ interface ColumnFilterProps {
   selected: ColumnFilterSelection;
   onChange: (next: ColumnFilterSelection) => void;
   formatOption?: (value: string) => string;
+  ariaLabel?: string;
 }
 
 function placeMenu(button: HTMLElement, menu: HTMLElement): void {
@@ -34,6 +35,7 @@ export function ColumnFilter({
   selected,
   onChange,
   formatOption,
+  ariaLabel,
 }: ColumnFilterProps): React.ReactElement {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -122,7 +124,7 @@ export function ColumnFilter({
       ref={menuRef}
       className="col-filter-menu"
       role="listbox"
-      aria-label={label}
+      aria-label={ariaLabel ?? label}
       onScroll={(event) => {
         menuScrollTop.current = event.currentTarget.scrollTop;
       }}
@@ -151,7 +153,7 @@ export function ColumnFilter({
         type="button"
         className={`col-filter-btn${active ? " is-on" : ""}`}
         aria-expanded={open}
-        aria-label={`Filtrar ${label}`}
+        aria-label={ariaLabel ?? `Filtrar ${label}`}
         onClick={() => setOpen((value) => !value)}
       >
         <span>{label}</span>
