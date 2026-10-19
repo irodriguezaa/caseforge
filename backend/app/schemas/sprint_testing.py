@@ -39,6 +39,7 @@ class ProgramMetrics(BaseModel):
     total: int
     todo: dict[str, int] = Field(default_factory=dict)
     development: dict[str, int] = Field(default_factory=dict)
+    integration: dict[str, int] = Field(default_factory=dict)
     testing: dict[str, int] = Field(default_factory=dict)
     closed: dict[str, int] = Field(default_factory=dict)
     open: int

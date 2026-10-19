@@ -26,10 +26,11 @@ def _issue(key: str, project: str, status: str, issuetype: str = "Technical Epic
 def test_classify_aliases() -> None:
     assert classify_status("Tareas por hacer") == ("todo", "To Do")
     assert classify_status("To Do") == ("todo", "To Do")
-    assert classify_status("Validation") == ("testing", "QC Validation")
-    assert classify_status("Validate QC") == ("testing", "QC Validation")
-    assert classify_status("QC Validation") == ("testing", "QC Validation")
+    assert classify_status("Validation") == ("testing", "Validation")
+    assert classify_status("Validate QC") == ("testing", "Validate QC")
+    assert classify_status("QC Validation") == ("testing", "Validation")
     assert classify_status("QA Validation") == ("testing", "QA Validation")
+    assert classify_status("Integration") == ("integration", "Integration")
     assert classify_status("Cancelled") == ("closed", "Canceled")
     assert classify_status("Canceled") == ("closed", "Canceled")
     assert classify_status("Finalizada") == ("closed", "Finalizada")
@@ -89,15 +90,21 @@ def test_adt_example_graph1_and_graph2() -> None:
     adt = next(row for row in payload.programs if row.program_key == "ADTCL")
     assert adt.todo == {"To Do": 2}
     assert adt.development == {"In Progress": 5, "Blocked": 1, "Development": 4}
-    assert adt.testing == {"Integration": 3, "QA Validation": 2, "QC Validation": 1}
+    assert adt.integration == {"Integration": 3}
+    assert adt.testing == {"QA Validation": 2, "Validation": 1}
     assert adt.closed == {"Roll Out": 2, "Done": 4, "Canceled": 1}
     assert adt.total == 25
     assert adt.open == 18
     assert adt.closed_total == 7
     assert adt.consistency_ok is True
-    assert sum(adt.development.values()) + sum(adt.testing.values()) + sum(adt.closed.values()) + sum(
-        adt.todo.values()
-    ) == adt.total
+    assert (
+        sum(adt.development.values())
+        + sum(adt.integration.values())
+        + sum(adt.testing.values())
+        + sum(adt.closed.values())
+        + sum(adt.todo.values())
+        == adt.total
+    )
     assert adt.open + adt.closed_total == adt.total
     win = next(row for row in payload.programs if row.program_key == "WINCL")
     assert win.total == 1
@@ -582,7 +589,7 @@ def test_executive_pptx_is_one_slide_without_open_column() -> None:
     issue_headers = [tables[1].cell(0, col).text.strip() for col in range(len(tables[1].columns))]
     assert "To Do" not in epic_headers
     assert "Abierto" not in epic_headers
-    assert epic_headers == ["Dispositivo", "Desarrollo", "Testing", "Cerrado", "Total"]
+    assert epic_headers == ["Dispositivo", "Desarrollo", "Integración", "Testing", "Cerrado", "Total"]
     assert issue_headers == ["Dispositivo", "Blocker", "No Blocker", "Total"]
     texts = [shape.text_frame.text for shape in deck.slides[0].shapes if shape.has_text_frame]
     assert not any(text.strip() == "Blockers" for text in texts)

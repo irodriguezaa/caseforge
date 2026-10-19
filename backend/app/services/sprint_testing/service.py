@@ -95,6 +95,7 @@ def _sum_counts(values: dict[str, int]) -> int:
 def _program_metrics(program_key: str, display_name: str, issues: list[dict[str, Any]]) -> ProgramMetrics:
     todo: dict[str, int] = {}
     development: dict[str, int] = {}
+    integration: dict[str, int] = {}
     testing: dict[str, int] = {}
     closed: dict[str, int] = {}
     for issue in issues:
@@ -103,12 +104,24 @@ def _program_metrics(program_key: str, display_name: str, issues: list[dict[str,
         status = (status_obj.get("name") or "").strip()
         category = ((status_obj.get("statusCategory") or {}).get("key") or "").strip()
         bucket, label = classify_status(status, category)
-        target = {"todo": todo, "development": development, "testing": testing, "closed": closed}[bucket]
+        target = {
+            "todo": todo,
+            "development": development,
+            "integration": integration,
+            "testing": testing,
+            "closed": closed,
+        }[bucket]
         target[label] = target.get(label, 0) + 1
     total = len(issues)
     closed_total = _sum_counts(closed)
     open_count = total - closed_total
-    chart1 = _sum_counts(development) + _sum_counts(testing) + closed_total + _sum_counts(todo)
+    chart1 = (
+        _sum_counts(development)
+        + _sum_counts(integration)
+        + _sum_counts(testing)
+        + closed_total
+        + _sum_counts(todo)
+    )
     consistency_ok = chart1 == total and open_count + closed_total == total
     return ProgramMetrics(
         program_key=program_key,
@@ -116,6 +129,7 @@ def _program_metrics(program_key: str, display_name: str, issues: list[dict[str,
         total=total,
         todo=todo,
         development=development,
+        integration=integration,
         testing=testing,
         closed=closed,
         open=open_count,

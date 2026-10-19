@@ -824,6 +824,7 @@ export interface SprintTestingProgramMetrics {
   total: number;
   todo: Record<string, number>;
   development: Record<string, number>;
+  integration: Record<string, number>;
   testing: Record<string, number>;
   closed: Record<string, number>;
   open: number;

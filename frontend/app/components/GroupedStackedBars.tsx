@@ -5,23 +5,23 @@ import type { SprintTestingProgramMetrics } from "@/lib/types";
 
 const BAR_KEYS = [
   { id: "development", label: "Desarrollo" },
+  { id: "integration", label: "Integración" },
   { id: "testing", label: "Testing" },
   { id: "closed", label: "Cerrado" },
 ] as const;
 
-/** Dark-theme executive palette: sand / steel / sage (high contrast, low saturation). */
+/** Dark-theme executive palette: sand / plum / steel / sage. */
 const DEV_COLOR = "#C4B59A";
+const INTEGRATION_COLOR = "#7B6D8D";
 const CLOSED_COLOR = "#4A9B82";
 const TESTING_COLORS: Record<string, string> = {
-  Integration: "#7B6D8D",
   "QA Validation": "#4C7D9E",
-  "QC Validation": "#7D8794",
   Validation: "#7D8794",
+  "Validate QC": "#7D8794",
 };
 const TESTING_LEGEND = [
   { label: "QA Validation", color: "#4C7D9E" },
   { label: "Validation", color: "#7D8794" },
-  { label: "Integration", color: "#7B6D8D" },
 ];
 
 function barTotal(counts: Record<string, number>): number {
@@ -30,6 +30,7 @@ function barTotal(counts: Record<string, number>): number {
 
 function segmentColor(barId: string, status: string): string {
   if (barId === "development") return DEV_COLOR;
+  if (barId === "integration") return INTEGRATION_COLOR;
   if (barId === "closed") return CLOSED_COLOR;
   return TESTING_COLORS[status] ?? "#7D8794";
 }
@@ -44,6 +45,7 @@ export function GroupedStackedBars({
     1,
     ...programs.flatMap((row) => [
       barTotal(row.development),
+      barTotal(row.integration ?? {}),
       barTotal(row.testing),
       barTotal(row.closed),
     ]),
@@ -69,9 +71,9 @@ export function GroupedStackedBars({
               borderLeft: index === 0 ? "none" : "1px solid var(--border-strong)",
             }}
           >
-            <div style={{ display: "flex", alignItems: "flex-end", gap: "6px", height: "180px" }}>
+            <div style={{ display: "flex", alignItems: "flex-end", gap: "4px", height: "180px" }}>
               {BAR_KEYS.map((bar) => {
-                const counts = program[bar.id];
+                const counts = program[bar.id] ?? {};
                 const total = barTotal(counts);
                 const hoverKey = `${program.program_key}:${bar.id}`;
                 return (
@@ -173,6 +175,10 @@ export function GroupedStackedBars({
         <span style={{ display: "inline-flex", alignItems: "center", gap: "5px", fontSize: "11px", color: "var(--text-muted)" }}>
           <span style={{ width: "8px", height: "8px", borderRadius: "2px", background: DEV_COLOR }} />
           Desarrollo
+        </span>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: "5px", fontSize: "11px", color: "var(--text-muted)" }}>
+          <span style={{ width: "8px", height: "8px", borderRadius: "2px", background: INTEGRATION_COLOR }} />
+          Integración
         </span>
         {TESTING_LEGEND.map((item) => (
           <span

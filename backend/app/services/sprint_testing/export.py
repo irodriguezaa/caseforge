@@ -288,11 +288,12 @@ def _build_executive_slide(slide: Any, payload: SprintTestingRead) -> None:
     )
     _add_rect(slide, Inches(6.78), Inches(2.18), Inches(0.018), Inches(4.7), GOLD)
 
-    epic_headers = ["Dispositivo", "Desarrollo", "Testing", "Cerrado", "Total"]
+    epic_headers = ["Dispositivo", "Desarrollo", "Integración", "Testing", "Cerrado", "Total"]
     epic_rows = [
         [
             program.display_name,
             str(_sum_bucket(program.development)),
+            str(_sum_bucket(program.integration)),
             str(_sum_bucket(program.testing)),
             str(program.closed_total),
             str(program.total),

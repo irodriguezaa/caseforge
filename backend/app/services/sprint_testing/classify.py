@@ -5,17 +5,17 @@ from __future__ import annotations
 import re
 from typing import Literal
 
-Bucket = Literal["todo", "testing", "closed", "development"]
+Bucket = Literal["todo", "development", "integration", "testing", "closed"]
 
 _WS = re.compile(r"\s+")
 
 _TODO = {"to do", "tareas por hacer"}
+_INTEGRATION = {"integration"}
 _TESTING_CANONICAL = {
-    "integration": "Integration",
     "qa validation": "QA Validation",
-    "qc validation": "QC Validation",
-    "validate qc": "QC Validation",
-    "validation": "QC Validation",
+    "validate qc": "Validate QC",
+    "validation": "Validation",
+    "qc validation": "Validation",
 }
 _CLOSED_CANONICAL = {
     "roll out": "Roll Out",
@@ -59,6 +59,8 @@ def classify_status(status: str | None, category_key: str | None = None) -> tupl
     key = normalize_label(raw)
     if key in _TODO:
         return "todo", "To Do"
+    if key in _INTEGRATION:
+        return "integration", "Integration"
     if key in _TESTING_CANONICAL:
         return "testing", _TESTING_CANONICAL[key]
     if key in _CLOSED_CANONICAL:
