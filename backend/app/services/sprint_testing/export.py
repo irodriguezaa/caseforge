@@ -60,10 +60,12 @@ def _excel_value(value: object) -> str:
     return text
 
 
-def build_issues_workbook(rows: list[ExecutionIssueRow]) -> bytes:
-    workbook = Workbook()
-    sheet = workbook.active
-    sheet.title = "Issues"
+def _sheet_title(label: str) -> str:
+    cleaned = "".join(ch if ch not in r":\/?*[]" else " " for ch in (label or "Issues")).strip()
+    return (cleaned or "Issues")[:31]
+
+
+def _write_issues_sheet(sheet: Any, rows: list[ExecutionIssueRow]) -> None:
     for index, header in enumerate(ISSUE_HEADERS, start=1):
         cell = sheet.cell(1, index, header)
         cell.fill = _HEADER_FILL
@@ -75,7 +77,8 @@ def build_issues_workbook(rows: list[ExecutionIssueRow]) -> bytes:
         sheet.column_dimensions[get_column_letter(index)].width = width
     sheet.row_dimensions[1].height = 28
     sheet.freeze_panes = "A2"
-    sheet.auto_filter.ref = f"A1:{get_column_letter(len(ISSUE_HEADERS))}1"
+    last_row = max(len(rows) + 1, 1)
+    sheet.auto_filter.ref = f"A1:{get_column_letter(len(ISSUE_HEADERS))}{last_row}"
 
     for row_index, row in enumerate(rows, start=2):
         values = [
@@ -98,6 +101,19 @@ def build_issues_workbook(rows: list[ExecutionIssueRow]) -> bytes:
             cell.alignment = Alignment(wrap_text=col in wrap_cols, vertical="top")
         sheet.row_dimensions[row_index].height = 36
 
+
+def build_issues_workbook(rows: list[ExecutionIssueRow], sheet_title: str = "Issues") -> bytes:
+    return build_issues_workbook_sheets([(sheet_title, rows)])
+
+
+def build_issues_workbook_sheets(sheets: list[tuple[str, list[ExecutionIssueRow]]]) -> bytes:
+    workbook = Workbook()
+    if not sheets:
+        sheets = [("Issues", [])]
+    for index, (title, rows) in enumerate(sheets):
+        sheet = workbook.active if index == 0 else workbook.create_sheet()
+        sheet.title = _sheet_title(title)
+        _write_issues_sheet(sheet, rows)
     buffer = io.BytesIO()
     workbook.save(buffer)
     return buffer.getvalue()
@@ -209,10 +225,17 @@ def _fill_table_body(table: Any, rows: list[list[str]], *, blocker_col: int | No
 
 
 def build_executive_pptx(payload: SprintTestingRead) -> bytes:
+    return build_executive_pptx_pack([payload])
+
+
+def build_executive_pptx_pack(payloads: list[SprintTestingRead]) -> bytes:
     presentation = Presentation()
     presentation.slide_width = SLIDE_W
     presentation.slide_height = SLIDE_H
-    _build_executive_slide(presentation.slides.add_slide(presentation.slide_layouts[6]), payload)
+    if not payloads:
+        presentation.slides.add_slide(presentation.slide_layouts[6])
+    for payload in payloads:
+        _build_executive_slide(presentation.slides.add_slide(presentation.slide_layouts[6]), payload)
     buffer = io.BytesIO()
     presentation.save(buffer)
     return buffer.getvalue()

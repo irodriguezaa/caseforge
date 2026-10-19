@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import io
 import re
+import zipfile
 from datetime import datetime
 from typing import Any
 
@@ -27,7 +29,13 @@ from app.services.sprint_testing.classify import (
     is_closed_status,
     is_technical_epic,
 )
-from app.services.sprint_testing.export import build_executive_pptx, build_issues_workbook
+from app.services.sprint_testing.export import (
+    build_executive_pptx,
+    build_executive_pptx_pack,
+    build_issues_workbook,
+    build_issues_workbook_sheets,
+)
+from app.services.sprint_testing.pack import pack_email_allowed, pack_swfs
 
 _ISSUE_FIELDS = ["summary", "issuetype", "status", "project"]
 _EXECUTION_FIELDS = [
@@ -50,7 +58,19 @@ class SprintTestingConfigError(ValueError):
     """Unknown sprint/SWF or sprint without a saved filter yet."""
 
 
-def list_options() -> SprintTestingOptions:
+def _swf_option(item: SwfDef) -> SwfOption:
+    return SwfOption(
+        id=item.id,
+        label=item.label,
+        programs=[
+            ProgramOption(program_key=program.program_key, display_name=program.display_name)
+            for program in item.programs
+        ],
+    )
+
+
+def list_options(email: str | None = None) -> SprintTestingOptions:
+    selected = pack_swfs() if pack_email_allowed(email) else []
     return SprintTestingOptions(
         sprints=[
             SprintOption(
@@ -62,17 +82,9 @@ def list_options() -> SprintTestingOptions:
             )
             for item in SPRINTS
         ],
-        swfs=[
-            SwfOption(
-                id=item.id,
-                label=item.label,
-                programs=[
-                    ProgramOption(program_key=program.program_key, display_name=program.display_name)
-                    for program in item.programs
-                ],
-            )
-            for item in SWFS
-        ],
+        swfs=[_swf_option(item) for item in SWFS],
+        pack_available=bool(selected),
+        pack_swfs=[_swf_option(item) for item in selected],
     )
 
 
@@ -287,6 +299,37 @@ def export_basename(sprint_label: str, swf_label: str) -> str:
     return f"{sprint_label.replace(' ', '')}_{swf_label.replace(' ', '')}"
 
 
+def list_blocker_issue_rows(swf: SwfDef, issues: list[dict[str, Any]]) -> list[ExecutionIssueRow]:
+    wanted = {program.program_key.upper(): program for program in swf.programs}
+    rows: list[ExecutionIssueRow] = []
+    for issue in issues:
+        program = wanted.get(_project_key(issue))
+        if program is None:
+            continue
+        if not is_blocker_priority(_priority_name(issue)):
+            continue
+        if is_closed_status(_status_name(issue), _status_category_key(issue)):
+            continue
+        rows.append(
+            ExecutionIssueRow(
+                key=str(issue.get("key") or "").strip().upper(),
+                summary=_summary(issue),
+                status=_status_name(issue),
+                priority=_priority_name(issue),
+                device=program.display_name,
+                program_key=program.program_key,
+                issue_type=_issuetype_name(issue),
+                created=_format_jira_clock(_created_at(issue)),
+                principal=_principal_key(issue) or "",
+                status_change=_status_change_label(issue),
+                last_comment=_last_comment_label(issue),
+                nested_issues=", ".join(_nested_issue_keys(issue)),
+            )
+        )
+    rows.sort(key=lambda row: (row.device, row.key))
+    return rows
+
+
 def list_execution_issue_rows(swf: SwfDef, issues: list[dict[str, Any]]) -> list[ExecutionIssueRow]:
     wanted = {program.program_key.upper(): program for program in swf.programs}
     rows: list[ExecutionIssueRow] = []
@@ -334,6 +377,42 @@ def build_executive_report_pptx(sprint_id: str, swf_id: str) -> tuple[bytes, str
     payload = build_sprint_testing(sprint_id, swf_id)
     filename = f"{export_basename(payload.sprint.label, payload.swf)}_ejecutivo.pptx"
     return build_executive_pptx(payload), filename
+
+
+def build_sprint_pack_zip(sprint_id: str) -> tuple[bytes, str]:
+    sprint = get_sprint(sprint_id)
+    if sprint is None:
+        raise SprintTestingConfigError("Sprint no reconocido.")
+    if not sprint.filter_id:
+        raise SprintTestingConfigError(f"{sprint.label} aún no tiene un Saved Filter configurado.")
+    selected = pack_swfs()
+    if not selected:
+        raise SprintTestingConfigError("No hay SWF configuradas para el pack (SPRINT_PACK_SWFS).")
+    epic_issues = fetch_raw_issues_by_filter(sprint.filter_id, _ISSUE_FIELDS)
+    execution_issues: list[dict[str, Any]] = []
+    if sprint.execution_filter_id:
+        execution_issues = fetch_raw_issues_by_filter(
+            sprint.execution_filter_id,
+            _EXECUTION_FIELDS,
+            expand=_EXECUTION_EXPAND,
+        )
+    payloads: list[SprintTestingRead] = []
+    sheets: list[tuple[str, list[ExecutionIssueRow]]] = []
+    for swf in selected:
+        payload = aggregate_issues(sprint.id, sprint.label, sprint.filter_id, swf, epic_issues)
+        if sprint.execution_filter_id:
+            payload.execution = aggregate_execution_issues(sprint.execution_filter_id, swf, execution_issues)
+        payloads.append(payload)
+        sheets.append((swf.label, list_blocker_issue_rows(swf, execution_issues)))
+    pptx = build_executive_pptx_pack(payloads)
+    xlsx = build_issues_workbook_sheets(sheets)
+    labels = "_".join(item.label.replace(" ", "") for item in selected)
+    base = export_basename(sprint.label, labels)
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr(f"{base}_ejecutivo.pptx", pptx)
+        archive.writestr(f"{base}_blockers.xlsx", xlsx)
+    return buffer.getvalue(), f"{base}_pack.zip"
 
 
 def aggregate_execution_issues(

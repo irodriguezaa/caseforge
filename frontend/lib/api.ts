@@ -69,7 +69,7 @@ function apiUrl(path: string): string {
   return `${BASE_PATH}${path.startsWith("/") ? path : `/${path}`}`;
 }
 
-async function downloadBinary(path: string, fallbackName: string, kind: "Excel" | "PPT"): Promise<void> {
+async function downloadBinary(path: string, fallbackName: string, kind: "Excel" | "PPT" | "ZIP"): Promise<void> {
   let response: Response;
   try {
     response = await fetch(apiUrl(path), { cache: "no-store", credentials: "include" });
@@ -547,6 +547,12 @@ export const api = {
       `/api/sprint-testing/export/report?sprint=${encodeURIComponent(sprint)}&swf=${encodeURIComponent(swf)}`,
       "Sprint_ejecutivo.pptx",
       "PPT",
+    ),
+  exportSprintTestingPack: (sprint: string) =>
+    downloadBinary(
+      `/api/sprint-testing/export/pack?sprint=${encodeURIComponent(sprint)}`,
+      "Sprint_pack.zip",
+      "ZIP",
     ),
   getCalendarDay: (date?: string) => {
     const suffix = date ? `?date=${encodeURIComponent(date)}` : "";

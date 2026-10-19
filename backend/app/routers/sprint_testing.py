@@ -4,13 +4,16 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 
+from app.auth import AuthUser
 from app.deps.auth import require_sprint_testing
 from app.schemas.sprint_testing import SprintTestingOptions, SprintTestingRead
 from app.services.jira_client import JiraApiError, JiraNotConfiguredError
+from app.services.sprint_testing.pack import pack_email_allowed
 from app.services.sprint_testing.service import (
     SprintTestingConfigError,
     build_execution_issues_xlsx,
     build_executive_report_pptx,
+    build_sprint_pack_zip,
     build_sprint_testing,
     list_options,
 )
@@ -48,9 +51,15 @@ def _attachment(payload: bytes, filename: str, media_type: str) -> Response:
     )
 
 
+def _require_pack_user(user: AuthUser = Depends(require_sprint_testing)) -> AuthUser:
+    if not pack_email_allowed(user.email):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Pack no habilitado para este usuario.")
+    return user
+
+
 @router.get("/options", response_model=SprintTestingOptions)
-def sprint_testing_options() -> SprintTestingOptions:
-    return list_options()
+def sprint_testing_options(user: AuthUser = Depends(require_sprint_testing)) -> SprintTestingOptions:
+    return list_options(user.email)
 
 
 @router.get("/export/issues")
@@ -85,6 +94,20 @@ def sprint_testing_export_report(
         filename,
         "application/vnd.openxmlformats-officedocument.presentationml.presentation",
     )
+
+
+@router.get("/export/pack")
+def sprint_testing_export_pack(
+    sprint: str = Query(..., description="Sprint id, e.g. 44"),
+    user: AuthUser = Depends(_require_pack_user),
+) -> Response:
+    del user
+    try:
+        payload, filename = build_sprint_pack_zip(sprint)
+    except (SprintTestingConfigError, JiraNotConfiguredError, JiraApiError) as exc:
+        _raise_sprint_testing(exc)
+        raise
+    return _attachment(payload, filename, "application/zip")
 
 
 @router.get("", response_model=SprintTestingRead)

@@ -358,6 +358,8 @@ def test_options_mark_future_sprints(client) -> None:
     assert by_id["46"]["actionable"] is True
     assert by_id["46"]["filter_id"] == "117859"
     assert by_id["46"]["execution_filter_id"] is None
+    assert body["pack_available"] is False
+    assert body["pack_swfs"] == []
 
 
 def test_tester_and_consulta_cannot_read(client) -> None:
@@ -587,7 +589,7 @@ def test_executive_pptx_is_one_slide_without_open_column() -> None:
 
 
 def test_export_issues_requires_execution_filter(client) -> None:
-    response = client.get("/api/v1/sprint-testing/export/issues", params={"sprint": "45", "swf": "hitss"})
+    response = client.get("/api/v1/sprint-testing/export/issues", params={"sprint": "46", "swf": "hitss"})
     assert response.status_code == 400
     assert "ejecución" in response.json()["detail"]
 
@@ -596,3 +598,67 @@ def test_tester_cannot_export(client) -> None:
     login_as(client, "tester@test.com", "tester-pass")
     denied = client.get("/api/v1/sprint-testing/export/report", params={"sprint": "44", "swf": "hitss"})
     assert denied.status_code == 403
+
+
+def test_pack_hidden_without_allowlist(client) -> None:
+    denied = client.get("/api/v1/sprint-testing/export/pack", params={"sprint": "44"})
+    assert denied.status_code == 403
+
+
+def test_pack_options_and_zip(client, monkeypatch) -> None:
+    from io import BytesIO
+    from zipfile import ZipFile
+
+    from openpyxl import load_workbook
+    from pptx import Presentation
+
+    from app.services.sprint_testing import service as sprint_service
+
+    monkeypatch.setenv("SPRINT_PACK_EMAILS", "jefe@test.com")
+    monkeypatch.setenv("SPRINT_PACK_SWFS", "hitss,neoris")
+
+    options = client.get("/api/v1/sprint-testing/options")
+    assert options.status_code == 200
+    body = options.json()
+    assert body["pack_available"] is True
+    assert [item["id"] for item in body["pack_swfs"]] == ["hitss", "neoris"]
+
+    def fake_fetch(filter_id: str, _fields: list[str], expand: list[str] | None = None):
+        del expand
+        if filter_id == "117698":
+            return [
+                _issue("ADTCL-1", "ADTCL", "In Progress"),
+                _issue("ROKUPR-1", "ROKUPR", "Done"),
+            ]
+        return [
+            _exec_issue("ADTCL-9", "ADTCL", "Analysis", "Blocker", "Hitss blocker", "x"),
+            _exec_issue("ADTCL-8", "ADTCL", "Done", "Blocker", "Closed blocker", "x"),
+            _exec_issue("ADTCL-7", "ADTCL", "Analysis", "Major", "Not blocker", "x"),
+            _exec_issue("ROKUPR-9", "ROKUPR", "Pending Resolution", "Blocker", "Neoris blocker", "x"),
+            _exec_issue("ATSCL-1", "ATSCL", "Analysis", "Blocker", "Tata out of pack", "x"),
+        ]
+
+    monkeypatch.setattr(sprint_service, "fetch_raw_issues_by_filter", fake_fetch)
+    response = client.get("/api/v1/sprint-testing/export/pack", params={"sprint": "44"})
+    assert response.status_code == 200
+    assert "zip" in (response.headers.get("content-type") or "")
+    archive = ZipFile(BytesIO(response.content))
+    names = set(archive.namelist())
+    pptx_name = next(name for name in names if name.endswith(".pptx"))
+    xlsx_name = next(name for name in names if name.endswith(".xlsx"))
+    deck = Presentation(BytesIO(archive.read(pptx_name)))
+    assert len(deck.slides) == 2
+    titles = [
+        shape.text_frame.text
+        for slide in deck.slides
+        for shape in slide.shapes
+        if shape.has_text_frame
+    ]
+    assert any("Hitss" in text for text in titles)
+    assert any("Neoris" in text for text in titles)
+    book = load_workbook(BytesIO(archive.read(xlsx_name)))
+    assert book.sheetnames == ["Hitss", "Neoris"]
+    hitss_keys = [row[0] for row in book["Hitss"].iter_rows(min_row=2, max_col=1, values_only=True) if row[0]]
+    neoris_keys = [row[0] for row in book["Neoris"].iter_rows(min_row=2, max_col=1, values_only=True) if row[0]]
+    assert hitss_keys == ["ADTCL-9"]
+    assert neoris_keys == ["ROKUPR-9"]

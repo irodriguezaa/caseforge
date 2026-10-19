@@ -77,6 +77,7 @@ export default function SprintTestingPage(): React.ReactElement {
   const [error, setError] = useState<string | null>(null);
   const [exportingIssues, setExportingIssues] = useState(false);
   const [exportingReport, setExportingReport] = useState(false);
+  const [exportingPack, setExportingPack] = useState(false);
 
   useEffect(() => {
     api
@@ -92,6 +93,9 @@ export default function SprintTestingPage(): React.ReactElement {
 
   const selectedSprint = options?.sprints.find((item) => item.id === sprint);
   const canQuery = Boolean(selectedSprint?.actionable);
+  const packSwfs = options?.pack_swfs ?? [];
+  const packAvailable = Boolean(options?.pack_available && packSwfs.length > 0);
+  const packLabel = packSwfs.map((item) => item.label).join(" + ");
 
   useEffect(() => {
     if (!canQuery) {
@@ -151,6 +155,18 @@ export default function SprintTestingPage(): React.ReactElement {
     }
   }
 
+  async function handleExportPack(): Promise<void> {
+    setExportingPack(true);
+    setError(null);
+    try {
+      await api.exportSprintTestingPack(sprint);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "No se pudo generar el pack ejecutivo.");
+    } finally {
+      setExportingPack(false);
+    }
+  }
+
   return (
     <div className="page page-wide">
       <div className="kpi-page-head">
@@ -194,6 +210,17 @@ export default function SprintTestingPage(): React.ReactElement {
         >
           {exportingReport ? "Generando..." : "Reporte ejecutivo"}
         </button>
+        {packAvailable && (
+          <button
+            type="button"
+            className="secondary"
+            disabled={!canQuery || loading || exportingPack}
+            onClick={() => void handleExportPack()}
+            title={`PPTX (1 slide por SWF) + Excel de blockers (${packLabel})`}
+          >
+            {exportingPack ? "Generando pack..." : `Pack ${packLabel}`}
+          </button>
+        )}
       </div>
 
       {!canQuery && (

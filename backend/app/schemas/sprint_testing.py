@@ -23,6 +23,8 @@ class SwfOption(BaseModel):
 class SprintTestingOptions(BaseModel):
     sprints: list[SprintOption]
     swfs: list[SwfOption]
+    pack_available: bool = False
+    pack_swfs: list[SwfOption] = Field(default_factory=list)
 
 
 class SprintTestingSprint(BaseModel):

@@ -59,6 +59,8 @@ services:
       QC_USERS: ${QC_USERS:-}
       QC_SESSION_SECRET: ${QC_SESSION_SECRET:-}
       QC_COOKIE_SECURE: ${QC_COOKIE_SECURE:-}
+      SPRINT_PACK_EMAILS: ${SPRINT_PACK_EMAILS:-}
+      SPRINT_PACK_SWFS: ${SPRINT_PACK_SWFS:-hitss,neoris}
     volumes:
       - rn_notes:/app/data/release_notes
     ports:

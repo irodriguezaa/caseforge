@@ -44,6 +44,9 @@ class Settings:
     ).strip()
     qc_v2_concurrency: int = int(os.getenv("QC_V2_CONCURRENCY", "5"))
     qc_v2_timeout: float = float(os.getenv("QC_V2_TIMEOUT", "240"))
+    # Sprint Testing pack: emails that see the extra export; SWF ids (hitss, tata, nubiral, neoris).
+    sprint_pack_emails: str = os.getenv("SPRINT_PACK_EMAILS", "")
+    sprint_pack_swfs: str = os.getenv("SPRINT_PACK_SWFS", "hitss,neoris")
     llm_scenario_concurrency: int = int(os.getenv("LLM_SCENARIO_CONCURRENCY", "8"))
     llm_scenario_timeout: float = float(os.getenv("LLM_SCENARIO_TIMEOUT", "45"))
     # Outlook / Microsoft Graph (Calendario QC). MSAL login is not wired yet.

@@ -814,6 +814,8 @@ export interface SprintTestingSwfOption {
 export interface SprintTestingOptions {
   sprints: SprintTestingSprintOption[];
   swfs: SprintTestingSwfOption[];
+  pack_available?: boolean;
+  pack_swfs?: SprintTestingSwfOption[];
 }
 
 export interface SprintTestingProgramMetrics {
