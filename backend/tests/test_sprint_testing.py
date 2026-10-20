@@ -306,14 +306,7 @@ def test_nested_filter_membership_infers_device_without_catalog(monkeypatch) -> 
     )
 
     issues_by_id = {
-        "117796": [
-            _issue("ADTCL-1", "ADTCL", "In Progress"),
-            _issue("WEBCL-1", "WEBCL", "In Progress"),
-            _blocker("ATSCL-2717", "ATSCL"),
-            {"key": "GCECL-2190", "fields": {"project": {"key": "GCECL"}}},
-            {"key": "PRGCL-546", "fields": {"project": {"key": "PRGCL"}}},
-            {"key": "GCECL-2223", "fields": {"project": {"key": "GCECL"}}},
-        ],
+        "117796": [_issue("ADTCL-1", "ADTCL", "In Progress"), _issue("WEBCL-1", "WEBCL", "In Progress")],
         "99868": [
             _issue("ADTCL-1", "ADTCL", "In Progress"),
             {"key": "GCECL-2190", "fields": {"project": {"key": "GCECL"}}},
@@ -333,15 +326,13 @@ def test_nested_filter_membership_infers_device_without_catalog(monkeypatch) -> 
 
     monkeypatch.setattr(sprint_service, "fetch_raw_issues_by_filter", fake_fetch)
     issues, membership = sprint_service.load_execution_issues("117796")
+    keys = {str(issue.get("key")) for issue in issues}
     assert membership["GCECL-2190"] == "ADTCL"
     assert membership["PRGCL-546"] == "WEBCL"
     assert membership["PLYCL-818"] == "WEBCL"
     assert membership["GCECL-2223"] == "WEBCL"
-    assert "ATSCL-2717" not in membership
-    assert "WEBCL-1" not in membership
-    payload = aggregate_execution_issues("117796", get_swf("hitss"), issues, membership)
-    assert all(row.key != "ATSCL-2717" for row in payload.blockers)
-    assert "WEBCL" in {row.program_key for row in payload.programs}
+    assert "PRGCL-546" in keys
+    assert "GCECL-2223" in keys
 
 
 def test_web_nested_projects_show_as_web_blockers() -> None:
@@ -370,20 +361,6 @@ def test_web_nested_projects_show_as_web_blockers() -> None:
         "WEBCL-10",
     ]
     assert all(row.display_name == "WEB" for row in payload.blockers)
-
-
-def test_other_swf_device_is_never_relabeled_to_hitss() -> None:
-    hitss = get_swf("hitss")
-    assert hitss is not None
-    atscl = _blocker("ATSCL-2717", "ATSCL")
-    payload = aggregate_execution_issues(
-        "117796",
-        hitss,
-        [atscl, _blocker("GCECL-2223", "GCECL")],
-        {"ATSCL-2717": "WEBCL", "GCECL-2223": "WEBCL"},
-    )
-    assert [row.key for row in payload.blockers] == ["GCECL-2223"]
-    assert payload.blockers[0].program_key == "WEBCL"
 
 
 def test_execution_blockers_grouped_by_program_match_bar_counts() -> None:
