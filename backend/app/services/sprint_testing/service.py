@@ -22,7 +22,8 @@ from app.schemas.sprint_testing import (
     SwfOption,
 )
 from app.services.jira_client import fetch_raw_issues_by_filter
-from app.services.sprint_testing.catalog import SWFS, SPRINTS, SprintDef, SwfDef, get_sprint, get_swf
+from app.services.sprint_testing.catalog import SWFS, SPRINTS, ProgramDef, SprintDef, SwfDef, get_sprint, get_swf
+from app.services.sprint_testing.device_filters import sprint_device_filters
 from app.services.sprint_testing.classify import (
     classify_status,
     is_blocker_priority,
@@ -313,11 +314,95 @@ def export_basename(sprint_label: str, swf_label: str) -> str:
     return f"{sprint_label.replace(' ', '')}_{swf_label.replace(' ', '')}"
 
 
-def list_blocker_issue_rows(swf: SwfDef, issues: list[dict[str, Any]]) -> list[ExecutionIssueRow]:
+def _issue_key(issue: dict[str, Any]) -> str:
+    return str(issue.get("key") or "").strip().upper()
+
+
+def _cached_execution_issues(cache: dict[str, list[dict[str, Any]]], filter_id: str) -> list[dict[str, Any]]:
+    if filter_id not in cache:
+        cache[filter_id] = fetch_raw_issues_by_filter(
+            filter_id,
+            _EXECUTION_FIELDS,
+            expand=_EXECUTION_EXPAND,
+        )
+    return cache[filter_id]
+
+
+def collect_execution_issues(
+    sprint: SprintDef,
+    swf: SwfDef,
+    cache: dict[str, list[dict[str, Any]]] | None = None,
+) -> tuple[str, dict[str, list[dict[str, Any]]]]:
+    """Device QA+QC filters from env, else the sprint execution filter grouped by project."""
+    store = cache if cache is not None else {}
+    mapping = sprint_device_filters(sprint.id)
+    grouped: dict[str, list[dict[str, Any]]] = {program.program_key.upper(): [] for program in swf.programs}
+    if mapping:
+        used: list[str] = []
+        for program in swf.programs:
+            pair = mapping.get(program.program_key.upper())
+            if pair is None:
+                continue
+            by_key: dict[str, dict[str, Any]] = {}
+            for filter_id in pair.filter_ids():
+                used.append(filter_id)
+                for issue in _cached_execution_issues(store, filter_id):
+                    key = _issue_key(issue)
+                    if key:
+                        by_key.setdefault(key, issue)
+            grouped[program.program_key] = list(by_key.values())
+        return ",".join(dict.fromkeys(used)), grouped
+    if not sprint.execution_filter_id:
+        return "", grouped
+    for issue in _cached_execution_issues(store, sprint.execution_filter_id):
+        key = _project_key(issue)
+        if key in grouped:
+            grouped[key].append(issue)
+    return sprint.execution_filter_id, grouped
+
+
+def _program_for_issue(
+    issue: dict[str, Any],
+    wanted: dict[str, ProgramDef],
+    assignment: dict[str, str] | None = None,
+) -> ProgramDef | None:
+    if assignment is not None:
+        return wanted.get((assignment.get(_issue_key(issue)) or "").upper())
+    return wanted.get(_project_key(issue))
+
+
+def assignment_from_grouped(grouped: dict[str, list[dict[str, Any]]]) -> dict[str, str]:
+    assignment: dict[str, str] = {}
+    for program_key, rows in grouped.items():
+        for issue in rows:
+            key = _issue_key(issue)
+            if key and key not in assignment:
+                assignment[key] = program_key
+    return assignment
+
+
+def flatten_grouped(grouped: dict[str, list[dict[str, Any]]]) -> list[dict[str, Any]]:
+    issues: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for rows in grouped.values():
+        for issue in rows:
+            key = _issue_key(issue)
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            issues.append(issue)
+    return issues
+
+
+def list_blocker_issue_rows(
+    swf: SwfDef,
+    issues: list[dict[str, Any]],
+    assignment: dict[str, str] | None = None,
+) -> list[ExecutionIssueRow]:
     wanted = {program.program_key.upper(): program for program in swf.programs}
     rows: list[ExecutionIssueRow] = []
     for issue in issues:
-        program = wanted.get(_project_key(issue))
+        program = _program_for_issue(issue, wanted, assignment)
         if program is None:
             continue
         if not is_blocker_priority(_priority_name(issue)):
@@ -344,11 +429,15 @@ def list_blocker_issue_rows(swf: SwfDef, issues: list[dict[str, Any]]) -> list[E
     return rows
 
 
-def list_execution_issue_rows(swf: SwfDef, issues: list[dict[str, Any]]) -> list[ExecutionIssueRow]:
+def list_execution_issue_rows(
+    swf: SwfDef,
+    issues: list[dict[str, Any]],
+    assignment: dict[str, str] | None = None,
+) -> list[ExecutionIssueRow]:
     wanted = {program.program_key.upper(): program for program in swf.programs}
     rows: list[ExecutionIssueRow] = []
     for issue in issues:
-        program = wanted.get(_project_key(issue))
+        program = _program_for_issue(issue, wanted, assignment)
         if program is None:
             continue
         rows.append(
@@ -373,16 +462,13 @@ def list_execution_issue_rows(swf: SwfDef, issues: list[dict[str, Any]]) -> list
 
 def build_execution_issues_xlsx(sprint_id: str, swf_id: str) -> tuple[bytes, str]:
     sprint, swf = _resolve_sprint_swf(sprint_id, swf_id)
-    if not sprint.execution_filter_id:
+    if not sprint_device_filters(sprint.id) and not sprint.execution_filter_id:
         raise SprintTestingConfigError(
             f"{sprint.label} aún no tiene un Saved Filter de issues en ejecución."
         )
-    issues = fetch_raw_issues_by_filter(
-        sprint.execution_filter_id,
-        _EXECUTION_FIELDS,
-        expand=_EXECUTION_EXPAND,
-    )
-    rows = list_execution_issue_rows(swf, issues)
+    _label, grouped = collect_execution_issues(sprint, swf)
+    issues = flatten_grouped(grouped)
+    rows = list_execution_issue_rows(swf, issues, assignment_from_grouped(grouped))
     filename = f"{export_basename(sprint.label, swf.label)}_issues.xlsx"
     return build_issues_workbook(rows), filename
 
@@ -403,21 +489,24 @@ def build_sprint_pack_zip(sprint_id: str) -> tuple[bytes, str]:
     if not selected:
         raise SprintTestingConfigError("No hay SWF configuradas para el pack (SPRINT_PACK_SWFS).")
     epic_issues = fetch_raw_issues_by_filter(sprint.filter_id, _ISSUE_FIELDS)
-    execution_issues: list[dict[str, Any]] = []
-    if sprint.execution_filter_id:
-        execution_issues = fetch_raw_issues_by_filter(
-            sprint.execution_filter_id,
-            _EXECUTION_FIELDS,
-            expand=_EXECUTION_EXPAND,
-        )
+    cache: dict[str, list[dict[str, Any]]] = {}
+    has_execution = bool(sprint_device_filters(sprint.id) or sprint.execution_filter_id)
     payloads: list[SprintTestingRead] = []
     sheets: list[tuple[str, list[ExecutionIssueRow]]] = []
     for swf in selected:
         payload = aggregate_issues(sprint.id, sprint.label, sprint.filter_id, swf, epic_issues)
-        if sprint.execution_filter_id:
-            payload.execution = aggregate_execution_issues(sprint.execution_filter_id, swf, execution_issues)
+        if has_execution:
+            label, grouped = collect_execution_issues(sprint, swf, cache)
+            payload.execution = aggregate_execution_issues(label, swf, grouped=grouped)
+            sheets.append(
+                (
+                    swf.label,
+                    list_blocker_issue_rows(swf, flatten_grouped(grouped), assignment_from_grouped(grouped)),
+                )
+            )
+        else:
+            sheets.append((swf.label, []))
         payloads.append(payload)
-        sheets.append((swf.label, list_blocker_issue_rows(swf, execution_issues)))
     pptx = build_executive_pptx_pack(payloads)
     xlsx = build_issues_workbook_sheets(sheets)
     labels = "_".join(item.label.replace(" ", "") for item in selected)
@@ -432,17 +521,20 @@ def build_sprint_pack_zip(sprint_id: str) -> tuple[bytes, str]:
 def aggregate_execution_issues(
     filter_id: str,
     swf: SwfDef,
-    issues: list[dict[str, Any]],
+    issues: list[dict[str, Any]] | None = None,
+    grouped: dict[str, list[dict[str, Any]]] | None = None,
 ) -> ExecutionMetrics:
-    grouped: dict[str, list[dict[str, Any]]] = {program.program_key.upper(): [] for program in swf.programs}
-    for issue in issues:
-        key = _project_key(issue)
-        if key in grouped:
-            grouped[key].append(issue)
+    buckets = grouped
+    if buckets is None:
+        buckets = {program.program_key.upper(): [] for program in swf.programs}
+        for issue in issues or []:
+            key = _project_key(issue)
+            if key in buckets:
+                buckets[key].append(issue)
     programs: list[ExecutionProgramMetrics] = []
     blockers: list[ExecutionBlockerRow] = []
     for program in swf.programs:
-        rows = grouped[program.program_key]
+        rows = buckets[program.program_key]
         if not rows:
             continue
         blocker = 0
@@ -499,13 +591,9 @@ def build_sprint_testing(sprint_id: str, swf_id: str) -> SprintTestingRead:
         )
     issues = fetch_raw_issues_by_filter(sprint.filter_id, _ISSUE_FIELDS)
     payload = aggregate_issues(sprint.id, sprint.label, sprint.filter_id, swf, issues)
-    if sprint.execution_filter_id:
-        execution_issues = fetch_raw_issues_by_filter(
-            sprint.execution_filter_id,
-            _EXECUTION_FIELDS,
-            expand=_EXECUTION_EXPAND,
-        )
-        payload.execution = aggregate_execution_issues(sprint.execution_filter_id, swf, execution_issues)
+    if sprint_device_filters(sprint.id) or sprint.execution_filter_id:
+        label, grouped = collect_execution_issues(sprint, swf)
+        payload.execution = aggregate_execution_issues(label, swf, grouped=grouped)
     return payload
 
 

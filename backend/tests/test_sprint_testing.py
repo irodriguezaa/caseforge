@@ -455,6 +455,59 @@ def _exec_issue(
     }
 
 
+def test_sprint_device_filters_parse_env(monkeypatch) -> None:
+    from app.services.sprint_testing.device_filters import sprint_device_filters
+
+    monkeypatch.setenv(
+        "SPRINT45_DEVICE_FILTERS",
+        "ADTCL=99868,117752; WEBCL=117767; C9085PR=112076,; ROKUPR=,117755",
+    )
+    mapping = sprint_device_filters("45")
+    assert mapping["ADTCL"].qa_filter_id == "99868"
+    assert mapping["ADTCL"].qc_filter_id == "117752"
+    assert mapping["WEBCL"].filter_ids() == ("117767",)
+    assert mapping["C9085PR"].qa_filter_id == "112076"
+    assert mapping["C9085PR"].qc_filter_id is None
+    assert mapping["ROKUPR"].qa_filter_id is None
+    assert mapping["ROKUPR"].qc_filter_id == "117755"
+    assert sprint_device_filters("44") == {}
+    assert sprint_device_filters("46") == {}
+
+
+def test_device_qa_qc_filters_own_nested_issues(monkeypatch) -> None:
+    from app.services.sprint_testing.catalog import get_sprint
+    from app.services.sprint_testing import service as sprint_service
+
+    monkeypatch.setenv("SPRINT45_DEVICE_FILTERS", "ADTCL=99868,117752")
+
+    def fake_fetch(filter_id: str, _fields: list[str], expand: list[str] | None = None):
+        del expand
+        if filter_id == "99868":
+            return [
+                _exec_issue("ADTCL-1", "ADTCL", "Analysis", "Blocker", "ADT qa", "x"),
+                _exec_issue("GCECL-2190", "GCECL", "Analysis", "Blocker", "nested qa", "x"),
+            ]
+        if filter_id == "117752":
+            return [_exec_issue("GCECL-2177", "GCECL", "Pending Resolution", "Blocker", "nested qc", "x")]
+        if filter_id == "117796":
+            return [_exec_issue("ATSCL-2717", "ATSCL", "Analysis", "Blocker", "tata", "x")]
+        return []
+
+    monkeypatch.setattr(sprint_service, "fetch_raw_issues_by_filter", fake_fetch)
+    sprint = get_sprint("45")
+    hitss = get_swf("hitss")
+    assert sprint is not None and hitss is not None
+    label, grouped = sprint_service.collect_execution_issues(sprint, hitss)
+    assert "99868" in label and "117752" in label
+    adt_keys = {str(issue.get("key")) for issue in grouped["ADTCL"]}
+    assert adt_keys == {"ADTCL-1", "GCECL-2177", "GCECL-2190"}
+    assert grouped["WEBCL"] == []
+    payload = aggregate_execution_issues(label, hitss, grouped=grouped)
+    assert [row.key for row in payload.blockers] == ["ADTCL-1", "GCECL-2177", "GCECL-2190"]
+    assert all(row.program_key == "ADTCL" for row in payload.blockers)
+    assert all(row.key != "ATSCL-2717" for row in payload.blockers)
+
+
 def test_execution_issue_rows_filter_and_truncate() -> None:
     from app.services.sprint_testing.service import list_execution_issue_rows
 

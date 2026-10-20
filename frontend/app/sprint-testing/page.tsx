@@ -303,9 +303,6 @@ export default function SprintTestingPage(): React.ReactElement {
             <p className="muted" style={{ marginTop: 0, marginBottom: 4 }}>
               Issues del Sprint en curso, por dispositivo: Blocker vs no Blocker.
             </p>
-            <p className="muted" style={{ marginTop: 0, fontSize: "11px" }}>
-              Filtro Jira: <JiraFilterLink filterId={data.execution.filter_id} />
-            </p>
             {data.execution.programs.length === 0 ? (
               <p className="muted">No hay issues de ejecución para este SWF.</p>
             ) : (
