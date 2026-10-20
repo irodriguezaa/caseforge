@@ -290,15 +290,14 @@ def _blocker(key: str, project: str) -> dict:
     }
 
 
-def test_device_subfilter_owns_every_issue_in_it(monkeypatch) -> None:
+def test_nested_filter_membership_infers_device_without_catalog(monkeypatch) -> None:
     from app.services.sprint_testing import service as sprint_service
 
     jql_by_id = {
-        "117796": "filter = 99868 OR filter in (99869, 117767, 117755)",
+        "117796": "filter = 99868 OR filter in (99869, 117767)",
         "99868": "project = ADTCL",
         "99869": "project = WINCL",
         "117767": "project = WEBCL",
-        "117755": "project = ROKUPR",
     }
     monkeypatch.setattr(
         sprint_service,
@@ -326,10 +325,6 @@ def test_device_subfilter_owns_every_issue_in_it(monkeypatch) -> None:
             {"key": "PLYCL-818", "fields": {"project": {"key": "PLYCL"}}},
             {"key": "GCECL-2223", "fields": {"project": {"key": "GCECL"}}},
         ],
-        "117755": [
-            _blocker("ROKUPR-1724", "ROKUPR"),
-            _blocker("DPLCL-1133", "DPLCL"),
-        ],
     }
 
     def fake_fetch(filter_id: str, _fields: list[str], expand: list[str] | None = None):
@@ -342,21 +337,11 @@ def test_device_subfilter_owns_every_issue_in_it(monkeypatch) -> None:
     assert membership["PRGCL-546"] == "WEBCL"
     assert membership["PLYCL-818"] == "WEBCL"
     assert membership["GCECL-2223"] == "WEBCL"
-    assert membership["WEBCL-1"] == "WEBCL"
-    assert membership["DPLCL-1133"] == "ROKUPR"
-    assert membership["ROKUPR-1724"] == "ROKUPR"
     assert "ATSCL-2717" not in membership
-    keys = {str(issue.get("key")) for issue in issues}
-    assert "ROKUPR-1724" in keys
-    assert "DPLCL-1133" in keys
-    hitss = get_swf("hitss")
-    neoris = get_swf("neoris")
-    assert hitss is not None and neoris is not None
-    hitss_payload = aggregate_execution_issues("117796", hitss, issues, membership)
-    assert all(row.key != "ATSCL-2717" for row in hitss_payload.blockers)
-    roku = aggregate_execution_issues("117796", neoris, issues, membership)
-    assert [row.key for row in roku.blockers] == ["DPLCL-1133", "ROKUPR-1724"]
-    assert all(row.program_key == "ROKUPR" for row in roku.blockers)
+    assert "WEBCL-1" not in membership
+    payload = aggregate_execution_issues("117796", get_swf("hitss"), issues, membership)
+    assert all(row.key != "ATSCL-2717" for row in payload.blockers)
+    assert "WEBCL" in {row.program_key for row in payload.programs}
 
 
 def test_web_nested_projects_show_as_web_blockers() -> None:
@@ -387,30 +372,18 @@ def test_web_nested_projects_show_as_web_blockers() -> None:
     assert all(row.display_name == "WEB" for row in payload.blockers)
 
 
-def test_other_swf_device_without_subfilter_stays_out_of_hitss() -> None:
+def test_other_swf_device_is_never_relabeled_to_hitss() -> None:
     hitss = get_swf("hitss")
     assert hitss is not None
+    atscl = _blocker("ATSCL-2717", "ATSCL")
     payload = aggregate_execution_issues(
         "117796",
         hitss,
-        [_blocker("ATSCL-2717", "ATSCL"), _blocker("GCECL-2223", "GCECL")],
-        {"GCECL-2223": "WEBCL"},
+        [atscl, _blocker("GCECL-2223", "GCECL")],
+        {"ATSCL-2717": "WEBCL", "GCECL-2223": "WEBCL"},
     )
     assert [row.key for row in payload.blockers] == ["GCECL-2223"]
     assert payload.blockers[0].program_key == "WEBCL"
-
-
-def test_roku_subfilter_shows_rokupr_and_dplcl() -> None:
-    neoris = get_swf("neoris")
-    assert neoris is not None
-    payload = aggregate_execution_issues(
-        "117796",
-        neoris,
-        [_blocker("ROKUPR-1724", "ROKUPR"), _blocker("DPLCL-1133", "DPLCL")],
-        {"DPLCL-1133": "ROKUPR"},
-    )
-    assert [row.key for row in payload.blockers] == ["DPLCL-1133", "ROKUPR-1724"]
-    assert all(row.display_name == "Roku" for row in payload.blockers)
 
 
 def test_execution_blockers_grouped_by_program_match_bar_counts() -> None:

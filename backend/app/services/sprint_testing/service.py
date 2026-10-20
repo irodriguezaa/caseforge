@@ -327,10 +327,6 @@ def _all_programs() -> dict[str, ProgramDef]:
     return catalog
 
 
-def _issue_key(issue: dict[str, Any]) -> str:
-    return str(issue.get("key") or "").strip().upper()
-
-
 def _filter_jql(filter_id: str, cache: dict[str, str]) -> str:
     if filter_id not in cache:
         cache[filter_id] = fetch_saved_filter_jql(filter_id)
@@ -354,61 +350,48 @@ def _nested_filter_leaves(filter_id: str, cache: dict[str, str], seen: set[str] 
     return leaves
 
 
-def _device_of_subfilter(
-    issues: list[dict[str, Any]],
-    jql: str,
-    catalog: dict[str, ProgramDef],
-) -> ProgramDef | None:
-    """A subfilter is one device: `project = ROKUPR` in JQL, else the only majority device in that filter."""
+def _unique_device_in_jql(jql: str, catalog: dict[str, ProgramDef]) -> ProgramDef | None:
     mentioned = [catalog[key] for key in project_keys_in_jql(jql) if key in catalog]
-    if len(mentioned) == 1:
-        return mentioned[0]
-    counts: dict[str, int] = {}
-    for issue in issues:
-        key = _project_key(issue)
-        if key in catalog:
-            counts[key] = counts.get(key, 0) + 1
-    if not counts:
+    if len(mentioned) != 1:
         return None
-    winner = max(counts, key=lambda key: counts[key])
-    if sum(1 for count in counts.values() if count == counts[winner]) > 1:
-        return None
-    return catalog[winner]
+    return mentioned[0]
+
+
+def nested_filter_program_membership(filter_id: str) -> dict[str, str]:
+    """Nested GCECL/PLYCL/PRGCL → device of a single-project saved filter. Never relabel ATSCL/WEBCL/…"""
+    parent_id = str(filter_id or "").strip()
+    if not parent_id:
+        return {}
+    cache: dict[str, str] = {}
+    nested = [fid for fid in nested_saved_filter_ids(_filter_jql(parent_id, cache)) if fid != parent_id]
+    if not nested:
+        return {}
+    catalog = _all_programs()
+    membership: dict[str, str] = {}
+    for leaf_id in _nested_filter_leaves(parent_id, cache):
+        program = _unique_device_in_jql(_filter_jql(leaf_id, cache), catalog)
+        if program is None:
+            continue
+        for issue in fetch_raw_issues_by_filter(leaf_id, ["project"]):
+            key = str(issue.get("key") or "").strip().upper()
+            if not key or key in membership:
+                continue
+            if _project_key(issue) in catalog:
+                continue
+            membership[key] = program.program_key
+    return membership
 
 
 def load_execution_issues(filter_id: str) -> tuple[list[dict[str, Any]], dict[str, str]]:
-    """Parent 117796 is only a union. Each nested saved filter owns its issues as one device."""
     parent_id = str(filter_id or "").strip()
     if not parent_id:
         return [], {}
-    parent_issues = fetch_raw_issues_by_filter(
+    issues = fetch_raw_issues_by_filter(
         parent_id,
         _EXECUTION_FIELDS,
         expand=_EXECUTION_EXPAND,
     )
-    cache: dict[str, str] = {}
-    nested = [fid for fid in nested_saved_filter_ids(_filter_jql(parent_id, cache)) if fid != parent_id]
-    if not nested:
-        return parent_issues, {}
-    catalog = _all_programs()
-    by_key = {_issue_key(issue): issue for issue in parent_issues if _issue_key(issue)}
-    membership: dict[str, str] = {}
-    for leaf_id in _nested_filter_leaves(parent_id, cache):
-        child_issues = fetch_raw_issues_by_filter(
-            leaf_id,
-            _EXECUTION_FIELDS,
-            expand=_EXECUTION_EXPAND,
-        )
-        program = _device_of_subfilter(child_issues, _filter_jql(leaf_id, cache), catalog)
-        if program is None:
-            continue
-        for issue in child_issues:
-            key = _issue_key(issue)
-            if not key:
-                continue
-            by_key.setdefault(key, issue)
-            membership.setdefault(key, program.program_key)
-    return list(by_key.values()), membership
+    return issues, nested_filter_program_membership(parent_id)
 
 
 def _resolve_execution_program(
@@ -416,13 +399,12 @@ def _resolve_execution_program(
     wanted: dict[str, ProgramDef],
     membership: dict[str, str] | None = None,
 ) -> ProgramDef | None:
-    """Device subfilter first, then own project, then parent/link. Never the parent union."""
-    own = _issue_key(issue)
-    if membership and own in membership:
-        return wanted.get(membership[own].upper())
-    mapped = wanted.get(_project_key(issue))
-    if mapped is not None:
-        return mapped
+    """Map an execution issue to a SWF device. Nested bugs follow parent, link, or device filter."""
+    own_project = _project_key(issue)
+    if own_project in wanted:
+        return wanted[own_project]
+    if own_project in _all_programs():
+        return None
     mapped = wanted.get(_program_prefix(_principal_key(issue)))
     if mapped is not None:
         return mapped
@@ -432,6 +414,13 @@ def _resolve_execution_program(
             continue
         seen.add(linked)
         mapped = wanted.get(_program_prefix(linked))
+        if mapped is not None:
+            return mapped
+        if _program_prefix(linked) in _all_programs():
+            return None
+    own = str(issue.get("key") or "").strip().upper()
+    if membership and own:
+        mapped = wanted.get((membership.get(own) or "").upper())
         if mapped is not None:
             return mapped
     return None
