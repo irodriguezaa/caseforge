@@ -35,6 +35,14 @@ _REQUEST_TIMEOUT_SECONDS = 120.0
 _SEARCH_PAGE_SIZE = 100
 _JIRA_OFFSET_RE = re.compile(r"([+-])(\d{2})(\d{2})$")
 _FILTER_ID_RE = re.compile(r"(?:[?&]filter=|/filters/)(\d+)", re.IGNORECASE)
+_NESTED_FILTER_RE = re.compile(
+    r"\bfilter\s*(?:=\s*(\d+)|in\s*\(([^)]+)\))",
+    re.IGNORECASE,
+)
+_PROJECT_IN_JQL_RE = re.compile(
+    r"\bproject\s*(?:=\s*[\"']?([A-Za-z][A-Za-z0-9]+)[\"']?|in\s*\(([^)]+)\))",
+    re.IGNORECASE,
+)
 _DASHBOARD_COUNT_TIMEOUT = 8.0
 _OPEN_BLOCKER_JQL = (
     ' AND priority in ("Supone un impedimento", Blocker, Impedimento, Bloqueador)'
@@ -323,6 +331,41 @@ def parse_jira_filter_id(raw: str | None) -> str | None:
         return text
     match = _FILTER_ID_RE.search(text)
     return match.group(1) if match else None
+
+
+def nested_saved_filter_ids(jql: str) -> list[str]:
+    """Filter ids referenced in saved-filter JQL (`filter = 99868` or `filter in (a, b)`)."""
+    ids: list[str] = []
+    seen: set[str] = set()
+    for equals, grouped in _NESTED_FILTER_RE.findall(jql or ""):
+        chunk = equals or grouped
+        for fid in re.findall(r"\d+", chunk):
+            if fid in seen:
+                continue
+            seen.add(fid)
+            ids.append(fid)
+    return ids
+
+
+def project_keys_in_jql(jql: str) -> list[str]:
+    """Project keys from `project = WEBCL` or `project in (WEBCL, ADTCL)`."""
+    keys: list[str] = []
+    seen: set[str] = set()
+    for equals, grouped in _PROJECT_IN_JQL_RE.findall(jql or ""):
+        chunk = equals or grouped
+        for token in re.findall(r"[A-Za-z][A-Za-z0-9]+", chunk):
+            key = token.upper()
+            if key in seen:
+                continue
+            seen.add(key)
+            keys.append(key)
+    return keys
+
+
+def fetch_saved_filter_jql(filter_id: str) -> str:
+    ensure_authenticated()
+    with _client() as client:
+        return _jql_for_saved_filter(client, filter_id)
 
 
 def _jql_without_order(jql: str) -> str:

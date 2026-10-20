@@ -21,8 +21,21 @@ from app.schemas.sprint_testing import (
     SprintTestingSprint,
     SwfOption,
 )
-from app.services.jira_client import fetch_raw_issues_by_filter
-from app.services.sprint_testing.catalog import SWFS, SPRINTS, SprintDef, SwfDef, get_sprint, get_swf
+from app.services.jira_client import (
+    fetch_raw_issues_by_filter,
+    fetch_saved_filter_jql,
+    nested_saved_filter_ids,
+    project_keys_in_jql,
+)
+from app.services.sprint_testing.catalog import (
+    SWFS,
+    SPRINTS,
+    ProgramDef,
+    SprintDef,
+    SwfDef,
+    get_sprint,
+    get_swf,
+)
 from app.services.sprint_testing.classify import (
     classify_status,
     is_blocker_priority,
@@ -281,13 +294,13 @@ def _last_comment_label(issue: dict[str, Any]) -> str:
     return stamp
 
 
-def _nested_issue_keys(issue: dict[str, Any]) -> list[str]:
+def _nested_issue_keys(issue: dict[str, Any], *, nested_only: bool = True) -> list[str]:
     own = str(issue.get("key") or "").strip().upper()
     keys: list[str] = []
     seen: set[str] = set()
     for link in (issue.get("fields") or {}).get("issuelinks") or []:
         link_type = str((link.get("type") or {}).get("name") or "").strip().lower()
-        if link_type != _NESTED_LINK_TYPE:
+        if nested_only and link_type != _NESTED_LINK_TYPE:
             continue
         for side in ("outwardIssue", "inwardIssue"):
             other = link.get(side) or {}
@@ -297,6 +310,157 @@ def _nested_issue_keys(issue: dict[str, Any]) -> list[str]:
             seen.add(key)
             keys.append(key)
     return keys
+
+
+def _program_prefix(issue_key: str | None) -> str:
+    raw = (issue_key or "").strip().upper()
+    if not raw:
+        return ""
+    return raw.split("-", 1)[0]
+
+
+def _all_programs() -> dict[str, ProgramDef]:
+    catalog: dict[str, ProgramDef] = {}
+    for swf in SWFS:
+        for program in swf.programs:
+            catalog[program.program_key.upper()] = program
+    return catalog
+
+
+def _majority_program(
+    issues: list[dict[str, Any]],
+    catalog: dict[str, ProgramDef],
+) -> ProgramDef | None:
+    counts: dict[str, int] = {}
+    for issue in issues:
+        key = _project_key(issue)
+        if key not in catalog:
+            continue
+        counts[key] = counts.get(key, 0) + 1
+    if not counts:
+        return None
+    winner = max(counts, key=lambda key: counts[key])
+    return catalog[winner]
+
+
+def _device_for_filter(
+    issues: list[dict[str, Any]],
+    jql: str,
+    catalog: dict[str, ProgramDef],
+) -> ProgramDef | None:
+    mentioned = [catalog[key] for key in project_keys_in_jql(jql) if key in catalog]
+    if len(mentioned) == 1:
+        return mentioned[0]
+    return _majority_program(issues, catalog)
+
+
+def _filter_jql(filter_id: str, cache: dict[str, str]) -> str:
+    if filter_id not in cache:
+        cache[filter_id] = fetch_saved_filter_jql(filter_id)
+    return cache[filter_id]
+
+
+def _nested_filter_leaves(filter_id: str, cache: dict[str, str], seen: set[str] | None = None) -> list[str]:
+    parent_id = str(filter_id or "").strip()
+    if not parent_id:
+        return []
+    walking = seen if seen is not None else set()
+    if parent_id in walking:
+        return []
+    walking.add(parent_id)
+    nested = [fid for fid in nested_saved_filter_ids(_filter_jql(parent_id, cache)) if fid not in walking]
+    if not nested:
+        return [parent_id]
+    leaves: list[str] = []
+    for nested_id in nested:
+        leaves.extend(_nested_filter_leaves(nested_id, cache, walking))
+    return leaves
+
+
+def _membership_for_issues(issues: list[dict[str, Any]], program: ProgramDef | None) -> dict[str, str]:
+    if program is None:
+        return {}
+    membership: dict[str, str] = {}
+    for issue in issues:
+        key = str(issue.get("key") or "").strip().upper()
+        if key:
+            membership[key] = program.program_key
+    return membership
+
+
+def nested_filter_program_membership(filter_id: str) -> dict[str, str]:
+    """Issue key → device. Nested GCECL/PLYCL/PRGCL follow the device filter they belong to."""
+    _issues, membership = load_execution_issues(filter_id)
+    return membership
+
+
+def load_execution_issues(filter_id: str) -> tuple[list[dict[str, Any]], dict[str, str]]:
+    """Parent execution issues plus nested device-filter members (WEB 117767, ADT 99868, …)."""
+    parent_id = str(filter_id or "").strip()
+    if not parent_id:
+        return [], {}
+    cache: dict[str, str] = {}
+    catalog = _all_programs()
+    parent_jql = _filter_jql(parent_id, cache)
+    parent_issues = fetch_raw_issues_by_filter(
+        parent_id,
+        _EXECUTION_FIELDS,
+        expand=_EXECUTION_EXPAND,
+    )
+    nested = [fid for fid in nested_saved_filter_ids(parent_jql) if fid != parent_id]
+    if not nested:
+        program = _device_for_filter(parent_issues, parent_jql, catalog)
+        return parent_issues, _membership_for_issues(parent_issues, program)
+
+    by_key = {
+        str(issue.get("key") or "").strip().upper(): issue
+        for issue in parent_issues
+        if str(issue.get("key") or "").strip()
+    }
+    membership: dict[str, str] = {}
+    for leaf_id in _nested_filter_leaves(parent_id, cache):
+        child_issues = fetch_raw_issues_by_filter(
+            leaf_id,
+            _EXECUTION_FIELDS,
+            expand=_EXECUTION_EXPAND,
+        )
+        program = _device_for_filter(child_issues, _filter_jql(leaf_id, cache), catalog)
+        for issue in child_issues:
+            key = str(issue.get("key") or "").strip().upper()
+            if not key:
+                continue
+            by_key.setdefault(key, issue)
+            if program is not None and key not in membership:
+                membership[key] = program.program_key
+    return list(by_key.values()), membership
+
+
+def _resolve_execution_program(
+    issue: dict[str, Any],
+    wanted: dict[str, ProgramDef],
+    membership: dict[str, str] | None = None,
+) -> ProgramDef | None:
+    """Map an execution issue to a SWF device. Nested bugs follow parent, link, or device filter."""
+    mapped = wanted.get(_project_key(issue))
+    if mapped is not None:
+        return mapped
+    mapped = wanted.get(_program_prefix(_principal_key(issue)))
+    if mapped is not None:
+        return mapped
+    seen: set[str] = set()
+    for linked in _nested_issue_keys(issue) + _nested_issue_keys(issue, nested_only=False):
+        if linked in seen:
+            continue
+        seen.add(linked)
+        mapped = wanted.get(_program_prefix(linked))
+        if mapped is not None:
+            return mapped
+    own = str(issue.get("key") or "").strip().upper()
+    if membership and own:
+        mapped = wanted.get((membership.get(own) or "").upper())
+        if mapped is not None:
+            return mapped
+    return None
 
 
 def _resolve_sprint_swf(sprint_id: str, swf_id: str) -> tuple[SprintDef, SwfDef]:
@@ -313,11 +477,15 @@ def export_basename(sprint_label: str, swf_label: str) -> str:
     return f"{sprint_label.replace(' ', '')}_{swf_label.replace(' ', '')}"
 
 
-def list_blocker_issue_rows(swf: SwfDef, issues: list[dict[str, Any]]) -> list[ExecutionIssueRow]:
+def list_blocker_issue_rows(
+    swf: SwfDef,
+    issues: list[dict[str, Any]],
+    membership: dict[str, str] | None = None,
+) -> list[ExecutionIssueRow]:
     wanted = {program.program_key.upper(): program for program in swf.programs}
     rows: list[ExecutionIssueRow] = []
     for issue in issues:
-        program = wanted.get(_project_key(issue))
+        program = _resolve_execution_program(issue, wanted, membership)
         if program is None:
             continue
         if not is_blocker_priority(_priority_name(issue)):
@@ -344,11 +512,15 @@ def list_blocker_issue_rows(swf: SwfDef, issues: list[dict[str, Any]]) -> list[E
     return rows
 
 
-def list_execution_issue_rows(swf: SwfDef, issues: list[dict[str, Any]]) -> list[ExecutionIssueRow]:
+def list_execution_issue_rows(
+    swf: SwfDef,
+    issues: list[dict[str, Any]],
+    membership: dict[str, str] | None = None,
+) -> list[ExecutionIssueRow]:
     wanted = {program.program_key.upper(): program for program in swf.programs}
     rows: list[ExecutionIssueRow] = []
     for issue in issues:
-        program = wanted.get(_project_key(issue))
+        program = _resolve_execution_program(issue, wanted, membership)
         if program is None:
             continue
         rows.append(
@@ -377,12 +549,8 @@ def build_execution_issues_xlsx(sprint_id: str, swf_id: str) -> tuple[bytes, str
         raise SprintTestingConfigError(
             f"{sprint.label} aún no tiene un Saved Filter de issues en ejecución."
         )
-    issues = fetch_raw_issues_by_filter(
-        sprint.execution_filter_id,
-        _EXECUTION_FIELDS,
-        expand=_EXECUTION_EXPAND,
-    )
-    rows = list_execution_issue_rows(swf, issues)
+    issues, membership = load_execution_issues(sprint.execution_filter_id)
+    rows = list_execution_issue_rows(swf, issues, membership)
     filename = f"{export_basename(sprint.label, swf.label)}_issues.xlsx"
     return build_issues_workbook(rows), filename
 
@@ -404,20 +572,19 @@ def build_sprint_pack_zip(sprint_id: str) -> tuple[bytes, str]:
         raise SprintTestingConfigError("No hay SWF configuradas para el pack (SPRINT_PACK_SWFS).")
     epic_issues = fetch_raw_issues_by_filter(sprint.filter_id, _ISSUE_FIELDS)
     execution_issues: list[dict[str, Any]] = []
+    membership: dict[str, str] = {}
     if sprint.execution_filter_id:
-        execution_issues = fetch_raw_issues_by_filter(
-            sprint.execution_filter_id,
-            _EXECUTION_FIELDS,
-            expand=_EXECUTION_EXPAND,
-        )
+        execution_issues, membership = load_execution_issues(sprint.execution_filter_id)
     payloads: list[SprintTestingRead] = []
     sheets: list[tuple[str, list[ExecutionIssueRow]]] = []
     for swf in selected:
         payload = aggregate_issues(sprint.id, sprint.label, sprint.filter_id, swf, epic_issues)
         if sprint.execution_filter_id:
-            payload.execution = aggregate_execution_issues(sprint.execution_filter_id, swf, execution_issues)
+            payload.execution = aggregate_execution_issues(
+                sprint.execution_filter_id, swf, execution_issues, membership
+            )
         payloads.append(payload)
-        sheets.append((swf.label, list_blocker_issue_rows(swf, execution_issues)))
+        sheets.append((swf.label, list_blocker_issue_rows(swf, execution_issues, membership)))
     pptx = build_executive_pptx_pack(payloads)
     xlsx = build_issues_workbook_sheets(sheets)
     labels = "_".join(item.label.replace(" ", "") for item in selected)
@@ -433,12 +600,14 @@ def aggregate_execution_issues(
     filter_id: str,
     swf: SwfDef,
     issues: list[dict[str, Any]],
+    membership: dict[str, str] | None = None,
 ) -> ExecutionMetrics:
+    wanted = {program.program_key.upper(): program for program in swf.programs}
     grouped: dict[str, list[dict[str, Any]]] = {program.program_key.upper(): [] for program in swf.programs}
     for issue in issues:
-        key = _project_key(issue)
-        if key in grouped:
-            grouped[key].append(issue)
+        program = _resolve_execution_program(issue, wanted, membership)
+        if program is not None:
+            grouped[program.program_key].append(issue)
     programs: list[ExecutionProgramMetrics] = []
     blockers: list[ExecutionBlockerRow] = []
     for program in swf.programs:
@@ -500,12 +669,13 @@ def build_sprint_testing(sprint_id: str, swf_id: str) -> SprintTestingRead:
     issues = fetch_raw_issues_by_filter(sprint.filter_id, _ISSUE_FIELDS)
     payload = aggregate_issues(sprint.id, sprint.label, sprint.filter_id, swf, issues)
     if sprint.execution_filter_id:
-        execution_issues = fetch_raw_issues_by_filter(
+        execution_issues, membership = load_execution_issues(sprint.execution_filter_id)
+        payload.execution = aggregate_execution_issues(
             sprint.execution_filter_id,
-            _EXECUTION_FIELDS,
-            expand=_EXECUTION_EXPAND,
+            swf,
+            execution_issues,
+            membership,
         )
-        payload.execution = aggregate_execution_issues(sprint.execution_filter_id, swf, execution_issues)
     return payload
 
 

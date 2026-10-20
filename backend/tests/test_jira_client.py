@@ -73,6 +73,16 @@ def test_parse_jira_filter_id_from_url_or_digits() -> None:
     assert parse_jira_filter_id("https://dlatvarg.atlassian.net/issues/?jql=project=WEB") is None
 
 
+def test_nested_saved_filter_ids_from_jql() -> None:
+    from app.services.jira_client import nested_saved_filter_ids, project_keys_in_jql
+
+    assert nested_saved_filter_ids("filter = 99868 OR filter=117704") == ["99868", "117704"]
+    assert nested_saved_filter_ids("filter in (99868, 99869)") == ["99868", "99869"]
+    assert nested_saved_filter_ids("project = ADTCL") == []
+    assert project_keys_in_jql("project = WEBCL") == ["WEBCL"]
+    assert project_keys_in_jql("project in (WEBCL, ADTCL)") == ["WEBCL", "ADTCL"]
+
+
 def test_count_open_blocker_issues_narrows_saved_filter_jql(monkeypatch) -> None:
     from app.services import jira_client
 

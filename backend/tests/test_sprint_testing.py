@@ -8,7 +8,12 @@ from app.services.sprint_testing.classify import (
     is_closed_status,
     is_technical_epic,
 )
-from app.services.sprint_testing.service import aggregate_execution_issues, aggregate_issues, build_sprint_testing
+from app.services.sprint_testing.service import (
+    aggregate_execution_issues,
+    aggregate_issues,
+    build_sprint_testing,
+    list_blocker_issue_rows,
+)
 
 
 def _issue(key: str, project: str, status: str, issuetype: str = "Technical Epic") -> dict:
@@ -193,6 +198,169 @@ def test_execution_counts_blocker_by_program() -> None:
     assert payload.blockers[0].display_name == "ADT / FireTV"
     assert payload.blockers[0].issue_type == "Bug"
     assert all(row.program_key not in {"WEBCL", "AAFCL"} for row in payload.programs)
+
+
+def test_execution_nested_gcecl_follows_parent_or_link() -> None:
+    hitss = get_swf("hitss")
+    assert hitss is not None
+
+    parented = {
+        "key": "GCECL-2177",
+        "fields": {
+            "issuetype": {"name": "QA Bug"},
+            "status": {"name": "Analysis"},
+            "project": {"key": "GCECL"},
+            "priority": {"name": "Blocker"},
+            "summary": "GCE nested by parent",
+            "parent": {"key": "ADTCL-541"},
+        },
+    }
+    linked = {
+        "key": "GCECL-2174",
+        "fields": {
+            "issuetype": {"name": "QC Bug"},
+            "status": {"name": "Pending Resolution"},
+            "project": {"key": "GCECL"},
+            "priority": {"name": "Blocker"},
+            "summary": "GCE nested by link",
+            "issuelinks": [
+                {
+                    "type": {"name": "nested for resolution"},
+                    "inwardIssue": {"key": "ADTCL-2882"},
+                }
+            ],
+        },
+    }
+    orphan = {
+        "key": "GCECL-9999",
+        "fields": {
+            "issuetype": {"name": "QA Bug"},
+            "status": {"name": "Analysis"},
+            "project": {"key": "GCECL"},
+            "priority": {"name": "Blocker"},
+            "summary": "No ADT parent",
+        },
+    }
+    payload = aggregate_execution_issues("117796", hitss, [parented, linked, orphan])
+    adt = next(row for row in payload.programs if row.program_key == "ADTCL")
+    assert adt.blocker == 2
+    assert adt.total == 2
+    assert [row.key for row in payload.blockers] == ["GCECL-2174", "GCECL-2177"]
+    assert all(row.display_name == "ADT / FireTV" for row in payload.blockers)
+    rows = list_blocker_issue_rows(hitss, [parented, linked, orphan])
+    assert [row.key for row in rows] == ["GCECL-2174", "GCECL-2177"]
+
+
+def test_execution_nested_gcecl_follows_nested_filter_majority() -> None:
+    hitss = get_swf("hitss")
+    assert hitss is not None
+    orphan = {
+        "key": "GCECL-2190",
+        "fields": {
+            "issuetype": {"name": "QA Bug"},
+            "status": {"name": "Analysis"},
+            "project": {"key": "GCECL"},
+            "priority": {"name": "Blocker"},
+            "summary": "ADT playback",
+        },
+    }
+    payload = aggregate_execution_issues(
+        "117796",
+        hitss,
+        [orphan],
+        {"GCECL-2190": "ADTCL"},
+    )
+    adt = next(row for row in payload.programs if row.program_key == "ADTCL")
+    assert adt.blocker == 1
+    assert [row.key for row in payload.blockers] == ["GCECL-2190"]
+    rows = list_blocker_issue_rows(hitss, [orphan], {"GCECL-2190": "ADTCL"})
+    assert [row.key for row in rows] == ["GCECL-2190"]
+
+
+def _blocker(key: str, project: str) -> dict:
+    return {
+        "key": key,
+        "fields": {
+            "issuetype": {"name": "QA Bug"},
+            "status": {"name": "Analysis"},
+            "project": {"key": project},
+            "priority": {"name": "Blocker"},
+            "summary": key,
+        },
+    }
+
+
+def test_nested_filter_membership_infers_device_without_catalog(monkeypatch) -> None:
+    from app.services.sprint_testing import service as sprint_service
+
+    jql_by_id = {
+        "117796": "filter = 99868 OR filter in (99869, 117767)",
+        "99868": "project = ADTCL",
+        "99869": "project = WINCL",
+        "117767": "project = WEBCL",
+    }
+    monkeypatch.setattr(
+        sprint_service,
+        "fetch_saved_filter_jql",
+        lambda filter_id: jql_by_id[filter_id],
+    )
+
+    issues_by_id = {
+        "117796": [_issue("ADTCL-1", "ADTCL", "In Progress"), _issue("WEBCL-1", "WEBCL", "In Progress")],
+        "99868": [
+            _issue("ADTCL-1", "ADTCL", "In Progress"),
+            {"key": "GCECL-2190", "fields": {"project": {"key": "GCECL"}}},
+        ],
+        "99869": [_issue("WINCL-1", "WINCL", "In Progress")],
+        "117767": [
+            _issue("WEBCL-1", "WEBCL", "In Progress"),
+            {"key": "PRGCL-546", "fields": {"project": {"key": "PRGCL"}}},
+            {"key": "PLYCL-818", "fields": {"project": {"key": "PLYCL"}}},
+            {"key": "GCECL-2223", "fields": {"project": {"key": "GCECL"}}},
+        ],
+    }
+
+    def fake_fetch(filter_id: str, _fields: list[str], expand: list[str] | None = None):
+        del expand
+        return issues_by_id[filter_id]
+
+    monkeypatch.setattr(sprint_service, "fetch_raw_issues_by_filter", fake_fetch)
+    issues, membership = sprint_service.load_execution_issues("117796")
+    keys = {str(issue.get("key")) for issue in issues}
+    assert membership["GCECL-2190"] == "ADTCL"
+    assert membership["PRGCL-546"] == "WEBCL"
+    assert membership["PLYCL-818"] == "WEBCL"
+    assert membership["GCECL-2223"] == "WEBCL"
+    assert "PRGCL-546" in keys
+    assert "GCECL-2223" in keys
+
+
+def test_web_nested_projects_show_as_web_blockers() -> None:
+    hitss = get_swf("hitss")
+    assert hitss is not None
+    issues = [
+        _blocker("WEBCL-10", "WEBCL"),
+        _blocker("PRGCL-546", "PRGCL"),
+        _blocker("PLYCL-818", "PLYCL"),
+        _blocker("GCECL-2223", "GCECL"),
+        _blocker("GCECL-2220", "GCECL"),
+        _blocker("GCECL-2199", "GCECL"),
+        _blocker("GCECL-2198", "GCECL"),
+    ]
+    membership = {str(issue["key"]): "WEBCL" for issue in issues}
+    payload = aggregate_execution_issues("117796", hitss, issues, membership)
+    web = next(row for row in payload.programs if row.program_key == "WEBCL")
+    assert web.blocker == 7
+    assert [row.key for row in payload.blockers] == [
+        "GCECL-2198",
+        "GCECL-2199",
+        "GCECL-2220",
+        "GCECL-2223",
+        "PLYCL-818",
+        "PRGCL-546",
+        "WEBCL-10",
+    ]
+    assert all(row.display_name == "WEB" for row in payload.blockers)
 
 
 def test_execution_blockers_grouped_by_program_match_bar_counts() -> None:
@@ -646,6 +814,11 @@ def test_pack_options_and_zip(client, monkeypatch) -> None:
         ]
 
     monkeypatch.setattr(sprint_service, "fetch_raw_issues_by_filter", fake_fetch)
+    monkeypatch.setattr(
+        sprint_service,
+        "load_execution_issues",
+        lambda _filter_id: (fake_fetch("117704", []), {}),
+    )
     response = client.get("/api/v1/sprint-testing/export/pack", params={"sprint": "44"})
     assert response.status_code == 200
     assert "zip" in (response.headers.get("content-type") or "")
