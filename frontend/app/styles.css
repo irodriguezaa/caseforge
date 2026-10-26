@@ -457,7 +457,8 @@ button.epic-hours-toggle:hover:not(:disabled) { background: var(--surface-2); }
 h2 { font-size: 15px; font-weight: 600; }
 button, .button { background: var(--accent); border: 0; border-radius: 7px; color: white; cursor: pointer; font: inherit; font-weight: 600; font-size: 13px; padding: .55rem 1rem; text-decoration: none; display: inline-block; }
 button:hover:not(:disabled), .button:hover { background: #3f7ce0; }
-button:disabled { cursor: wait; opacity: .6; }
+button:disabled { cursor: not-allowed; opacity: .6; }
+button:disabled.is-busy { cursor: wait; }
 button.secondary, .button.secondary { background: var(--surface-2); border: 1px solid var(--border-strong); color: var(--text); }
 button.secondary:hover, .button.secondary:hover { background: var(--border); }
 button.danger { background: var(--danger); }

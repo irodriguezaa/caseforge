@@ -187,9 +187,16 @@ export function ReleaseAnalysisCard({
           </p>
         ) : null}
         <div style={{ marginTop: "14px" }}>
-          <button type="button" onClick={() => void handleExtractScope()} disabled={!canExtract || exporting}>
-            {exporting ? "Extrayendo…" : "Extraer alcance RN"}
-          </button>
+          {!pasted ? (
+            <button
+              type="button"
+              className={exporting ? "is-busy" : undefined}
+              onClick={() => void handleExtractScope()}
+              disabled={!canExtract || exporting}
+            >
+              {exporting ? "Extrayendo…" : "Extraer alcance RN"}
+            </button>
+          ) : null}
           {pasted ? (
             <p className="muted" style={{ fontSize: "12px", margin: "8px 0 0" }}>
               Fuente: listado de Technical Epics (sin Release Note PDF).
