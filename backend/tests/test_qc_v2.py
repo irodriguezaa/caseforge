@@ -122,6 +122,28 @@ def test_split_gherkin_keeps_quotes_and_comments():
     assert '"data.pin_channel.info[]"' in blocks[0][1]
 
 
+def test_tech_story_drops_metrics_and_key_scenarios():
+    issue = {
+        "key": "WEBCL-4541",
+        "fields": {
+            "summary": "Setup de métricas WEB",
+            "issuetype": {"name": "Technical Story"},
+            "description": (
+                "Feature: WEB\n"
+                "  Scenario: Carga el esquema de métricas\n"
+                "    Then el esquema de métricas cumple el pipeline\n"
+                "  Scenario: El usuario ve el home\n"
+                "    Then se muestra el home\n"
+                "  Scenario: No se logra obtener una llave\n"
+                "    Given una llave no se encuentra en apa/metadata\n"
+                "    Then el espacio donde debería mostrarse la leyenda debe mostrar la llave\n"
+            ),
+        },
+    }
+    story = collect._tech_story(issue, collect._counter("COV"))
+    assert [item.title for item in story.scenarios] == ["El usuario ve el home"]
+
+
 def test_title_match_technical_brief_vs_product_epic():
     tb = "FE: Onboarding: Actualizar el comportamiento del Centro de Notificaciones de acuerdo al tipo de usuario (Pantallas medianas)"
     pe = "Actualizar el comportamiento del Centro de Notificaciones de acuerdo al tipo de usuario"

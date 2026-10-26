@@ -227,6 +227,53 @@ def test_metrics_scenario_is_not_coverage() -> None:
     assert units == []
 
 
+def test_metrics_story_with_visible_then_is_not_coverage() -> None:
+    units = build_coverage_inventory(
+        [
+            {
+                "key": "WEBCL-4541",
+                "children": [
+                    {
+                        "key": "WEBCL-4542",
+                        "summary": "Integración y cumplimiento del setup de métricas",
+                        "description": (
+                            "Scenario: Envío de evento al seleccionar plan\n"
+                            "  When el usuario selecciona un plan\n"
+                            "  Then se dispara el evento payment_method_selected\n"
+                            "  And se muestra el checkout\n"
+                        ),
+                    }
+                ],
+            }
+        ],
+        "web.pdf",
+    )
+    assert units == []
+
+
+def test_key_setup_story_is_not_coverage() -> None:
+    units = build_coverage_inventory(
+        [
+            {
+                "key": "WEBCL-4304",
+                "children": [
+                    {
+                        "key": "WEBCL-4305",
+                        "summary": "Construcción de llaves APA/metadata",
+                        "description": (
+                            "Scenario: Construcción de la llave del asset\n"
+                            "  When el sistema resuelve la llave\n"
+                            "  Then se muestra la ficha con la leyenda interpolada\n"
+                        ),
+                    }
+                ],
+            }
+        ],
+        "web.pdf",
+    )
+    assert units == []
+
+
 def test_last_resort_gate_reference_cells() -> None:
     assert last_resort_applies(
         "ADTCL-2787: Migración de usuario a la marca Claro tv+", "ADTCL-2787"

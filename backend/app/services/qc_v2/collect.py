@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 
 from app.services.jira_generation import adf_to_text
+from app.services.qc_candidate_rules import is_out_of_qc_inventory
 
 F_AC = "customfield_19114"
 F_YO_COMO = "customfield_19120"
@@ -272,8 +273,12 @@ def _tech_story(issue: dict[str, Any], counter: Callable[[], str]) -> TechStory:
     summary = fields.get("summary") or ""
     description = adf_to_text(fields.get("description"))
     context, blocks = split_gherkin(description)
-    scenarios = [Item(counter(), title, block, key) for title, block in blocks]
-    if not scenarios and description.strip():
+    scenarios = [
+        Item(counter(), title, block, key)
+        for title, block in blocks
+        if not is_out_of_qc_inventory(title, block)
+    ]
+    if not scenarios and description.strip() and not is_out_of_qc_inventory(summary, description):
         scenarios = [Item(counter(), summary, description.strip(), key)]
     return TechStory(key=key, summary=summary, context=context, scenarios=scenarios)
 

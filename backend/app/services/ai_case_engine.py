@@ -1705,6 +1705,7 @@ def generate_release_app_candidates(
     if scenario_llm and (settings.openai_api_key or "").strip() and inventory:
         rewritten, rows = rewrite_scenario_candidates(candidates, inventory)
         candidates = polish_llm_candidates(quality_gate(contextualize_duplicate_titles(rewritten)))
+        candidates = apply_qc_rules(candidates, release_context=release_context, stats=stats)
         stats.llm_batches = list(stats.llm_batches or []) + rows
         if any((row.generation_origin or "") == "llm" for row in candidates):
             engine = "llm" if engine == "evidence-jira" else f"{engine}+llm"

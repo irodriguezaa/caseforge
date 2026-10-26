@@ -18,10 +18,17 @@ Priority = Literal["BLOCKER", "CRITICAL"]
 Confidence = Literal["high", "medium", "low"]
 
 _METRICS_ONLY = re.compile(
-    r"\b(m[eé]tric|analytics|anal[ií]tica|ga4|firebase|\bdat\b|tracking|"
+    r"\b(m[eé]tric(?:as?)?|analytics|anal[ií]tica|ga4|firebase|\bdat\b|tracking|"
     r"pipeline|schema|esquema de m[eé]tricas|instrument|"
     r"payment_method_selected|checkout_start|checkout_success|checkout_error|"
     r"nomenclatura DAT|evento de (selecci[oó]n|anal|inicio de checkout|error de pago|xito de pago))\b",
+    re.IGNORECASE,
+)
+_STORY_METRICS_OR_KEYS = re.compile(
+    r"setup de m[eé]tricas|"
+    r"cumplimiento del setup de m[eé]tricas|"
+    r"esquema de m[eé]tricas|"
+    r"instrumentaci[oó]n de m[eé]tricas",
     re.IGNORECASE,
 )
 _USER_OBSERVABLE = re.compile(
@@ -40,9 +47,10 @@ _KEY_CONFIG = re.compile(
     r"la llave se encuentra vac[ií]a|"
     r"llave.{0,80}(inexistente|vac[ií]a|no se encuentra|faltante|no encontrada)|"
     r"alta de llaves|"
-    r"construcci[oó]n de la llave|"
+    r"construcci[oó]n de (la |las )?llaves?|"
     r"la llave resuelta|"
-    r"llaves de configuraci[oó]n|"
+    r"llaves? (apa|de metadata|de leyenda|de configuraci[oó]n)|"
+    r"apa[\s/]+metadata|"
     r"creaci[oó]n de llaves|"
     r"registro de llaves|"
     r"\bappkeys\b|"
@@ -123,6 +131,9 @@ def is_metrics_or_qa_process(title: str, body: str) -> bool:
         return True
     if re.search(r"no bloquea", blob, re.IGNORECASE):
         return False
+    # Título de métricas/evento: no se materializa aunque el Then mezcle UX.
+    if _INTERNAL_ONLY.search(title) or _EVENT_TITLE.search(title) or _METRICS_ONLY.search(title):
+        return True
     then = _then_text(body) or body
     non_metrics_ux = bool(
         _USER_OBSERVABLE.search(then)
@@ -133,14 +144,19 @@ def is_metrics_or_qa_process(title: str, body: str) -> bool:
             re.IGNORECASE,
         )
     )
-    looks_metrics = bool(
-        _INTERNAL_ONLY.search(title)
-        or _EVENT_TITLE.search(title)
-        or _METRICS_ONLY.search(title)
-        or _METRICS_ONLY.search(then)
-        or _EVENT_TITLE.search(then)
-    )
+    looks_metrics = bool(_METRICS_ONLY.search(then) or _EVENT_TITLE.search(then))
     return looks_metrics and not non_metrics_ux
+
+
+def is_out_of_qc_inventory(title: str, body: str = "") -> bool:
+    """Llaves de configuración/metadata y métricas/analytics no se materializan en QC."""
+    return is_key_config_scenario(title, body) or is_metrics_or_qa_process(title, body)
+
+
+def is_out_of_qc_story(summary: str) -> bool:
+    """Historia completa de métricas o alta/construcción de llaves: no entra al inventario Legacy."""
+    text = summary or ""
+    return bool(_STORY_METRICS_OR_KEYS.search(text)) or is_key_config_scenario(text, "")
 
 
 def is_metrics_only_candidate(candidate: GeneratedCaseCandidate) -> bool:

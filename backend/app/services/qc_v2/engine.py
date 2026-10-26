@@ -13,6 +13,7 @@ from app.schemas.case_generation import (
     GeneratedCaseCandidate,
     GenerationStats,
 )
+from app.services.qc_candidate_rules import is_key_config_candidate, is_metrics_only_candidate
 from app.services.qc_v2 import ENGINE_TAG
 from app.services.qc_v2.collect import EpicBundle, JiraReader, collect_epic
 from app.services.qc_v2.context import DeviceContext, device_context
@@ -195,6 +196,11 @@ def run_epic(bundle: EpicBundle, ctx: DeviceContext, chat: ChatFn = chat_json) -
             if scenario is None:
                 continue
             run.candidates.extend(_to_candidate(case, scenario, bundle, ctx) for case in result.cases)
+        run.candidates = [
+            candidate
+            for candidate in run.candidates
+            if not is_key_config_candidate(candidate) and not is_metrics_only_candidate(candidate)
+        ]
     metas = list(run.stage_a.metas) + [m for r in run.stage_b for m in r.metas]
     run.llm_calls = len(metas)
     run.prompt_tokens = sum(m.prompt_tokens for m in metas)

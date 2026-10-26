@@ -373,6 +373,14 @@ def test_empty_action_does_not_merge_distinct_pin_intents() -> None:
         covers=["COV-K2"],
     )
     assert apply_qc_rules([key_541, key_308]) == []
+    metrics_ux = _cand(
+        name="Envío de métrica payment_method_selected",
+        epic="WEBCL-4541",
+        action="El usuario selecciona un plan",
+        expected="Se muestra el checkout",
+        covers=["COV-M"],
+    )
+    assert apply_qc_rules([metrics_ux]) == []
     other_epc = _cand(
         name="Calificar Me gusta",
         epic="ADTCL-999",

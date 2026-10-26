@@ -39,6 +39,7 @@ from app.services.qc_candidate_rules import (
     format_examples,
     functional_title,
     group_examples_by_outcome,
+    is_out_of_qc_story,
 )
 from app.services.scenario_classifier import (
     ScenarioClassification,
@@ -1571,6 +1572,12 @@ def build_coverage_inventory(
         ) -> None:
             if story_key_override:
                 story = {**story, "key": story_key_override}
+            summary = str(story.get("summary") or "")
+            if is_out_of_qc_story(summary):
+                stats.inventory_exclusions.append(
+                    f"{story.get('key')}: {summary}: métricas/llaves; QC no materializa"
+                )
+                return
             ac = story.get("acceptance_criteria") or ""
             unique: list[dict[str, Any]] = []
             seen_blocks: set[str] = set()
