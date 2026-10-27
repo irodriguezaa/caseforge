@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import replace
+from difflib import SequenceMatcher
 from typing import Any
 
 from app.schemas.case_generation import (
@@ -529,6 +530,38 @@ def _prose_snippets(text: str) -> list[str]:
     return snippets
 
 
+_COVER_STOP = {
+    "para", "como", "debe", "deben", "esta", "este", "esto", "que", "con", "por",
+    "una", "unos", "unas", "los", "las", "del", "desde", "hacia", "sin", "sobre",
+    "entre", "cuando", "donde", "usuario", "sistema", "aplicacion", "aplicación",
+}
+
+
+def _cover_tokens(text: str) -> set[str]:
+    words = re.findall(r"[a-záéíóúñü]{4,}", (text or "").lower())
+    return {word for word in words if word not in _COVER_STOP}
+
+
+def behavior_already_covered(snippet: str, corpus: list[str]) -> bool:
+    """True when a story scenario already describes the same observable behavior."""
+    needle = _cover_tokens(snippet)
+    compact = re.sub(r"\s+", " ", (snippet or "").lower()).strip()
+    if len(needle) < 3:
+        return bool(compact) and any(compact in re.sub(r"\s+", " ", (row or "").lower()) for row in corpus)
+    for row in corpus:
+        hay = _cover_tokens(row)
+        if not hay:
+            continue
+        share = len(needle & hay) / len(needle)
+        if needle <= hay or (len(needle) >= 3 and share >= 0.55):
+            return True
+        title = re.split(r"\b(given|when|then|dado|cuando|entonces)\b", row, maxsplit=1, flags=re.I)[0]
+        title_norm = re.sub(r"\s+", " ", (title or "").lower()).strip()
+        if title_norm and SequenceMatcher(None, compact, title_norm).ratio() >= 0.5:
+            return True
+    return False
+
+
 def extract_prose_observable_blocks(
     description: str,
     acceptance_criteria: str,
@@ -1045,7 +1078,7 @@ def _coverage_unit(
     body = _fill_placeholders(body, None, examples)
     user_action = _fill_placeholders(user_action or "", None, examples) or user_action
     given_blob = " ".join(parse_scenario_clauses(body).get("given") or [])
-    if given_requires_remote_setup(given_blob):
+    if given_requires_remote_setup(given_blob) and not is_robust_consumption(title, body):
         applicability = "na_ambiente"
         applicability_reason = (
             applicability_reason
@@ -1374,6 +1407,8 @@ def _units_from_story_blocks(
         strategy = example_strategy(examples) if examples else "single"
         trace = f"RN={epic_key}; Story={story_key}; Scenario={title}"
         extra_rules = ["then-tecnico-traducido"] if block.get("_translated_then") else []
+        if source_origin == "ac":
+            extra_rules.append("ac-epica")
         na_kwargs: dict[str, str] = {}
         blob = f"{title}\n{body}"
         technical_then = _http_or_api_only(blob) or (
@@ -1620,7 +1655,7 @@ def _units_from_story_blocks(
             unit.scenario_group = f"{epic_key}|robustez-consumo"
             unit.normal_precondition = "; ".join(
                 part
-                for part in (unit.normal_precondition, "requiere apoyo Dev/Operación")
+                for part in (unit.normal_precondition, "Requiere apoyo de Dev")
                 if part
             )
             unit.requires_condition = True
@@ -1693,6 +1728,19 @@ def build_coverage_inventory(
                     continue
                 seen_blocks.add(key)
                 unique.append(block)
+            if not include_gherkin:
+                kept_ac: list[dict[str, Any]] = []
+                for block in unique:
+                    title = str(block.get("title") or "")
+                    if behavior_already_covered(title, gherkin_corpus):
+                        stats.inventory_exclusions.append(
+                            f"{story.get('key') or epic_key}: AC de épica cubierto por escenario de historia"
+                        )
+                        continue
+                    block = dict(block)
+                    block["source_origin"] = "ac"
+                    kept_ac.append(block)
+                unique = kept_ac
             if not unique:
                 stats.inventory_exclusions.append(
                     f"{story.get('key') or epic_key}: sin Gherkin ni comportamiento "
@@ -1814,8 +1862,18 @@ def candidates_from_jira_artifacts(
     out = apply_qc_rules(out, stats=stats)
     out = apply_executability_gate(out, units)
     out = quality_gate(out)
-    from app.services.scenario_cases import contextualize_duplicate_titles, fill_scenario_ledger
+    from app.services.scenario_cases import (
+        contextualize_duplicate_titles,
+        distinguish_duplicate_content,
+        drop_generic_steps,
+        fill_scenario_ledger,
+        uniquify_titles_globally,
+    )
 
-    out = contextualize_duplicate_titles(out)
+    out = uniquify_titles_globally(
+        distinguish_duplicate_content(
+            drop_generic_steps(contextualize_duplicate_titles(out))
+        )
+    )
     fill_scenario_ledger(stats, units, out)
     return [row for row in out if row.steps or (row.applicability or "") == "na_ambiente"]

@@ -23,8 +23,13 @@ from app.services.case_composer import (
 from app.services.coverage_quality import normalize_precondition
 from app.services.executability import is_user_action
 from app.services.gherkin_coverage import TECH_VERIFY_MARK
-from app.services.qc_eligibility import is_robust_consumption, split_visible_technical
+from app.services.qc_eligibility import (
+    detect_group_family,
+    is_robust_consumption,
+    split_visible_technical,
+)
 
+_LINT_TECH_VISIBLE = re.compile(r"\bmetadata\b", re.I)
 _EVENT_THEN = re.compile(
     r"\b(se env[ií]a|se registra|se dispara|se reporta|se llama|se emite|debe emitirse).{0,80}\b(evento|m[eé]trica|servicio|api|endpoint)\b",
     re.I,
@@ -69,14 +74,16 @@ def composition_mode() -> str:
 
 
 def scenario_group_key(unit: CoverageUnit) -> str:
+    epic = unit.artifact_key or unit.rn_key or ""
+    if is_robust_consumption(unit.scenario or "", unit.body or ""):
+        return f"{epic}|robustez-consumo"
     grouped = (unit.scenario_group or "").strip()
     if grouped and "|scenario|" not in grouped:
+        if epic and not grouped.startswith(f"{epic}|"):
+            return f"{epic}|{grouped}"
         return grouped
-    blob = f"{unit.scenario or ''}\n{unit.body or ''}"
-    if re.search(r"no se logra obtener|se encuentra vac[ií]a|valor (ausente|vac[ií]o)", blob, re.I):
-        return f"{unit.artifact_key or unit.rn_key or ''}|robustez-consumo"
     base = re.sub(r"\s*\([^)]*\)\s*$", "", unit.scenario or "").strip()
-    return f"{unit.story_key or unit.jira_key}|{base}"
+    return f"{epic}|nombre|{base}"
 
 
 def _walk_gwt(body: str) -> list[tuple[str, str]]:
@@ -215,7 +222,7 @@ _LINT_TECH = re.compile(
     re.I,
 )
 _LINT_GEN = re.compile(
-    r"Se muestra el resultado de|comportamiento definido|cambio en esa pantalla|Abrir y presenta",
+    r"Se muestra el resultado de|comportamiento definidos?|cambio en esa pantalla|Abrir y presenta",
     re.I,
 )
 
@@ -359,6 +366,96 @@ def _action_from_title(title: str) -> str:
     return ""
 
 
+def _strip_markup(text: str | None) -> str:
+    out = re.sub(r"[*`_]+", "", text or "")
+    out = _LINT_TECH_VISIBLE.sub("información del evento", out)
+    return re.sub(r"\s+", " ", out).strip()
+
+
+def _given_precondition(clause: str) -> str:
+    text = re.sub(r"^\s*(que )?", "", clause or "", flags=re.I).strip()
+    text = re.sub(r"^\s*un usuario que accede( a| al)?\s*", "El usuario está en ", text, flags=re.I)
+    text = re.sub(
+        r"^\s*((el|la) usuario\s+)?(está|esta|se encuentra|se halla)(\s+en)?\s+",
+        "El usuario está en ",
+        text,
+        flags=re.I,
+    )
+    text = re.sub(r"^\s*(que )?accede( a| al|)\s*", "El usuario está en ", text, flags=re.I)
+    if text and not re.match(r"^(el usuario|precondici)", text, re.I):
+        text = text[0].upper() + text[1:]
+    return _strip_markup(text)
+
+
+def _merge_steps_without_result(steps: list[CandidateStep]) -> list[CandidateStep]:
+    merged: list[CandidateStep] = []
+    pending_action = ""
+    for step in steps:
+        action = _strip_markup(step.action)
+        expected = _strip_markup(step.expected_result)
+        if pending_action:
+            action = f"{pending_action}; {action}".strip("; ")
+            pending_action = ""
+        if not expected:
+            pending_action = action
+            continue
+        if _norm_text(expected) == _norm_text(action) or re.match(
+            r"se muestra el resultado de", expected, re.I
+        ):
+            pending_action = action
+            continue
+        merged.append(
+            CandidateStep(
+                step_number=len(merged) + 1,
+                action=action,
+                expected_result=expected,
+                covered_unit_ids=list(step.covered_unit_ids or []),
+            )
+        )
+    if pending_action and merged:
+        merged[-1].action = f"{merged[-1].action}; {pending_action}".strip("; ")
+    elif pending_action:
+        merged.append(
+            CandidateStep(step_number=1, action=pending_action, expected_result="", covered_unit_ids=[])
+        )
+    for index, step in enumerate(merged, start=1):
+        step.step_number = index
+    return merged
+
+
+def _norm_text(text: str) -> str:
+    return re.sub(r"\W+", " ", (text or "").lower()).strip()
+
+
+def _content_signature(candidate: GeneratedCaseCandidate) -> str:
+    return _norm_text(
+        "\n".join(f"{step.action}|{step.expected_result}" for step in (candidate.steps or []))
+    )
+
+
+def _rebuild_from_then(candidate: GeneratedCaseCandidate, units: list[CoverageUnit]) -> None:
+    steps: list[CandidateStep] = []
+    for unit in units:
+        expected = _strip_markup(_unit_expected(unit) or "")
+        action = _strip_markup(to_infinitive(unit.user_action or "") or unit.scenario or "")
+        if not action:
+            continue
+        if not expected:
+            expected = _strip_markup(unit.scenario or "")
+        if _norm_text(expected) == _norm_text(action):
+            expected = f"En el dispositivo se observa: {expected}"
+        steps.append(
+            CandidateStep(
+                step_number=len(steps) + 1,
+                action=action,
+                expected_result=expected,
+                covered_unit_ids=[unit.coverage_id],
+            )
+        )
+    if steps:
+        candidate.steps = _merge_steps_without_result(steps)
+
+
 def _short_phrase(text: str | None, limit: int = 6) -> str:
     raw = re.sub(r"^\s*feature\s*:?\s*", "", (text or ""), flags=re.I).strip(" .:-")
     words = [word for word in re.split(r"\s+", raw) if word]
@@ -435,18 +532,16 @@ def compose_scenario_units(units: list[CoverageUnit]) -> FlowDraft:
         for match in _TECH_RESULT.finditer(text):
             tech.append(match.group(0))
         if kind == "given":
-            if re.match(r"^\s*(que )?accede", text, re.I):
-                rest = re.sub(r"^\s*(que )?accede( a| al|)\s*", "", text, flags=re.I).strip()
-                nav.append(f"Estar en {rest}".strip())
-                continue
-            action = _nav_action(text)
-            if action:
-                nav.append(action)
-            elif not (_TECH_RESULT.search(text) or _ENDPOINT.search(text)):
-                pre.append(text)
+            if _TECH_RESULT.search(text) or _ENDPOINT.search(text):
+                tech.append(text)
+            else:
+                pre.append(_given_precondition(text))
             continue
         if kind == "when":
             action = to_infinitive(text)
+            if _LINT_GEN.search(action) or _LINT_GEN.search(text):
+                pre.append(_given_precondition(text))
+                continue
             if not is_tester_action(action) and not is_user_action(text):
                 tech.append(text)
                 system_when = True  # noqa: F841 - used after the walk
@@ -461,14 +556,15 @@ def compose_scenario_units(units: list[CoverageUnit]) -> FlowDraft:
             expected = polish_expected("; ".join(pending_then)) if pending_then else ""
             pending_then = []
             existing = next(
-                (step for step in steps if (step.action or "").lower() == action.lower()),
+                (
+                    step
+                    for step in steps
+                    if (step.action or "").lower() == action.lower()
+                    and _norm_text(step.expected_result or "") == _norm_text(expected)
+                ),
                 None,
             )
             if existing:
-                if expected:
-                    existing.expected_result = polish_expected(
-                        "; ".join(part for part in (existing.expected_result, expected) if part)
-                    )
                 continue
             steps.append(
                 CandidateStep(
@@ -485,34 +581,8 @@ def compose_scenario_units(units: list[CoverageUnit]) -> FlowDraft:
         listed = _flush_table()
         if listed:
             _attach_then(listed)
-    for action in reversed(list(dict.fromkeys(nav))):
-        if any(action.lower() == (step.action or "").lower() for step in steps):
-            continue
-        steps.insert(
-            0,
-            CandidateStep(step_number=1, action=action, expected_result="", covered_unit_ids=list(covers)),
-        )
-    for kind, text in walked:
-        if kind != "given":
-            continue
-        if _NAV_GIVEN.search(text) or _TECH_RESULT.search(text) or _ENDPOINT.search(text):
-            continue
-        rest = re.sub(
-            r"^\s*((el|la) usuario\s+)?(está|esta|se encuentra|se halla|tiene)(\s+en)?\s+",
-            "",
-            text,
-            flags=re.I,
-        ).strip()
-        if not rest or rest.lower() == (text or "").strip().lower():
-            continue
-        entry = f"Estar en {rest}"
-        if any(entry.lower() == (step.action or "").lower() for step in steps):
-            break
-        steps.insert(
-            0,
-            CandidateStep(step_number=1, action=entry, expected_result="", covered_unit_ids=list(covers)),
-        )
-        break
+    for action in list(dict.fromkeys(nav)):
+        pre.append(_given_precondition(action))
     merged_expected = polish_expected(
         "; ".join(dict.fromkeys(item for unit in units for item in (_unit_expected(unit),) if item))
     )
@@ -534,17 +604,6 @@ def compose_scenario_units(units: list[CoverageUnit]) -> FlowDraft:
                     )
                 )
                 break
-    if not system_when and not any(is_tester_action(step.action) for step in steps) and nav:
-        for action in list(dict.fromkeys(nav))[:1]:
-            steps.append(
-                CandidateStep(
-                    step_number=1,
-                    action=action,
-                    expected_result=merged_expected or polish_expected("; ".join(pending_then)),
-                    covered_unit_ids=list(covers),
-                )
-            )
-            break
     visible_then = any(
         kind == "then"
         and text
@@ -572,32 +631,7 @@ def compose_scenario_units(units: list[CoverageUnit]) -> FlowDraft:
             pending = "verificación técnica"
             steps = []
     for action, result in _navigation_steps(primary.feature_background or ""):
-        if any((step.action or "").lower() == action.lower() for step in steps):
-            for step in steps:
-                if (step.action or "").lower() == action.lower() and not step.expected_result:
-                    step.expected_result = result
-            continue
-        if not steps and when_is_system and not visible_then:
-            continue
-        steps.insert(
-            0,
-            CandidateStep(step_number=1, action=action, expected_result=result, covered_unit_ids=list(covers)),
-        )
-    if len(steps) == 1:
-        given_nav = next((item for item in nav if item), "")
-        extra = ""
-        if given_nav and given_nav.lower() != (steps[0].action or "").lower():
-            extra = given_nav
-        if extra:
-            steps.insert(
-                0,
-                CandidateStep(
-                    step_number=1,
-                    action=extra,
-                    expected_result=_arrival_result(extra),
-                    covered_unit_ids=list(covers),
-                ),
-            )
+        pre.append(_given_precondition(action if not result else f"{action}: {result}"))
     for step in steps:
         if _NAV_GIVEN.search(step.action or "") and not (step.expected_result or "").strip():
             step.expected_result = _arrival_result(step.action)
@@ -626,10 +660,12 @@ def compose_scenario_units(units: list[CoverageUnit]) -> FlowDraft:
                     step.expected_result = outcome
                     if TECH_VERIFY_MARK not in tech:
                         tech.append(TECH_VERIFY_MARK)
-    for index, step in enumerate(steps, start=1):
-        step.step_number = index
-        if step.expected_result and not _STATE_THEN.search(step.expected_result):
-            step.expected_result = polish_expected(step.expected_result) or step.expected_result
+    steps = _merge_steps_without_result(steps)
+    steps = [
+        step
+        for step in steps
+        if not _LINT_GEN.search(step.action or "") and not _LINT_GEN.search(step.expected_result or "")
+    ]
     if len(steps) == 1:
         only = steps[0]
         if not re.match(r"^\s*abrir la aplicaci[oó]n\b", only.action or "", re.I):
@@ -639,17 +675,24 @@ def compose_scenario_units(units: list[CoverageUnit]) -> FlowDraft:
                     step_number=1,
                     action="Abrir la aplicación",
                     expected_result="Se muestra la pantalla de partida",
-                    covered_unit_ids=list(covers),
+                    covered_unit_ids=list(only.covered_unit_ids or []),
                 ),
             )
+    for index, step in enumerate(steps, start=1):
+        step.step_number = index
+        step.action = _strip_markup(step.action)
+        if step.expected_result and not _STATE_THEN.search(step.expected_result):
+            step.expected_result = _strip_markup(
+                polish_expected(step.expected_result) or step.expected_result
+            )
+        else:
+            step.expected_result = _strip_markup(step.expected_result)
     if "impacto-superficie" in (primary.applied_rules or []):
-        visible = (primary.observable_then or [primary.behavior or primary.scenario])[0]
-        title = re.sub(r"^se muestra\s+", "", visible or "", flags=re.I).strip()[:120]
-        title = title[:1].upper() + title[1:] if title else strip_title_prefix(primary.scenario)
+        title = "El cambio se refleja en los elementos visibles"
     else:
         title_clean, title_ids = lift_technical(strip_title_prefix(primary.scenario))
         tech.extend(title_ids)
-        title = (title_clean or strip_title_prefix(primary.scenario))[:120]
+        title = _strip_markup(title_clean or strip_title_prefix(primary.scenario))[:120]
     kept_pre: list[str] = []
     story_title = _short_phrase(primary.story_summary, limit=12)
     for clause in pre:
@@ -680,8 +723,24 @@ def compose_scenario_units(units: list[CoverageUnit]) -> FlowDraft:
     if "|robustez-consumo" in (primary.scenario_group or "") or all(
         is_robust_consumption(unit.scenario or "", unit.body or "") for unit in units
     ):
+        surfaces = [
+            detect_group_family(unit.scenario or "", unit.body or "") or "superficie"
+            for unit in units
+        ]
+        unique_surfaces = list(dict.fromkeys(surfaces))
         title = "Valor de configuración ausente o vacío"
-        kept_pre = list(dict.fromkeys([*kept_pre, "requiere apoyo Dev/Operación"]))
+        if unique_surfaces:
+            title = f"{title} ({' · '.join(unique_surfaces[:4])})"[:120]
+        kept_pre = list(dict.fromkeys([*kept_pre, "Requiere apoyo de Dev"]))
+    for step in steps:
+        if _norm_text(step.expected_result)[:40] == _norm_text(title)[:40]:
+            rebuilt = polish_expected(
+                "; ".join(item for unit in units for item in (_unit_expected(unit),) if item)
+            )
+            if rebuilt and _norm_text(rebuilt)[:40] != _norm_text(title)[:40]:
+                step.expected_result = _strip_markup(rebuilt)
+            else:
+                step.expected_result = "El elemento se presenta según el diseño y el estado esperado"
     return FlowDraft(
         story_key=primary.story_key or primary.jira_key or "",
         epic_key=primary.artifact_key or primary.rn_key or "",
@@ -714,22 +773,29 @@ def compose_scenario_inventory(
         draft = compose_scenario_units(groups[key])
         candidate = draft_to_candidate(draft, existing, duplicate_of)
         candidate.generation_origin = "scenario-case"
-        candidate.justification = "Caso 1:1 con escenario de Jira."
+        if "ac-epica" in (groups[key][0].applied_rules or []):
+            candidate.justification = (
+                "Comportamiento de la épica no cubierto por escenarios de las historias."
+            )
+        else:
+            candidate.justification = "Caso 1:1 con escenario de Jira."
         candidate.use_case_title = groups[key][0].story_summary
         if draft.technical_reference:
             candidate.technical_reference = draft.technical_reference
         candidate.variant_table = _variant_table(groups[key], _walk_gwt(groups[key][0].body or ""))
         if key.endswith("|robustez-consumo"):
-            rows = ["Condición | Resultado esperado"]
+            rows = ["Superficie | Resultado esperado"]
             for unit in groups[key]:
+                surface = detect_group_family(unit.scenario or "", unit.body or "") or "superficie"
                 rows.append(
-                    f"{unit.story_key or unit.scenario} | "
-                    f"{_unit_expected(unit) or unit.scenario or ''}"
+                    f"{surface} | {_strip_markup(_unit_expected(unit) or unit.scenario or '')}"
                 )
             if len(rows) > 2:
                 candidate.variant_table = "\n".join(rows)
             candidate.requires_condition = True
             candidate.precondition = draft.precondition
+            candidate.applicability = "ejecutable"
+            candidate.applicability_reason = None
         candidate.applied_rules = list(dict.fromkeys([*(candidate.applied_rules or []), *(draft.applied_rules or [])]))
         out.append(candidate)
     exe = {
@@ -746,7 +812,87 @@ def compose_scenario_inventory(
         if (row.applicability or "") == "na_ambiente" and ident in exe:
             continue
         filtered.append(row)
-    return contextualize_duplicate_titles(filtered)
+    by_sig: dict[str, list[GeneratedCaseCandidate]] = {}
+    for row in filtered:
+        if not row.steps:
+            continue
+        by_sig.setdefault(_content_signature(row), []).append(row)
+    for rows in by_sig.values():
+        if len(rows) < 2:
+            continue
+        for row in rows:
+            units = [unit for unit in inventory if unit.coverage_id in (row.covers or [])]
+            _rebuild_from_then(row, units)
+    by_sig = {}
+    for row in filtered:
+        if not row.steps:
+            continue
+        by_sig.setdefault(_content_signature(row), []).append(row)
+    for rows in by_sig.values():
+        if len(rows) < 2:
+            continue
+        for row in rows:
+            label = strip_title_prefix(row.name or "")
+            if row.steps and label and label.lower() not in (row.steps[-1].expected_result or "").lower():
+                row.steps[-1].expected_result = _strip_markup(
+                    f"{row.steps[-1].expected_result}; {label}"
+                )
+    return uniquify_titles_globally(contextualize_duplicate_titles(filtered))
+
+
+def drop_generic_steps(candidates: list[GeneratedCaseCandidate]) -> list[GeneratedCaseCandidate]:
+    for row in candidates:
+        kept = []
+        for step in row.steps or []:
+            if _LINT_GEN.search(step.action or "") or _LINT_GEN.search(step.expected_result or ""):
+                continue
+            kept.append(step)
+        if kept:
+            for index, step in enumerate(kept, start=1):
+                step.step_number = index
+            row.steps = kept
+    return candidates
+
+
+def distinguish_duplicate_content(candidates: list[GeneratedCaseCandidate]) -> list[GeneratedCaseCandidate]:
+    buckets: dict[tuple[str, str], list[GeneratedCaseCandidate]] = {}
+    for row in candidates:
+        if not row.steps:
+            continue
+        story = (row.related_jira or "").split(" | ")[0].strip()
+        buckets.setdefault((story, _content_signature(row)), []).append(row)
+    for rows in buckets.values():
+        if len(rows) < 2:
+            continue
+        for row in rows:
+            label = strip_title_prefix(row.name or "")
+            if not label:
+                continue
+            last = row.steps[-1]
+            if label.lower() not in (last.expected_result or "").lower():
+                last.expected_result = _strip_markup(f"{last.expected_result}; {label}")
+    return candidates
+
+
+def uniquify_titles_globally(candidates: list[GeneratedCaseCandidate]) -> list[GeneratedCaseCandidate]:
+    """Same title on different epics must stay distinct without ticket names."""
+    seen: set[str] = set()
+    for row in candidates:
+        key = _norm_text(row.name)
+        if key not in seen:
+            seen.add(key)
+            continue
+        extra = feature_context(row)
+        if extra:
+            row.name = f"{strip_title_prefix(row.name)} — {extra}".strip()[:120]
+            key = _norm_text(row.name)
+        suffix = 2
+        while key in seen:
+            row.name = f"{strip_title_prefix(row.name)[:100]} ({suffix})".strip()[:120]
+            key = _norm_text(row.name)
+            suffix += 1
+        seen.add(key)
+    return candidates
 
 
 def feature_context(candidate: GeneratedCaseCandidate) -> str:
@@ -765,6 +911,8 @@ def contextualize_duplicate_titles(candidates: list[GeneratedCaseCandidate]) -> 
     order: list[str] = []
     for candidate in candidates:
         epic = (candidate.related_functionality or "").split(" | ")[0].strip()
+        if not epic:
+            epic = (candidate.related_jira or "").split(" | ")[0].strip() or f"id:{id(candidate)}"
         base = re.sub(r"\s+—\s+.*$", "", strip_title_prefix(candidate.name)).strip()
         normalized = re.sub(r"\W+", " ", base.lower()).strip()
         key = f"{epic}|{normalized}"

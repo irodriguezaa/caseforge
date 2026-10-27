@@ -13,7 +13,7 @@ import httpx
 
 from app.config import settings
 from app.schemas.case_generation import CandidateStep, CoverageUnit, GeneratedCaseCandidate
-from app.services.case_composer import _QUOTED
+from app.services.case_composer import _QUOTED, polish_expected
 from app.services.coverage_quality import normalize_precondition
 from app.services.scenario_cases import (
     TECH_VERIFY_MARK,
@@ -358,7 +358,7 @@ def strip_filler_steps(candidate: GeneratedCaseCandidate) -> None:
         if kept and _FILLER_ACTION.match(step.action or ""):
             continue
         if _norm_text(step.expected_result or "") == _norm_text(candidate.name or "") and step.action:
-            step.expected_result = f"Se muestra el resultado de: {step.action}".rstrip(".") + "."
+            step.expected_result = polish_expected(step.expected_result) or step.expected_result
         kept.append(step)
     for index, step in enumerate(kept, start=1):
         step.step_number = index

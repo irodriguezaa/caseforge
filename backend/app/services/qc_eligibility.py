@@ -118,6 +118,30 @@ _CRITERIO_ACTOR = "actor no es el usuario final de la app"
 _CRITERIO_SUPERFICIE = "no hay superficie visible en el dispositivo"
 _CRITERIO_VERIFICACION = "el resultado no se verifica mirando el dispositivo"
 
+_PROCESS_ACTOR = re.compile(
+    r"setup de m[eé]tricas|esquema de m[eé]tricas|\bdat\b|analytics|"
+    r"nomenclatura DAT|instrumentaci[oó]n de m[eé]tricas|"
+    r"configuraci[oó]n operativa|"
+    r"en el administrador|herramienta de administraci[oó]n|"
+    r"control de versiones|\bgit\b|documentaci[oó]n t[eé]cnica",
+    re.I,
+)
+_PROCESS_DEVICE = re.compile(
+    r"obtenci[oó]n de (la )?(llave|configuraci[oó]n)|lectura de (la )?(llave|configuraci[oó]n)|"
+    r"se obtiene(n)? (el valor de )?la (llave|configuraci[oó]n)|"
+    r"se obtienen los (d[ií]as|valores)|"
+    r"se ejecuta (el |la )?API|"
+    r"recupera del llamado a la API|"
+    r"\bstatus code\b|llama GET|llama POST|"
+    r"\bsdk\b|funci[oó]n interna|m[oó]dulo interno",
+    re.I,
+)
+_PROCESS_VISIBLE_UX = re.compile(
+    r"se muestran las opciones|opciones del control|texto en (estado hover|botones)|"
+    r"el usuario (ve|visualiza|abre|selecciona)",
+    re.I,
+)
+
 
 @dataclass
 class Eligibility:
@@ -261,7 +285,10 @@ def _then_is_broken(clauses: list[str]) -> str:
 
 
 def is_robust_consumption(title: str, body: str = "") -> bool:
-    return bool(_ROBUST_CONSUMPTION.search(f"{title}\n{body}"))
+    blob = f"{title}\n{body}"
+    if not _ROBUST_CONSUMPTION.search(title or ""):
+        return False
+    return bool(_ROBUST_CONSUMPTION.search(blob))
 
 
 def split_visible_technical(body: str, title: str = "") -> tuple[list[str], list[str]]:
@@ -271,6 +298,34 @@ def split_visible_technical(body: str, title: str = "") -> tuple[list[str], list
     visible = [item for item in clauses if _clause_kind(item) == "visible"]
     technical = [item for item in clauses if _clause_kind(item) == "tech"]
     return visible, technical
+
+
+def process_gate(title: str, body: str, summary: str = "") -> str | None:
+    """Process work is not a user case. Returns the criterion that fails, or None."""
+    if is_robust_consumption(title, body):
+        return None
+    blob = f"{summary}\n{title}\n{body}"
+    when = _clauses(body, _WHEN)
+    then_blob = " ".join(result_clauses(body))
+    visible_ux = bool(
+        _PROCESS_VISIBLE_UX.search(blob)
+        or re.search(
+            r"se muestra(n)? (la |el |los |las )?(pantalla|opciones|texto|bot[oó]n|metadata)",
+            then_blob,
+            re.I,
+        )
+    )
+    if _PROCESS_ACTOR.search(title or ""):
+        return "actor"
+    if _PROCESS_DEVICE.search(when or title or "") and not visible_ux:
+        return "device"
+    if visible_ux and not _PROCESS_ACTOR.search(blob):
+        return None
+    if _PROCESS_ACTOR.search(blob):
+        return "actor"
+    if _PROCESS_DEVICE.search(blob) and not visible_ux:
+        return "device"
+    return None
 
 
 def evaluate_scenario(title: str, body: str, summary: str = "") -> Eligibility:
@@ -341,6 +396,11 @@ def evaluate_scenario(title: str, body: str, summary: str = "") -> Eligibility:
         surface_ok = True
 
     device_ok = True if visible else False
+    process = process_gate(title, body, summary)
+    if process == "actor":
+        actor_ok = False
+    elif process == "device":
+        device_ok = False
 
     reasons: list[str] = []
     if actor_ok is False:
@@ -637,6 +697,8 @@ def collapse_redundant_surfaces(units: list[CoverageUnit]) -> list[CoverageUnit]
         for unit in rows:
             parts = (unit.scenario_group or "").split("|")
             family = parts[1] if len(parts) >= 2 else _tail(unit)
+            if family == "robustez-consumo":
+                continue
             if family not in _SAME_BUG_SURFACES or family in {
                 "impacto-app",
                 "regresion-generica",
@@ -785,7 +847,10 @@ def impact_user_view(surface: str, title: str) -> tuple[str, str]:
         return ("el usuario abre la pantalla", "se muestra el logotipo en esa pantalla")
     if surface == "texto-ui" or re.search(r"textos?", blob, re.I):
         return ("el usuario abre la pantalla", "se muestra el texto vigente")
-    return ("el usuario abre la pantalla afectada", "se ve el efecto del cambio en el dispositivo")
+    return (
+        "el usuario abre la pantalla afectada",
+        "Los elementos visibles actualizan su contenido o estado",
+    )
 
 
 def _annotate_covered_surface(stats: GenerationStats, story_key: str, title: str) -> None:

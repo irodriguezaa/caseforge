@@ -216,8 +216,8 @@ def test_x2_missing_key_is_not_materialized() -> None:
     stats = GenerationStats()
     artifacts = [_epic("EPC-1", [_story("ST-NA", "Feature leyenda", ST_NA)])]
     units = build_coverage_inventory(artifacts, "rn.pdf", stats=stats)
-    assert units == []
-    assert any("Llave remota" in (row.get("scenario") or "") for row in stats.scenario_ledger)
+    assert units
+    assert any("Llave remota" in (unit.scenario or "") for unit in units)
     assert not any(row.get("estado") == "na_ambiente" for row in stats.scenario_ledger)
 
 

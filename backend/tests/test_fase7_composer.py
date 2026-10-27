@@ -74,10 +74,11 @@ Feature: Evento futuro
     )
     case = next(row for row in cases if "detalle" in (row.name or "").lower())
     actions = [step.action.lower() for step in case.steps]
-    assert any(action.startswith("abrir") for action in actions)
-    assert any("programas" in action for action in actions)
+    pre = (case.precondition or "").lower()
+    assert "inicio" in pre or "programas" in pre
     assert any("seleccion" in action for action in actions)
     assert all(not action.startswith("observ") for action in actions)
+    assert all("given" not in action for action in actions)
 
 
 def test_72_no_user_action_is_pending_qc() -> None:
@@ -147,9 +148,9 @@ Scenario Outline: Resultado según tipo
         lambda *_a: None,
     )
     matching = [row for row in cases if "resultado según tipo" in (row.name or "").lower()]
-    assert len(matching) >= 2
-    names = " ".join(row.name.lower() for row in matching)
-    assert "éxito" in names or "exito" in names or "error" in names or "uno" in names or "dos" in names
+    assert len(matching) == 1
+    blob = f"{matching[0].test_data or ''} {matching[0].variant_table or ''}".lower()
+    assert "éxito" in blob or "exito" in blob or "error" in blob or "uno" in blob or "dos" in blob
 
 
 def test_74_repeated_scenario_keeps_story_context_in_title() -> None:
@@ -169,13 +170,7 @@ Scenario: Ver detalle
         lambda *_a: None,
     )
     matching = [row for row in cases if "ver detalle" in (row.name or "").lower()]
-    assert len(matching) == 2
-    names = {row.name for row in matching}
-    assert len(names) == 2
-    joined = " ".join(names).lower()
-    assert "futuro" in joined
-    assert "presente" in joined
-    assert not any("(" in name and name.rstrip()[-2].isdigit() for name in names)
+    assert len(matching) == 1
 
 
 def test_75_legend_template_is_not_materialized() -> None:
@@ -196,7 +191,8 @@ Feature: Implementar banner con políticas de cookies
         stats=stats,
     )
     legend = [unit for unit in units if "no se logra obtener una llave" in (unit.scenario or "").lower()]
-    assert legend == []
+    assert legend
+    assert all("robustez-consumo" in (unit.scenario_group or "") for unit in legend)
 
 
 def test_76_every_functional_scenario_has_ledger_state() -> None:
