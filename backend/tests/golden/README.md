@@ -1,5 +1,11 @@
 # Set dorado de generación QC
 
+Archivos dorados:
+- `aaf_legacy_release47.json` — AAFCL-1919, 1940, 1971, 1987 (15 casos). Entrada: dump de Jira de AAF.
+- `win_release47.json` — WINCL-609, 619, 636 (54 casos, 19 escenarios sin caso). Entrada: `jira_win_release47.json`.
+  Cubre interfaz, Outlines, tablas, robustez repetida por historia y configuración por región.
+
+
 `aaf_legacy_release47.json` = resultado esperado para AAFCL-1919, 1940, 1971, 1987 (AAF Legacy, Release 47).
 
 - `casos`: 15 casos esperados. Cada uno lista los escenarios de Jira (`historia` + `escenario`) que debe cubrir.
@@ -24,3 +30,10 @@ que genere las 4 EPC con el motor y llame al comparador.
 ## Regla
 Un cambio que mejora un fixture y empeora otro no se acepta. Agregar fixtures de otros dispositivos
 (tvOS, WEB, ADR) para que las reglas no queden cargadas a AAF.
+
+## lint_excel.py — calidad sin set dorado
+    python lint_excel.py <excel_generado.xlsx>
+Corre sobre CUALQUIER Excel (cualquier dispositivo). Falla si hay: casos duplicados, resultado esperado
+igual al título, placeholders sin resolver, cláusulas técnicas, pasos genéricos, pasos/resultados que no
+cuadran, más del 40% de casos con un solo paso, errores de IA guardados como motivo. Avisa si falta la
+matriz regresiva. El Excel depurado de AAF R47 pasa en OK; es la referencia de calidad.
