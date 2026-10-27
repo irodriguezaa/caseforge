@@ -293,6 +293,74 @@ Scenario: Nueva botonera
     assert "igual que antes" not in blob
 
 
+def test_vague_given_stays_as_precondition_without_nav() -> None:
+    description = """
+Scenario: Recordatorio
+  Given el contenido está disponible en el catálogo
+  When el usuario selecciona Recordatorio
+  Then se muestra el modal de recordatorio
+"""
+    cases = candidates_from_jira_artifacts(
+        _artifacts(("EPC-1", "ST-1", "Historia de recordatorio en catálogo", description)),
+        "rn.pdf",
+        [],
+        lambda *_a: None,
+    )
+    case = next(row for row in cases if row.steps)
+    pre = case.precondition or ""
+    assert "el contenido está disponible en el catálogo" in pre.lower()
+    assert "abierto" not in pre.lower()
+    assert "abrir el" not in pre.lower()
+    assert "se muestra el" not in pre.lower()
+    assert "historia de recordatorio" not in pre.lower()
+    assert all(not (step.action or "").lower().startswith("abrir el") for step in case.steps)
+
+
+def test_figma_and_story_title_are_not_precondition() -> None:
+    description = """
+Scenario: Ver detalle
+  Given https://www.figma.com/design/abc123/Pantalla
+  And Historia de recordatorio en catálogo
+  When el usuario selecciona el evento
+  Then se muestra el detalle
+"""
+    cases = candidates_from_jira_artifacts(
+        _artifacts(("EPC-1", "ST-1", "Historia de recordatorio en catálogo", description)),
+        "rn.pdf",
+        [],
+        lambda *_a: None,
+    )
+    case = next((row for row in cases if row.steps), None)
+    pre = (case.precondition or "") if case else ""
+    assert "figma" not in pre.lower()
+    assert "historia de recordatorio en catálogo" not in pre.lower()
+
+
+def test_redactar_caso_is_identity_today() -> None:
+    from app.services.scenario_cases import redactar_caso
+
+    case = GeneratedCaseCandidate(
+        name="Seleccionar Recordatorio",
+        description="d",
+        evidence="e",
+        justification="j",
+        covers=["COV-1"],
+        precondition="el contenido está disponible en el catálogo",
+        steps=[
+            CandidateStep(
+                step_number=1,
+                action="Seleccionar Recordatorio",
+                expected_result="Se muestra el modal de recordatorio",
+            )
+        ],
+    )
+    out = redactar_caso(case)
+    assert out is case
+    assert out.precondition == case.precondition
+    assert out.steps[0].action == case.steps[0].action
+    assert out.steps[0].expected_result == case.steps[0].expected_result
+
+
 def test_no_generic_startup_step() -> None:
     description = """
 Scenario: Ver player

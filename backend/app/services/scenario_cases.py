@@ -35,6 +35,12 @@ _FEMININE_PLACE = re.compile(
     r"informaci[oó]n|metadata)\b",
     re.I,
 )
+_CONCRETE_SCREEN = re.compile(
+    r"\b(panel|player|gu[ií]a|pantalla|botonera|ficha|ventana|modal|men[uú]|"
+    r"control(?:\s+player)?|home)\b",
+    re.I,
+)
+_FIGMA = re.compile(r"figma\.com|https?://\S*figma\S*", re.I)
 _THEN_CUE = re.compile(
     r"^\s*(?P<cue>al presionar|al seleccionar|al hacer clic(?: en)?|"
     r"al posicionar el cursor(?: sobre)?|posiciona el cursor(?: sobre)?|"
@@ -348,6 +354,8 @@ def _navigation_steps(text: str) -> list[tuple[str, str]]:
         action = _nav_action(clause) or to_infinitive(clause)
         if not action or not is_tester_action(action):
             continue
+        if kind == "given" and re.match(r"^\s*abrir\b", action, re.I) and not _is_concrete_screen(clause):
+            continue
         if kind == "when" and not is_nav and not is_user_action(clause):
             continue
         steps.append((action, _arrival_result(clause)))
@@ -394,14 +402,26 @@ def _strip_markup(text: str | None) -> str:
     return re.sub(r"\s+", " ", out).strip()
 
 
+def _is_concrete_screen(text: str) -> bool:
+    return bool(_CONCRETE_SCREEN.search(text or ""))
+
+
 def _given_precondition(clause: str) -> str:
     raw = _strip_markup(re.sub(r"^\s*(que )?", "", clause or "", flags=re.I))
+    raw = _FIGMA.sub("", raw).strip(" .")
+    if not raw:
+        return ""
     if re.search(r"sesi[oó]n iniciada|usuario (registrado|autenticado)|inicia sesi[oó]n", raw, re.I):
         return "Sesión iniciada"
     if re.search(r"control player", raw, re.I) and re.search(r"activo", raw, re.I):
         return "Control Player activo"
     if re.search(r"reproduciendo|reproducci[oó]n en curso", raw, re.I):
         return "Reproducción en curso"
+    if not _is_concrete_screen(raw):
+        text = re.sub(r"^\s*estar en\s+", "", raw, flags=re.I).strip(" .")
+        if not text:
+            return ""
+        return text[0].upper() + text[1:]
     text = re.sub(
         r"^\s*((un|el|la) usuario( que)?\s+)?"
         r"(ingresa( al| a la| a)?|accede( al| a la| a)?|abre|abrir|"
@@ -440,6 +460,8 @@ def _entry_navigation_step(states: list[str], steps: list[CandidateStep]) -> Can
             flags=re.I,
         ).strip()
         if not place:
+            continue
+        if not _is_concrete_screen(place) and not _is_concrete_screen(state or ""):
             continue
         if place.lower()[:18] in blob:
             continue
@@ -856,7 +878,11 @@ def compose_scenario_units(units: list[CoverageUnit]) -> FlowDraft:
         clause_clean, clause_ids = lift_technical(clause)
         tech.extend(clause_ids)
         clause_clean = re.sub(r"^\s*estar en\s+", "", clause_clean, flags=re.I).strip()
+        clause_clean = _FIGMA.sub("", clause_clean).strip(" .")
         if not clause_clean:
+            continue
+        story_blob = (primary.story_summary or "").strip()
+        if story_blob and _norm_text(clause_clean) == _norm_text(story_blob):
             continue
         if _TECH_PRE.search(clause_clean) or (
             story_title and _short_phrase(clause_clean, limit=12).lower() == story_title.lower()
@@ -1007,7 +1033,17 @@ def compose_scenario_inventory(
                 row.steps[-1].expected_result = _strip_markup(
                     f"{row.steps[-1].expected_result}; {label}"
                 )
-    return uniquify_titles_globally(contextualize_duplicate_titles(filtered))
+    assembled = uniquify_titles_globally(contextualize_duplicate_titles(filtered))
+    return [redactar_caso(row) for row in assembled]
+
+
+def redactar_caso(caso: GeneratedCaseCandidate) -> GeneratedCaseCandidate:
+    """Punto único después de agrupar. Hoy: el caso determinista sin cambios.
+
+    Mañana puede llamar a la IA solo para reescribir precondición, pasos y resultados
+    del caso ya armado. No decide elegibilidad, agrupación ni conteo.
+    """
+    return caso
 
 
 def drop_generic_steps(candidates: list[GeneratedCaseCandidate]) -> list[GeneratedCaseCandidate]:

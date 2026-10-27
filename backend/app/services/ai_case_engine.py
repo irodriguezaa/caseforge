@@ -1693,48 +1693,10 @@ def generate_release_app_candidates(
     candidates = apply_qc_rules(candidates, release_context=release_context, stats=stats)
     candidates = apply_executability_gate(candidates, inventory)
     candidates = quality_gate(candidates)
-    from app.services.scenario_cases import contextualize_duplicate_titles, fill_scenario_ledger
-    from app.services.scenario_llm import polish_llm_candidates, rewrite_scenario_candidates
+    from app.services.scenario_cases import contextualize_duplicate_titles, fill_scenario_ledger, redactar_caso
 
     candidates = contextualize_duplicate_titles(candidates)
-    if scenario_llm and (settings.openai_api_key or "").strip() and inventory:
-        rewritten, rows = rewrite_scenario_candidates(candidates, inventory)
-        candidates = polish_llm_candidates(quality_gate(contextualize_duplicate_titles(rewritten)))
-        candidates = apply_qc_rules(candidates, release_context=release_context, stats=stats)
-        stats.llm_batches = list(stats.llm_batches or []) + rows
-        if any((row.generation_origin or "") == "llm" for row in candidates):
-            engine = "llm" if engine == "evidence-jira" else f"{engine}+llm"
-        accepted = sum(1 for row in rows if row.get("ok"))
-        analysis_details.append(
-            f"LLM por escenario llamadas={len(rows)} ok={accepted} "
-            f"tasa={accepted * 100 // max(len(rows), 1)}% "
-            f"ms={sum(int(row.get('ms') or 0) for row in rows)} modelo={settings.openai_model}"
-        )
-        first: dict[str, int] = {}
-        final: dict[str, int] = {}
-        for row in rows:
-            rejections = list(row.get("rejections") or [])
-            if rejections:
-                for reason in rejections[0].get("reasons") or []:
-                    first[reason] = first.get(reason, 0) + 1
-            if not row.get("ok"):
-                last_reasons = (rejections[-1].get("reasons") if rejections else None) or [
-                    row.get("error") or "sin caso válido"
-                ]
-                for reason in last_reasons:
-                    if reason:
-                        final[str(reason)] = final.get(str(reason), 0) + 1
-        if first:
-            analysis_details.append(f"LLM rechazos primer intento: {first}")
-        if final:
-            analysis_details.append(f"LLM rechazos finales: {final}")
-        ia_errors = [
-            row for row in rows if row.get("error") and not row.get("ok")
-        ]
-        if ia_errors:
-            analysis_details.append(
-                f"IA: {len(ia_errors)} escenario(s) sin redacción LLM válida; se redactó con el motor determinista."
-            )
+    candidates = [redactar_caso(row) for row in candidates]
     fill_scenario_ledger(stats, inventory, candidates)
     candidates = [row for row in candidates if row.steps]
     stamp_source_types(candidates)
