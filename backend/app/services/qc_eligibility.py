@@ -405,6 +405,97 @@ _ENTRY = (
     ("placeholder", re.compile(r"placeholders?", re.I)),
 )
 
+# Widget families for grouping only. Categories, not ticket or screen catalog names.
+_GROUP_FAMILIES: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("progress-bar-panel", re.compile(
+        r"(progress bar|barra de progreso).{0,80}m[aá]s informaci[oó]n|"
+        r"m[aá]s informaci[oó]n.{0,80}(progress bar|barra de progreso)",
+        re.I,
+    )),
+    ("progress-bar", re.compile(
+        r"progress bar|sincronizaci[oó]n del tiempo|informaci[oó]n de tiempo de eventos",
+        re.I,
+    )),
+    ("opciones-evento", re.compile(
+        r"(ícono|icono) de .{0,3}reiniciar|ajuste de opciones|actualizaci[oó]n din[aá]mica",
+        re.I,
+    )),
+    ("icono-capacidad", re.compile(r"(ícono|icono) de (timeshift|grabar)", re.I)),
+    ("modal-recordatorio", re.compile(r"modal.{0,80}recordatorio|recordatorio de evento", re.I)),
+    ("recordatorio", re.compile(r"recordatorio", re.I)),
+    ("grabar", re.compile(r"\bgrabar\b", re.I)),
+    ("favorito", re.compile(r"favoritos?", re.I)),
+    ("bloquear", re.compile(r"bloquear canal|bloquear un canal", re.I)),
+    ("panel-info", re.compile(
+        r"m[aá]s informaci[oó]n|elementos interactivos del panel|etiquetas de estado",
+        re.I,
+    )),
+    ("botonera", re.compile(
+        r"botonera del control|enabled_options|opciones del control|opciones de navegaci|"
+        r"texto en (estado hover|botones)",
+        re.I,
+    )),
+    ("desplazamiento", re.compile(r"barra lateral|regreso a evento", re.I)),
+    ("chevron", re.compile(
+        r"chevron|flecha hacia|cambio al (canal|siguiente)|canal anterior|siguiente canal",
+        re.I,
+    )),
+    ("filtro-fecha", re.compile(r"filtro de fecha|selecci[oó]n de fecha", re.I)),
+    ("celdas-canales", re.compile(r"celdas de canales", re.I)),
+    ("celdas-carga", re.compile(r"celdas hasta disponibilidad|metadata del evento tarda", re.I)),
+    ("celdas-eventos", re.compile(r"celdas de eventos", re.I)),
+    ("timeline", re.compile(r"\btimeline\b", re.I)),
+    ("volumen", re.compile(r"control de volumen|\bvolumen\b", re.I)),
+    ("metadata", re.compile(
+        r"metadata (del evento|de un evento|de evento)|l[ií]neas de sinopsis",
+        re.I,
+    )),
+    ("control-player", re.compile(r"control player", re.I)),
+    ("guia-shell", re.compile(
+        r"posici[oó]n de la gu[ií]a|elementos de la gu[ií]a|elementos de la \"gu[ií]a",
+        re.I,
+    )),
+)
+
+_GROUP_INTENT: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("faltante", re.compile(r"no se encuentra disponible|datos faltantes", re.I)),
+    ("oculto", re.compile(r"no mostrar|no se muestra", re.I)),
+    ("timeout", re.compile(r"tiempo de visualizaci", re.I)),
+    ("config", re.compile(
+        r"seg[uú]n (el valor|configuraci|caracter)|enabled_options|ajuste de opciones",
+        re.I,
+    )),
+    ("hover", re.compile(r"selecci[oó]n de chevron|foco sobre|estado hover sobre", re.I)),
+    ("programar", re.compile(r"programar ", re.I)),
+    ("agregar", re.compile(r"agregar ", re.I)),
+    ("quitar", re.compile(r"eliminar ", re.I)),
+    ("seleccion", re.compile(r"selecci[oó]n de fecha", re.I)),
+    ("salir", re.compile(r"salir de ", re.I)),
+    ("cerrar", re.compile(r"cerrar ", re.I)),
+    ("accion", re.compile(
+        r"cambio al |recorrer |acciones al |opci[oó]n salir|"
+        r"bloquear |ingreso al |ingreso |acceder al |iniciar la |presionar",
+        re.I,
+    )),
+)
+
+_GROUP_ENTRY: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("sin-timeshift", re.compile(r"sin (funcionalidad de )?timeshift", re.I)),
+    ("con-timeshift", re.compile(r"con (funcionalidad de )?timeshift", re.I)),
+    ("sin-npvr", re.compile(r"sin (funcionalidad de )?npvr", re.I)),
+    ("con-npvr", re.compile(r"con (funcionalidad de )?npvr", re.I)),
+    ("vista-reducida", re.compile(r"pantalla reducida|vista reducida", re.I)),
+    ("vista-completa", re.compile(r"pantalla completa|vista completa", re.I)),
+    ("no-disponible", re.compile(r"eventos? no disponibles", re.I)),
+    ("por-comenzar", re.compile(r"por comenzar", re.I)),
+    ("ya-comenzo", re.compile(r"ya comenz", re.I)),
+    ("origen-player", re.compile(r"desde (la )?botonera|desde (el )?control player", re.I)),
+    ("origen-guia", re.compile(r"desde (la )?celda", re.I)),
+    ("seriado", re.compile(r"evento seriado", re.I)),
+    ("favorito", re.compile(r"es favorito|marcado como favorito", re.I)),
+    ("no-favorito", re.compile(r"no (es |est[aá] )?favorito", re.I)),
+)
+
 
 def detect_entry(title: str, body: str, surface: str | None = None) -> str:
     blob = f"{title}\n{body}"
@@ -420,14 +511,97 @@ def detect_entry(title: str, body: str, surface: str | None = None) -> str:
     return "default"
 
 
+def _norm_scenario_name(title: str) -> str:
+    text = re.sub(r'["“”\'«»]', "", title or "")
+    text = re.sub(r"\s*\([^)]*\)\s*$", "", text)
+    return re.sub(r"\s+", " ", text).strip().lower()
+
+
+def _first_group(text: str, pairs: tuple[tuple[str, re.Pattern[str]], ...]) -> str | None:
+    for key, pattern in pairs:
+        if pattern.search(text or ""):
+            return key
+    return None
+
+
+def detect_group_family(title: str, body: str) -> str | None:
+    family = _first_group(title, _GROUP_FAMILIES)
+    if family is None and re.search(
+        r"duraci[oó]n|etiquetas de estado|alg[uú]n elemento no se encuentra", title or "", re.I
+    ):
+        family = _first_group(body, _GROUP_FAMILIES)
+    intent = detect_group_intent(title, body)
+    if (
+        family == "chevron"
+        and intent == "construct"
+        and re.search(r"control player", title or "", re.I)
+    ):
+        return "control-player"
+    if family is None and re.search(r"ver ahora", title or "", re.I):
+        return "modal-recordatorio"
+    return family
+
+
+def detect_group_intent(title: str, body: str) -> str:
+    intent = _first_group(title, _GROUP_INTENT) or "construct"
+    family = _first_group(title, _GROUP_FAMILIES)
+    if family == "opciones-evento":
+        return "construct"
+    if family == "modal-recordatorio" and intent in {"cerrar", "accion"}:
+        return "accion"
+    if family == "progress-bar":
+        return "construct"
+    if family == "recordatorio" and re.search(r"(ícono|icono)", title or "", re.I):
+        return "quitar"
+    return intent
+
+
+def detect_group_entry(title: str, body: str, surface: str | None = None) -> str:
+    family = detect_group_family(title, body)
+    if family == "progress-bar":
+        if re.search(r"con (funcionalidad de )?timeshift", title or "", re.I):
+            return "con-timeshift"
+        return "sin-timeshift"
+    if re.search(r"(ícono|icono) de (timeshift|grabar)", title or "", re.I):
+        return "default"
+    for source in (title, body):
+        for key, pattern in _GROUP_ENTRY:
+            if pattern.search(source or ""):
+                if key == "con-npvr" and re.search(r"sin (funcionalidad de )?npvr", source or "", re.I):
+                    continue
+                if key == "con-timeshift" and re.search(
+                    r"sin (funcionalidad de )?timeshift", source or "", re.I
+                ):
+                    continue
+                if source is body and key in {
+                    "vista-reducida",
+                    "vista-completa",
+                    "origen-player",
+                    "origen-guia",
+                    "favorito",
+                    "no-favorito",
+                }:
+                    continue
+                return key
+        if source is title:
+            continue
+        break
+    return "default"
+
+
 def surface_group_key(
     epic_key: str, surface: str | None, scenario: str, story_key: str = "", body: str = ""
 ) -> str:
-    """Same bug: same surface and same entry condition (session, network, config)."""
+    """Same bug: same widget family, same intent and same entry condition."""
+    family = detect_group_family(scenario, body)
+    if family:
+        intent = detect_group_intent(scenario, body)
+        entry = detect_group_entry(scenario, body, surface)
+        return f"{epic_key}|{family}|{intent}|{entry}"
     entry = detect_entry(scenario, body, surface)
     if surface in _SAME_BUG_SURFACES:
         return f"{epic_key}|{surface}|{entry}"
-    return f"{epic_key}|{story_key}|scenario|{scenario}"
+    return f"{epic_key}|nombre|{_norm_scenario_name(scenario)}"
 
 
 def collapse_redundant_surfaces(units: list[CoverageUnit]) -> list[CoverageUnit]:

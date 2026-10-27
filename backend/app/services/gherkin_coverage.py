@@ -1550,9 +1550,7 @@ def _units_from_story_blocks(
         extra_notes = extra_support
         if satellites:
             extra_notes = "; ".join(part for part in (extra_notes, *satellites) if part)
-        should_atomize = bool(user_action) and (not then_generic) and len(primary) > 1
-        if _SCROLL.search(f"{title}\n{body}"):
-            should_atomize = False
+        should_atomize = False
         if not should_atomize:
             units.append(
                 _coverage_unit(

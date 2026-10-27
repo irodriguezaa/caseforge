@@ -367,9 +367,15 @@ def _short_phrase(text: str | None, limit: int = 6) -> str:
 
 def compose_scenario_units(units: list[CoverageUnit]) -> FlowDraft:
     primary = units[0]
-    evidence_body = (primary.evidence or "").split("\n", 1)
-    body = evidence_body[1] if len(evidence_body) > 1 else (primary.body or "")
-    walked = _walk_gwt(body)
+    walked: list[tuple[str, str]] = []
+    seen_bodies: set[str] = set()
+    for unit in units:
+        evidence_body = (unit.evidence or "").split("\n", 1)
+        body = evidence_body[1] if len(evidence_body) > 1 else (unit.body or "")
+        if body in seen_bodies:
+            continue
+        seen_bodies.add(body)
+        walked.extend(_walk_gwt(body))
     pre: list[str] = []
     tech: list[str] = []
     nav: list[str] = []
@@ -454,6 +460,16 @@ def compose_scenario_units(units: list[CoverageUnit]) -> FlowDraft:
                 continue
             expected = polish_expected("; ".join(pending_then)) if pending_then else ""
             pending_then = []
+            existing = next(
+                (step for step in steps if (step.action or "").lower() == action.lower()),
+                None,
+            )
+            if existing:
+                if expected:
+                    existing.expected_result = polish_expected(
+                        "; ".join(part for part in (existing.expected_result, expected) if part)
+                    )
+                continue
             steps.append(
                 CandidateStep(
                     step_number=len(steps) + 1,
@@ -748,10 +764,10 @@ def contextualize_duplicate_titles(candidates: list[GeneratedCaseCandidate]) -> 
     grouped: dict[str, list[GeneratedCaseCandidate]] = {}
     order: list[str] = []
     for candidate in candidates:
-        story = (candidate.related_jira or "").split(" | ")[0].strip()
+        epic = (candidate.related_functionality or "").split(" | ")[0].strip()
         base = re.sub(r"\s+—\s+.*$", "", strip_title_prefix(candidate.name)).strip()
         normalized = re.sub(r"\W+", " ", base.lower()).strip()
-        key = f"{story}|{normalized}"
+        key = f"{epic}|{normalized}"
         if key not in grouped:
             order.append(key)
         grouped.setdefault(key, []).append(candidate)

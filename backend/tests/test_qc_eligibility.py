@@ -4,6 +4,7 @@ from app.services.qc_eligibility import (
     impact_user_view,
     is_consumed_device_impact,
     select_qc_gherkin,
+    surface_group_key,
 )
 
 
@@ -134,6 +135,59 @@ def test_empty_then_is_pending() -> None:
     elig = evaluate_scenario("Líneas a mostrar de Sinopsis", "When el usuario abre el panel\nThen\n")
     assert elig.pending
     assert elig.ledger_estado == "pendiente de revisión QC"
+
+
+def test_same_family_same_entry_share_group() -> None:
+    pin = surface_group_key(
+        "EPC-1",
+        "player",
+        "Visualización del Pin de la Progress Bar",
+        "ST-1",
+        "Then se muestra el pin",
+    )
+    sync = surface_group_key(
+        "EPC-1",
+        "player",
+        "Sincronización del tiempo en eventos en vivo",
+        "ST-1",
+        "Then se sincroniza el tiempo en la Progress Bar",
+    )
+    assert pin == sync
+
+
+def test_entry_condition_splits_group() -> None:
+    off = surface_group_key(
+        "EPC-1",
+        "player",
+        "Estructura gráfica de la Progress Bar sin funcionalidad de Timeshift",
+        "ST-1",
+        "Then se muestra la barra",
+    )
+    on = surface_group_key(
+        "EPC-1",
+        "player",
+        "Estructura gráfica de la Progress Bar con funcionalidad de Timeshift",
+        "ST-1",
+        "Then se muestra la barra",
+    )
+    assert off != on
+
+
+def test_same_scenario_name_across_stories_share_group() -> None:
+    a = surface_group_key("EPC-1", "pantalla", "Visualización de texto en estado hover", "ST-1", "")
+    b = surface_group_key("EPC-1", "boton", "Visualización de texto en estado hover", "ST-2", "")
+    assert a == b
+
+
+def test_examples_do_not_change_group_key() -> None:
+    key = surface_group_key(
+        "EPC-1",
+        "boton",
+        "Mostrar las opciones del Control Player según configuración",
+        "ST-1",
+        "Then se muestran las opciones\nExamples:\n| región |\n| A |\n| B |",
+    )
+    assert "|scenario|" not in key
 
 
 def test_pipeline_and_logs_fail_device() -> None:
