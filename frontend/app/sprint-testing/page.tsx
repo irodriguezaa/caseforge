@@ -216,7 +216,7 @@ export default function SprintTestingPage(): React.ReactElement {
             className="secondary"
             disabled={!canQuery || loading || exportingPack}
             onClick={() => void handleExportPack()}
-            title={`PPTX (1 slide por SWF) + Excel de blockers (${packLabel})`}
+            title={`PPTX (estado y blockers por SWF) + Excel de blockers (${packLabel})`}
           >
             {exportingPack ? "Generando pack..." : `Pack ${packLabel}`}
           </button>

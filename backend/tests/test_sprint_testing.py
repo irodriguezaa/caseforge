@@ -343,6 +343,7 @@ def test_execution_blockers_include_created_principal_status_comment_and_nested(
     assert row.priority == "Supone un impedimento"
     assert row.created == "2026-07-28T16:38:26.826-0300"
     assert row.principal == "ADTCL-541"
+    assert row.principal_summary == "Feature"
     assert row.status_changed_at == "2026-10-09T21:23:45.759-0300"
     assert row.status_changed_from == "QA Validation"
     assert row.status_changed_to == "Analysis"
@@ -580,7 +581,30 @@ def test_issues_workbook_headers() -> None:
     assert sheet["J2"].value == "PLYCL-763, CONCL-1167"
 
 
-def test_executive_pptx_is_one_slide_without_open_column() -> None:
+def test_rank_blocker_epics_keeps_top_five_and_flags_single_blockers() -> None:
+    from app.schemas.sprint_testing import ExecutionBlockerRow
+    from app.services.sprint_testing.export import _rank_blocker_epics
+
+    rows: list[ExecutionBlockerRow] = []
+    for index, count in enumerate([4, 3, 1, 1, 1, 1, 1], start=1):
+        for copy in range(count):
+            rows.append(
+                ExecutionBlockerRow(
+                    key=f"WEBCL-{index}-{copy}",
+                    summary="bug",
+                    status="Analysis",
+                    principal=f"WEBCL-{index}",
+                    principal_summary=f"Epic {index}",
+                )
+            )
+    shown, note = _rank_blocker_epics(rows)
+    assert [item.key for item in shown] == ["WEBCL-1", "WEBCL-2", "WEBCL-3", "WEBCL-4", "WEBCL-5"]
+    assert shown[0].title == "Epic 1"
+    assert shown[0].count == 4
+    assert note == "+ 2 con 1 blocker"
+
+
+def test_executive_pptx_has_status_bars_and_blocker_epics() -> None:
     from io import BytesIO
 
     from pptx import Presentation
@@ -630,22 +654,34 @@ def test_executive_pptx_is_one_slide_without_open_column() -> None:
                 )
             ],
             blockers=[
-                ExecutionBlockerRow(key="ADTCL-1", summary="Playback VOD", status="In Progress"),
+                ExecutionBlockerRow(
+                    key="ADTCL-1",
+                    summary="Playback VOD",
+                    status="In Progress",
+                    program_key="ADTCL",
+                    display_name="ADT / FireTV",
+                    principal="ADTCL-541",
+                    principal_summary="Playback en vivo",
+                ),
             ],
         ),
     )
     deck = Presentation(BytesIO(build_executive_pptx(payload)))
-    assert len(deck.slides) == 1
-    tables = [shape.table for shape in deck.slides[0].shapes if shape.has_table]
-    assert len(tables) == 2
-    epic_headers = [tables[0].cell(0, col).text.strip() for col in range(len(tables[0].columns))]
-    issue_headers = [tables[1].cell(0, col).text.strip() for col in range(len(tables[1].columns))]
-    assert "To Do" not in epic_headers
-    assert "Abierto" not in epic_headers
-    assert epic_headers == ["Dispositivo", "Desarrollo", "Integración", "Testing", "Cerrado", "Total"]
-    assert issue_headers == ["Dispositivo", "Blocker", "No Blocker", "Total"]
-    texts = [shape.text_frame.text for shape in deck.slides[0].shapes if shape.has_text_frame]
-    assert not any(text.strip() == "Blockers" for text in texts)
+    assert len(deck.slides) == 2
+    assert not any(shape.has_table for slide in deck.slides for shape in slide.shapes)
+    status_text = "\n".join(
+        shape.text_frame.text for shape in deck.slides[0].shapes if shape.has_text_frame
+    )
+    blocker_text = "\n".join(
+        shape.text_frame.text for shape in deck.slides[1].shapes if shape.has_text_frame
+    )
+    assert "Estado de Technical Epics" in status_text
+    assert "ADT / FireTV" in status_text
+    assert "QA Validation" in status_text
+    assert "To Do" not in status_text
+    assert "ADTCL-541" in blocker_text
+    assert "Playback en vivo" in blocker_text
+    assert "Observaciones" in blocker_text
 
 
 def test_export_issues_requires_execution_filter(client) -> None:
@@ -707,7 +743,7 @@ def test_pack_options_and_zip(client, monkeypatch) -> None:
     pptx_name = next(name for name in names if name.endswith(".pptx"))
     xlsx_name = next(name for name in names if name.endswith(".xlsx"))
     deck = Presentation(BytesIO(archive.read(pptx_name)))
-    assert len(deck.slides) == 2
+    assert len(deck.slides) == 4
     titles = [
         shape.text_frame.text
         for slide in deck.slides
