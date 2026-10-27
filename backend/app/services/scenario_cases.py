@@ -374,17 +374,26 @@ def _strip_markup(text: str | None) -> str:
 
 def _given_precondition(clause: str) -> str:
     text = re.sub(r"^\s*(que )?", "", clause or "", flags=re.I).strip()
-    text = re.sub(r"^\s*un usuario que accede( a| al)?\s*", "El usuario está en ", text, flags=re.I)
+    if re.search(r"sesi[oó]n iniciada|usuario (registrado|autenticado)|inicia sesi[oó]n", text, re.I):
+        return "Sesión iniciada"
+    if re.search(r"\bplayer\b", text, re.I):
+        return "Estar en el Player de TV"
+    if re.search(r"gu[ií]a de programaci[oó]n|\bla gu[ií]a\b", text, re.I):
+        return "Estar en la Guía"
+    text = re.sub(r"^\s*un usuario que accede( a| al)?\s*", "", text, flags=re.I)
     text = re.sub(
         r"^\s*((el|la) usuario\s+)?(está|esta|se encuentra|se halla)(\s+en)?\s+",
-        "El usuario está en ",
+        "",
         text,
         flags=re.I,
     )
-    text = re.sub(r"^\s*(que )?accede( a| al|)\s*", "El usuario está en ", text, flags=re.I)
-    if text and not re.match(r"^(el usuario|precondici)", text, re.I):
-        text = text[0].upper() + text[1:]
-    return _strip_markup(text)
+    text = re.sub(r"^\s*(que )?accede( a| al)?\s*", "", text, flags=re.I)
+    text = re.sub(r"^\s*abrir (la |el |los |las )?", "", text, flags=re.I).strip(" .")
+    if not text:
+        return ""
+    if re.match(r"^(estar |sesi[oó]n )", text, re.I):
+        return _strip_markup(text[0].upper() + text[1:])
+    return _strip_markup(f"Estar en {text[0].upper() + text[1:]}")
 
 
 def _merge_steps_without_result(steps: list[CandidateStep]) -> list[CandidateStep]:
@@ -420,7 +429,21 @@ def _merge_steps_without_result(steps: list[CandidateStep]) -> list[CandidateSte
         )
     for index, step in enumerate(merged, start=1):
         step.step_number = index
-    return merged
+    return _dedupe_steps(merged)
+
+
+def _dedupe_steps(steps: list[CandidateStep]) -> list[CandidateStep]:
+    seen: set[str] = set()
+    out: list[CandidateStep] = []
+    for step in steps:
+        key = _norm_text(step.action)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        out.append(step)
+    for index, step in enumerate(out, start=1):
+        step.step_number = index
+    return out
 
 
 def _norm_text(text: str) -> str:
@@ -640,7 +663,7 @@ def compose_scenario_units(units: list[CoverageUnit]) -> FlowDraft:
         tech.extend(action_ids)
         tech.extend(expected_ids)
         visible_fallback = polish_expected("; ".join(pending_then)) or merged_expected
-        step.action = _scrub_visible(action_clean or step.action, primary.scenario or "", "Abrir la aplicación")
+        step.action = _scrub_visible(action_clean or step.action, primary.scenario or "", step.action or "")
         step.expected_result = _scrub_visible(
             render_expected(expected_clean or step.expected_result),
             primary.scenario or "",
@@ -664,20 +687,37 @@ def compose_scenario_units(units: list[CoverageUnit]) -> FlowDraft:
     steps = [
         step
         for step in steps
-        if not _LINT_GEN.search(step.action or "") and not _LINT_GEN.search(step.expected_result or "")
+        if not _LINT_GEN.search(step.action or "")
+        and not _LINT_GEN.search(step.expected_result or "")
+        and not re.match(r"^\s*abrir la aplicaci[oó]n\b", step.action or "", re.I)
+        and not re.match(r"^\s*se muestra la pantalla de partida\b", step.expected_result or "", re.I)
+        and not re.search(r"pantalla afectada|elementos visibles", f"{step.action} {step.expected_result}", re.I)
     ]
-    if len(steps) == 1:
-        only = steps[0]
-        if not re.match(r"^\s*abrir la aplicaci[oó]n\b", only.action or "", re.I):
-            steps.insert(
-                0,
-                CandidateStep(
-                    step_number=1,
-                    action="Abrir la aplicación",
-                    expected_result="Se muestra la pantalla de partida",
-                    covered_unit_ids=list(only.covered_unit_ids or []),
-                ),
-            )
+    steps = _dedupe_steps(steps)
+    for step in steps:
+        if re.match(r"^\s*abrir la aplicaci[oó]n\b", step.action or "", re.I):
+            kept_open = _given_precondition(step.action)
+            if kept_open:
+                pre.append(kept_open)
+    steps = [
+        step
+        for step in steps
+        if not re.match(r"^\s*abrir la aplicaci[oó]n\b", step.action or "", re.I)
+    ]
+    has_visible = any((step.expected_result or "").strip() for step in steps)
+    has_action = any(is_tester_action(step.action) for step in steps)
+    if steps and has_action and not has_visible:
+        then_text = merged_expected or polish_expected("; ".join(pending_then))
+        if then_text:
+            steps[-1].expected_result = then_text
+            has_visible = True
+        else:
+            pending = "verificación técnica"
+            steps = []
+    elif not has_action or not has_visible:
+        pending = pending or "verificación técnica"
+        if not has_visible:
+            steps = []
     for index, step in enumerate(steps, start=1):
         step.step_number = index
         step.action = _strip_markup(step.action)
@@ -688,7 +728,9 @@ def compose_scenario_units(units: list[CoverageUnit]) -> FlowDraft:
         else:
             step.expected_result = _strip_markup(step.expected_result)
     if "impacto-superficie" in (primary.applied_rules or []):
-        title = "El cambio se refleja en los elementos visibles"
+        visible = (primary.observable_then or [primary.behavior or primary.scenario or ""])[0]
+        title = re.sub(r"^se (muestra|ve|ven)\s+", "", visible or "", flags=re.I).strip()[:120]
+        title = (title[:1].upper() + title[1:]) if title else strip_title_prefix(primary.scenario)[:120]
     else:
         title_clean, title_ids = lift_technical(strip_title_prefix(primary.scenario))
         tech.extend(title_ids)
@@ -739,8 +781,8 @@ def compose_scenario_units(units: list[CoverageUnit]) -> FlowDraft:
             )
             if rebuilt and _norm_text(rebuilt)[:40] != _norm_text(title)[:40]:
                 step.expected_result = _strip_markup(rebuilt)
-            else:
-                step.expected_result = "El elemento se presenta según el diseño y el estado esperado"
+            elif title:
+                title = strip_title_prefix(primary.scenario or title)[:80]
     return FlowDraft(
         story_key=primary.story_key or primary.jira_key or "",
         epic_key=primary.artifact_key or primary.rn_key or "",
@@ -797,6 +839,8 @@ def compose_scenario_inventory(
             candidate.applicability = "ejecutable"
             candidate.applicability_reason = None
         candidate.applied_rules = list(dict.fromkeys([*(candidate.applied_rules or []), *(draft.applied_rules or [])]))
+        if not candidate.steps and (candidate.applicability or "") != "na_ambiente":
+            continue
         out.append(candidate)
     exe = {
         ((row.related_jira or "").split(" | ")[0], re.sub(r"\W+", " ", (row.name or "").lower()).strip())

@@ -55,6 +55,8 @@ def test_consumed_placeholder_is_surface_impact() -> None:
     assert "placeholder" in then
     assert "llave" not in then
     assert "usuario" in action
+    assert "pantalla afectada" not in action
+    assert "elementos visibles" not in then
 
 
 def test_select_qc_gherkin_keeps_impact_not_duplicate_direct() -> None:
@@ -250,6 +252,14 @@ def test_epic_ac_skipped_when_story_covers_behavior() -> None:
         "Tiempo de visibilidad configurable; el Player se oculta automáticamente",
         corpus,
     )
+
+
+def test_impact_names_concrete_surface() -> None:
+    action, then = impact_user_view("texto-ui", "Los textos cambian de llave")
+    assert "Perfiles" in action or "Ajustes" in then
+    assert "pantalla afectada" not in action
+    assert "elementos visibles" not in then
+    assert "el cambio se refleja" not in then.lower()
 
 
 def test_group_keys_do_not_cross_epics() -> None:

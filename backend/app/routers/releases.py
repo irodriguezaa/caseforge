@@ -1202,6 +1202,14 @@ def _generate_cases_from_rn(
             coverage_payload.get("scenario_ledger"),
         )
         proposal.rn_scope_coverage = coverage_payload
+    if persisted_rows and isinstance(coverage_payload, dict):
+        from app.services.test_case_export import _resolve_ledger_case_ids
+
+        coverage_payload["scenario_ledger"] = _resolve_ledger_case_ids(
+            list(coverage_payload.get("scenario_ledger") or []),
+            persisted_rows,
+        )
+        proposal.rn_scope_coverage = coverage_payload
     sync_release_rn_epc_identity(db, release.id, analysis, coverage_payload)
     db.commit()
     for row in persisted_rows:

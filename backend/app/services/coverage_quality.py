@@ -235,8 +235,6 @@ def quality_gate(candidates: list[GeneratedCaseCandidate]) -> list[GeneratedCase
                 candidate.technical_reference = "; ".join(part for part in (current, extra) if part and extra not in current)
         for index, step in enumerate(candidate.steps, start=1):
             step.step_number = index
-            if _norm(step.expected_result) == _norm(candidate.name) and step.expected_result:
-                step.expected_result = "Los elementos visibles actualizan su contenido o estado"
             if (
                 not scenario_case
                 and _norm(step.expected_result) == _norm(candidate.name)

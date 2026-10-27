@@ -175,10 +175,31 @@ def parcial_estado(epic: str, ledger: list[dict] | None) -> str:
     return "parcial (" + ", ".join(parts) + ")"
 
 
+def _resolve_ledger_case_ids(rows: list[dict], cases: list[TestCase]) -> list[dict]:
+    """Escenarios de Jira: columna ID del caso = QC-xxx, no el nombre."""
+    by_id = {str(case.test_case_id or "").strip(): str(case.test_case_id) for case in cases if case.test_case_id}
+    by_name: dict[str, str] = {}
+    for case in cases:
+        name = str(getattr(case, "test_case_name", "") or "").strip()
+        if name and case.test_case_id:
+            by_name[name] = str(case.test_case_id)
+    for row in rows:
+        ref = str(row.get("case_id") or "").split(";")[0].strip()
+        if not ref:
+            continue
+        match = re.match(r"^([A-Z]{2,}-\d+)", ref)
+        if match and match.group(1) in by_id:
+            row["case_id"] = match.group(1)
+            continue
+        if ref in by_name:
+            row["case_id"] = by_name[ref]
+    return rows
+
+
 def _ledger_rows(cases: list[TestCase], scenario_ledger: list[dict] | None) -> list[dict]:
     rows = [row for row in (scenario_ledger or []) if isinstance(row, dict)]
     if rows:
-        return rows
+        return _resolve_ledger_case_ids(rows, cases)
     built: list[dict] = []
     for case in cases:
         reason = str(getattr(case, "applicability_reason", "") or "")

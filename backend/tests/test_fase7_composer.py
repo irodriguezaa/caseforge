@@ -79,6 +79,8 @@ Feature: Evento futuro
     assert any("seleccion" in action for action in actions)
     assert all(not action.startswith("observ") for action in actions)
     assert all("given" not in action for action in actions)
+    assert all("abrir la aplicación" not in action for action in actions)
+    assert all("pantalla de partida" not in (step.expected_result or "").lower() for step in case.steps)
 
 
 def test_72_no_user_action_is_pending_qc() -> None:
@@ -222,6 +224,72 @@ Scenario: Configuración remota vacía
         "pendiente de revisión QC",
         "verificación técnica",
     }
+
+
+def test_no_generic_startup_step() -> None:
+    description = """
+Scenario: Ver player
+  Given un usuario que accede al player de TV en vivo
+  When el control player se encuentra activo
+  Then se muestra la botonera
+"""
+    cases = candidates_from_jira_artifacts(
+        _artifacts(("EPC-1", "ST-1", "Feature player", description)),
+        "rn.pdf",
+        [],
+        lambda *_a: None,
+    )
+    case = next(row for row in cases if row.steps)
+    actions = [step.action.lower() for step in case.steps]
+    assert "abrir la aplicación" not in " ".join(actions)
+    assert "pantalla de partida" not in " ".join(step.expected_result.lower() for step in case.steps)
+    assert "player" in (case.precondition or "").lower() or "estar en" in (case.precondition or "").lower()
+    assert len(actions) == len(set(actions))
+
+
+def test_excel_ledger_uses_case_id_not_name() -> None:
+    from types import SimpleNamespace
+
+    payload = build_test_cases_workbook(
+        [
+            SimpleNamespace(
+                test_case_id="QC-003",
+                test_case_name="Ver detalle",
+                component="EPC-1",
+                technical_epic="EPC-1",
+                hn_source=None,
+                status="UNEXECUTED",
+                estimation_hours=0.17,
+                priority="CRITICAL",
+                test_type="FUNCTIONAL",
+                source_type="functionality",
+                user_type=None,
+                test_data=None,
+                evidence="",
+                justification="",
+                technical_story="ST-1",
+                scenario_origin="Ver detalle",
+                confidence=None,
+                complexity="BAJA",
+                description=None,
+                device=None,
+                applicability_reason=None,
+                steps=[SimpleNamespace(step_number=1, test_step="Seleccionar", expected_result="Se muestra el detalle")],
+            )
+        ],
+        scenario_ledger=[
+            {
+                "story": "ST-1",
+                "epic": "EPC-1",
+                "scenario": "Ver detalle",
+                "estado": "caso ejecutable",
+                "case_id": "Ver detalle",
+                "motivo": "",
+            }
+        ],
+    )
+    book = load_workbook(io.BytesIO(payload))
+    assert book["Escenarios de Jira"]["D2"].value == "QC-003"
 
 
 def test_76_excel_has_escenarios_de_jira_sheet() -> None:

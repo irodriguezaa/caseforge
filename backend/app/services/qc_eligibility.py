@@ -808,22 +808,8 @@ def select_qc_gherkin(
             and generic
             and (not surface or surface in {"regresion-generica", "ui-visible", "impacto-app", None})
         ):
-            group = f"{epic_key}|impacto-app"
-            if group in direct_groups:
-                if row is not None:
-                    row["motivo"] = f"{row.get('motivo')}; {note}".strip("; ")
-                    still_dropped.append(row)
-                continue
-            revived.append(
-                SelectedGherkin(
-                    story_key,
-                    title,
-                    "When el usuario abre las pantallas afectadas\n"
-                    "Then se ven igual que en la versión anterior",
-                    group,
-                    "impacto",
-                )
-            )
+            if row is not None:
+                still_dropped.append(row)
             continue
         if row is not None:
             still_dropped.append(row)
@@ -844,13 +830,28 @@ def impact_user_view(surface: str, title: str) -> tuple[str, str]:
             "se muestra el placeholder correcto según la forma de la tarjeta",
         )
     if surface.startswith("marca-") or re.search(r"logotipo|logo", blob, re.I):
-        return ("el usuario abre la pantalla", "se muestra el logotipo en esa pantalla")
+        return ("el usuario abre el modal de marca", "el logotipo se muestra en el modal")
     if surface == "texto-ui" or re.search(r"textos?", blob, re.I):
-        return ("el usuario abre la pantalla", "se muestra el texto vigente")
-    return (
-        "el usuario abre la pantalla afectada",
-        "Los elementos visibles actualizan su contenido o estado",
-    )
+        return (
+            "el usuario abre Perfiles y Ajustes",
+            "los textos de Perfiles y Ajustes se ven igual que antes",
+        )
+    if surface == "player" or re.search(r"\bplayer\b", blob, re.I):
+        return ("el usuario abre el Player de TV", "el Player de TV se ve igual que antes")
+    if surface == "boton":
+        return ("el usuario abre el control", "los botones se ven igual que antes")
+    if surface == "guia":
+        return ("el usuario abre la Guía", "la Guía se ve igual que antes")
+    if surface == "home":
+        return ("el usuario abre el inicio", "el inicio se ve igual que antes")
+    if surface == "checkout":
+        return ("el usuario abre la compra", "el flujo de compra se ve igual que antes")
+    if surface == "landing":
+        return ("el usuario abre el inicio de sesión", "el inicio se ve igual que antes")
+    if surface == "seleccion-perfil":
+        return ("el usuario abre la selección de perfil", "la selección de perfil se ve igual que antes")
+    label = re.sub(r"[-_]+", " ", (surface or "").strip()) or "la superficie del flujo"
+    return (f"el usuario abre {label}", f"{label} se ve igual que antes")
 
 
 def _annotate_covered_surface(stats: GenerationStats, story_key: str, title: str) -> None:
@@ -880,7 +881,6 @@ def synthesize_impact_units(
     }
     consumed = False
     want_named: dict[str, list[tuple[dict, dict]]] = {}
-    want_generic: dict[str, list[tuple[dict, dict]]] = {}
     for story, block in blocks:
         title = str(block.get("title") or "")
         body = str(block.get("body") or "")
@@ -909,7 +909,7 @@ def synthesize_impact_units(
             blob,
             re.I,
         ):
-            want_generic.setdefault("app", []).append((story, block))
+            continue
     if not consumed:
         return []
     units: list[CoverageUnit] = []
@@ -955,39 +955,4 @@ def synthesize_impact_units(
             )
         )
         existing_groups.add(group)
-    body_gherkin = (
-        "When el usuario abre las pantallas afectadas\n"
-        "Then se ven igual que en la versión anterior"
-    )
-    for _key, rows in want_generic.items():
-        for story, block in rows:
-            title = str(block.get("title") or "")
-            seq_holder[0] += 1
-            story_key = str(story.get("key") or epic_key)
-            units.append(
-                CoverageUnit(
-                    coverage_id=f"COV-{seq_holder[0]:03d}",
-                    role="G",
-                    behavior=title,
-                    scenario=title,
-                    evidence=f"{story_key}: {title}",
-                    jira_key=story_key,
-                    rn_key=epic_key,
-                    feature_story=story_key,
-                    body=body_gherkin,
-                    description=title,
-                    rn_filename=rn_filename,
-                    artifact_key=epic_key,
-                    story_key=story_key,
-                    observable_then=["se ven igual que en la versión anterior"],
-                    test_intent=title,
-                    qc_relevance="QC_REGRESSION",
-                    user_action="el usuario abre las pantallas afectadas",
-                    source_origin="gherkin",
-                    applied_rules=["impacto-superficie"],
-                    scenario_group=f"{epic_key}|impacto-app",
-                    story_summary=str(story.get("summary") or ""),
-                    traceability=f"RN={epic_key}; impacto=app",
-                )
-            )
     return units
