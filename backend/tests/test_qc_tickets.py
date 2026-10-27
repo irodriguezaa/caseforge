@@ -180,6 +180,23 @@ def test_stats_computes_leak_rate_and_breakdowns(client) -> None:
     assert stats["leak_by_month"]["2026-02"]["leaked"] == 1.0
 
 
+def test_operativas_stats_group_andina_and_dominicana_into_combined_cluster(client) -> None:
+    csv_text = CSV_HEADER + (
+        "OPE-20,Bug,PROJ,Critical,Finalizada,10/ene/26 10:00 AM,,,Andina,\n"
+        "OPE-21,Bug,PROJ,Critical,Finalizada,10/ene/26 10:00 AM,,,Dominicana,\n"
+        'OPE-22,Bug,PROJ,Critical,Finalizada,10/ene/26 10:00 AM,,"Ticket sin país",Andina/Dominicana,\n'
+        "OPE-23,Bug,PROJ,Critical,Finalizada,10/ene/26 10:00 AM,,,AUP,\n"
+    )
+    preview = _upload(client, csv_text).json()
+    client.post("/api/v1/qc-tickets/bulk", json=preview["valid"])
+
+    stats = client.get("/api/v1/qc-tickets/stats", params={"view": "OPERATIVAS"}).json()
+    assert stats["by_cluster"]["Andina/Dominicana"] == 3
+    assert "Andina" not in stats["by_cluster"]
+    assert "Dominicana" not in stats["by_cluster"]
+    assert stats["by_cluster"]["AUP"] == 1
+
+
 def test_stats_new_aggregations_operativas(client) -> None:
     """Validates the expanded-dashboard fields against real computed values, not just
     presence -- by_month_priority, open_by_priority, by_status, by_device (with the documented
