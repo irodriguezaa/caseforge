@@ -24,7 +24,7 @@ _TITLE_PREFIX = re.compile(
 )
 _FEATURE = re.compile(r"\bfeature\s*:?\s*", re.IGNORECASE)
 _FLOW_MARK = re.compile(r"\s*(\(flujo\s+\d+\)|\[[A-Z][A-Z0-9]+-\d+\])\s*", re.I)
-_USER = re.compile(r"^\s*(el )?usuario\s+", re.IGNORECASE)
+_USER = re.compile(r"^\s*((el|la|los|las|un|una) )?usuari[oa]s?\s+", re.IGNORECASE)
 _USER_INFINITIVE = re.compile(
     r"^\s*(el usuario\s+)?[a-záéíóúñ]+(ar|er|ir)\b",
     re.IGNORECASE,
@@ -58,6 +58,10 @@ _3SG = (
     (re.compile(r"\btransacciona\b", re.I), "Transaccionar"),
     (re.compile(r"\brealiza\b", re.I), "Realizar"),
     (re.compile(r"\bentra\b", re.I), "Entrar"),
+    (re.compile(r"\brecorre\b", re.I), "Recorrer"),
+    (re.compile(r"\barranca\b", re.I), "Abrir"),
+    (re.compile(r"\bve\b", re.I), "Ver"),
+    (re.compile(r"\bvuelve a abrir\b", re.I), "Abrir"),
 )
 _NEGATIVE = re.compile(r"inv[aá]lid|error|mensaje|rechaz|no se (muestra|permite)|incorrect|no es v[aá]lido", re.I)
 _SUCCESS = re.compile(r"\b(éxito|exito|correctamente|permite|se muestra el (comprobante|resultado)|confirma)\b", re.I)
@@ -142,8 +146,11 @@ def to_infinitive(action: str | None) -> str:
     if not raw:
         return ""
     for pattern, replacement in _3SG:
-        if pattern.search(raw):
-            raw = pattern.sub(replacement, raw, count=1)
+        match = pattern.search(raw)
+        if match:
+            after = raw[match.end() :].strip()
+            after = re.sub(r"^(de cada una|la|lo|le|el|los|las)\s+", "", after, flags=re.I)
+            raw = f"{replacement} {after}".strip()
             break
     else:
         raw = raw[0].upper() + raw[1:] if raw else raw

@@ -39,7 +39,13 @@ from app.services.qc_candidate_rules import (
     format_examples,
     functional_title,
     group_examples_by_outcome,
-    is_out_of_qc_story,
+)
+from app.services.qc_eligibility import (
+    collapse_redundant_surfaces,
+    evaluate_scenario,
+    has_end_user_actor,
+    surface_group_key,
+    synthesize_impact_units,
 )
 from app.services.scenario_classifier import (
     ScenarioClassification,
@@ -314,7 +320,6 @@ _DEFECT_NARRATIVE = re.compile(
     re.IGNORECASE,
 )
 _TECH_IMPL_ONLY = re.compile(
-    r"\bappkeys\b|"
     r"\bstream types?\b|"
     r"track/dubsubchange|"
     r"\bb1\+[A-Z]+CL-\d+",
@@ -547,6 +552,8 @@ def extract_prose_observable_blocks(
             elif _pure_config_only(line):
                 stats.inventory_exclusions.append(f"{label}: configuración pura")
         for snippet in _prose_snippets(text):
+            if re.match(r"CF-\d+\b", snippet.strip(), re.I):
+                continue
             key = re.sub(r"\s+", " ", snippet.lower())
             if key in seen:
                 continue
@@ -1172,14 +1179,8 @@ def _units_from_story_blocks(
             re.I,
         ):
             clf = replace(clf, role="B", qc_relevance="CONFIG_ONLY")
-        drop_key_or_metrics = is_key_config_scenario(
-            block["title"], block["body"]
-        ) or is_metrics_or_qa_process(block["title"], block["body"])
-        if drop_key_or_metrics:
-            clf = replace(clf, role="C", qc_relevance="IMPLEMENTATION_ONLY")
         if (
             then_ux
-            and not drop_key_or_metrics
             and not _is_coverable(clf)
             and clf.role == "C"
             and (
@@ -1196,9 +1197,6 @@ def _units_from_story_blocks(
                 qc_relevance="QC_FUNCTIONAL",
             )
         classified.append((block, clf))
-        if drop_key_or_metrics:
-            record_classification(stats, clf, block["title"])
-            continue
         if _is_coverable(clf):
             continue
         record_classification(stats, clf, block["title"])
@@ -1263,8 +1261,44 @@ def _units_from_story_blocks(
         body = block["body"]
         source_origin = str(block.get("source_origin") or "gherkin")
         user_action = _pick_user_action(clf)
-        if source_origin != "gherkin" and not _is_coverable(clf):
+        elig = evaluate_scenario(title, body, story_summary)
+        if not elig.ok:
+            ledger_motivo = elig.ledger_motivo
+            if is_key_config_scenario(title, body):
+                ledger_motivo = f"{ledger_motivo}; llave de configuración/metadata"
+            elif is_metrics_or_qa_process(title, body):
+                ledger_motivo = f"{ledger_motivo}; métricas/analytics/proceso QA"
+            stats.inventory_exclusions.append(
+                f"{story_key}: {title}: {ledger_motivo}"
+            )
+            stats.scenario_ledger.append(
+                {
+                    "story": story_key or "",
+                    "epic": epic_key or "",
+                    "scenario": title,
+                    "estado": elig.ledger_estado,
+                    "motivo": ledger_motivo,
+                    "case_id": "",
+                    "surface_group": surface_group_key(
+                        epic_key, elig.surface, title, story_key or "", body
+                    ),
+                }
+            )
             continue
+        if source_origin != "gherkin" and not has_end_user_actor(f"{title}\n{body}"):
+            stats.scenario_ledger.append(
+                {
+                    "story": story_key or "",
+                    "epic": epic_key or "",
+                    "scenario": title,
+                    "estado": "verificación técnica",
+                    "motivo": "criterio de épica sin escenario de usuario",
+                    "case_id": "",
+                }
+            )
+            continue
+        if not user_action:
+            user_action = "el usuario abre la aplicación"
         if block.get("_qc_extra"):
             extra_support = "; ".join(
                 part for part in (extra_support, str(block["_qc_extra"])) if part
@@ -1281,32 +1315,6 @@ def _units_from_story_blocks(
             bool(clf.then) and all(_http_or_api_only(clause) for clause in clf.then)
         )
         if looks_like_invalid_lead(title) and source_origin != "gherkin":
-            continue
-        if (clf.role == "B" or clf.qc_relevance == "CONFIG_ONLY") and not _is_coverable(clf):
-            stats.scenario_ledger.append(
-                {
-                    "story": story_key or "",
-                    "epic": epic_key or "",
-                    "scenario": title,
-                    "estado": "verificación técnica",
-                    "motivo": clf.reason or "configuración/definición sin TC independiente",
-                    "case_id": "",
-                }
-            )
-            continue
-        noise = _non_qc_inventory_reason(title, body, user_action, story=story)
-        if noise:
-            stats.inventory_exclusions.append(f"{story_key}: {title}: {noise}")
-            stats.scenario_ledger.append(
-                {
-                    "story": story_key or "",
-                    "epic": epic_key or "",
-                    "scenario": title,
-                    "estado": "verificación técnica",
-                    "motivo": noise,
-                    "case_id": "",
-                }
-            )
             continue
         if not _is_coverable(clf):
             pick = _pick_translated_observable(blob, observable_pool)
@@ -1541,6 +1549,16 @@ def _units_from_story_blocks(
     if preamble:
         for unit in units:
             unit.feature_background = preamble
+    for unit in units:
+        grouped = evaluate_scenario(unit.scenario, unit.body, unit.story_summary or "")
+        if grouped.ok:
+            unit.scenario_group = surface_group_key(
+                epic_key,
+                grouped.surface,
+                unit.scenario,
+                unit.story_key or "",
+                unit.body or "",
+            )
     return units
 
 
@@ -1564,6 +1582,7 @@ def build_coverage_inventory(
             )
         gherkin_corpus: list[str] = []
         added_before = len(units)
+        epic_blocks: list[tuple[dict[str, Any], dict[str, Any]]] = []
 
         def _consume(
             story: dict[str, Any],
@@ -1572,12 +1591,6 @@ def build_coverage_inventory(
         ) -> None:
             if story_key_override:
                 story = {**story, "key": story_key_override}
-            summary = str(story.get("summary") or "")
-            if is_out_of_qc_story(summary):
-                stats.inventory_exclusions.append(
-                    f"{story.get('key')}: {summary}: métricas/llaves; QC no materializa"
-                )
-                return
             ac = story.get("acceptance_criteria") or ""
             unique: list[dict[str, Any]] = []
             seen_blocks: set[str] = set()
@@ -1613,6 +1626,8 @@ def build_coverage_inventory(
                     "observable en AC/descripción"
                 )
                 return
+            for block in unique:
+                epic_blocks.append((story, block))
             vocab = (ac or artifact.get("acceptance_criteria") or "").strip()
             units.extend(
                 _units_from_story_blocks(
@@ -1635,6 +1650,17 @@ def build_coverage_inventory(
         else:
             _consume(artifact)
         start = added_before
+        units.extend(
+            synthesize_impact_units(
+                epic_key=epic_key,
+                blocks=epic_blocks,
+                rn_filename=rn_filename,
+                seq_holder=seq_holder,
+                stats=stats,
+                existing_units=units[start:],
+            )
+        )
+        units[start:] = collapse_redundant_surfaces(units[start:])
         kept_prefix = units[:start]
         units[:] = kept_prefix + _dedupe_inventory_units(units[start:])
     return units

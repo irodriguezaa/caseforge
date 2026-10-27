@@ -188,7 +188,7 @@ Reglas HANDOFF (obligatorias):
 23. Títulos funcionales, no "Validar invocación/API/status 503".
     Título, condición, step y resultado deben ser el mismo flujo.
 24. Prioridad: BLOCKER (acceso, playback, bookmark, lineal, transacción, parental,
-    compras, cancelación, NPVR, TimeShift, perfiles) o CRITICAL (navegación, search,
+    compras, cancelación, grabación, TimeShift, perfiles) o CRITICAL (navegación, search,
     vcard, resto). Nunca dejar vacía si el caso es clasificable.
 25. Confianza high solo si el UX está claro en RN/Jira sin asumir implementación.
     Configuración no comprobable → medium/low.
@@ -278,7 +278,9 @@ _ISSUE_KEY_ONLY = re.compile(r"^[A-Z][A-Z0-9]+-\d+$")
 
 _LAST_RESORT_EXCLUDE = re.compile(
     r"setup de m[eé]tricas|\b(m[eé]tric|analytics|telemetr)|"
-    r"alta de llaves|llaves de configuraci[oó]n en el dispositivo|"
+    r"alta de llaves|baja de (una |las )?llaves?|limpieza de llaves|"
+    r"llaves de configuraci[oó]n en el dispositivo|"
+    r"inventario de (pantallas y )?llaves|cat[aá]logo de pantallas|"
     r"metadata:\s*alta|module_version|"
     r"\bsmartlib\b|\bnanocdn\b|"
     r"inicializa(r)? (el )?(player|engine|m[oó]dulo)|"
@@ -290,7 +292,7 @@ _LAST_RESORT_ALLOW = re.compile(
     r"grabar|grabaci[oó]n|perfil|bot[oó]n|control player|"
     r"usuario|experiencia|migraci[oó]n|marca|m[oó]dulo|"
     r"canal|gu[ií]a|ticket|modal|carrusel|player|epg|"
-    r"timeshift|npvr|login|registro|paypal|pago|checkout|"
+    r"timeshift|login|registro|paypal|pago|checkout|"
     r"banner|home|men[uú]|activaci[oó]n|\bactivar\b|\bhbo\b|"
     r"visible para el usuario",
     re.IGNORECASE,

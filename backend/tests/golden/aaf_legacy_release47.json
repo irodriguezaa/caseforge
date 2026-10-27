@@ -1,0 +1,1165 @@
+{
+  "version": 1,
+  "release": "Sprint Release 47 · AAF Legacy",
+  "dispositivo": "AAF Legacy",
+  "epcs": [
+    "AAFCL-1919",
+    "AAFCL-1940",
+    "AAFCL-1971",
+    "AAFCL-1987"
+  ],
+  "conteo_esperado": {
+    "AAFCL-1919": 2,
+    "AAFCL-1940": 6,
+    "AAFCL-1971": 7,
+    "AAFCL-1987": 0
+  },
+  "reglas_de_comparacion": {
+    "match": "Un caso generado corresponde a un caso dorado si cubre al menos uno de sus escenarios.",
+    "faltante": "Caso dorado sin ningún caso generado que cubra alguno de sus escenarios.",
+    "de_mas": "Caso generado cuyos escenarios están todos en no_generan_caso (o sin escenario).",
+    "fragmentado": "Un caso dorado repartido en 2+ casos generados (viola la regla del bug).",
+    "fusionado": "Un caso generado que cubre 2+ casos dorados (advertencia, no error).",
+    "escenario_mal_clasificado": "Escenario de no_generan_caso que terminó como caso ejecutable."
+  },
+  "casos": [
+    {
+      "id": "QC-001",
+      "epc": "AAFCL-1919",
+      "nombre_referencia": "Textos de la aplicación sin cambios tras la limpieza de llaves",
+      "prioridad": "CRITICAL",
+      "tipo": "impacto",
+      "pasos_minimos": 3,
+      "cubre": [
+        {
+          "historia": "AAFCL-1922",
+          "escenario": "Ventana entre la baja y la limpieza"
+        },
+        {
+          "historia": "AAFCL-1922",
+          "escenario": "Sin regresiones atribuibles al cambio"
+        }
+      ]
+    },
+    {
+      "id": "QC-002",
+      "epc": "AAFCL-1919",
+      "nombre_referencia": "Etiqueta de la opción Grabar (NPVR) muestra el texto vigente",
+      "prioridad": "CRITICAL",
+      "tipo": "directo",
+      "pasos_minimos": 2,
+      "cubre": [
+        {
+          "historia": "AAFCL-1924",
+          "escenario": "Una lectura con espacio al final nunca acierta contra el catálogo"
+        },
+        {
+          "historia": "AAFCL-1924",
+          "escenario": "Si se corrige la lectura, el texto pasa a venir del catálogo"
+        }
+      ]
+    },
+    {
+      "id": "QC-003",
+      "epc": "AAFCL-1940",
+      "nombre_referencia": "Logotipo Claro tv+ en todas las ubicaciones del alcance",
+      "prioridad": "CRITICAL",
+      "tipo": "directo",
+      "pasos_minimos": 5,
+      "cubre": [
+        {
+          "historia": "AAFCL-1941",
+          "escenario": "El logotipo configurado se muestra en cada ubicación"
+        },
+        {
+          "historia": "AAFCL-1941",
+          "escenario": "El logotipo se muestra para cada nodo del menú de navegación"
+        },
+        {
+          "historia": "AAFCL-1941",
+          "escenario": "Las configuraciones ajenas a la plataforma quedan excluidas"
+        },
+        {
+          "historia": "AAFCL-1941",
+          "escenario": "Ninguna pantalla del alcance conserva el logotipo anterior"
+        },
+        {
+          "historia": "AAFCL-1944",
+          "escenario": "Las imágenes se visualizan con su dimensión"
+        },
+        {
+          "historia": "AAFCL-1945",
+          "escenario": "El logotipo se visualiza correctamente en cada ubicación"
+        },
+        {
+          "historia": "AAFCL-1945",
+          "escenario": "Sin regresión en el resto de la aplicación"
+        },
+        {
+          "historia": "AAFCL-1945",
+          "escenario": "La verificación cubre el dispositivo más restrictivo"
+        }
+      ]
+    },
+    {
+      "id": "QC-004",
+      "epc": "AAFCL-1940",
+      "nombre_referencia": "Logotipo en los modales de PIN y de perfil",
+      "prioridad": "CRITICAL",
+      "tipo": "directo",
+      "pasos_minimos": 2,
+      "cubre": [
+        {
+          "historia": "AAFCL-1943",
+          "escenario": "El modal de información de PIN muestra el logotipo de la operación"
+        },
+        {
+          "historia": "AAFCL-1943",
+          "escenario": "El modal de perfil muestra el logotipo de la operación"
+        },
+        {
+          "historia": "AAFCL-1943",
+          "escenario": "La corrección no altera nada más de esas pantallas"
+        }
+      ]
+    },
+    {
+      "id": "QC-005",
+      "epc": "AAFCL-1940",
+      "nombre_referencia": "Cada región muestra su propio logotipo",
+      "prioridad": "CRITICAL",
+      "tipo": "directo",
+      "pasos_minimos": 2,
+      "cubre": [
+        {
+          "historia": "AAFCL-1942",
+          "escenario": "Dos operaciones distintas muestran logotipos distintos"
+        }
+      ]
+    },
+    {
+      "id": "QC-006",
+      "epc": "AAFCL-1940",
+      "nombre_referencia": "Cambio de logotipo visible sin actualizar la aplicación",
+      "prioridad": "CRITICAL",
+      "tipo": "directo",
+      "pasos_minimos": 3,
+      "cubre": [
+        {
+          "historia": "AAFCL-1942",
+          "escenario": "Cambiar el logotipo no requiere publicar la aplicación"
+        }
+      ]
+    },
+    {
+      "id": "QC-007",
+      "epc": "AAFCL-1940",
+      "nombre_referencia": "Sin logotipo configurado la pantalla no se rompe",
+      "prioridad": "CRITICAL",
+      "tipo": "directo",
+      "pasos_minimos": 2,
+      "cubre": [
+        {
+          "historia": "AAFCL-1942",
+          "escenario": "Sin logotipo cargado la pantalla no se rompe"
+        }
+      ]
+    },
+    {
+      "id": "QC-008",
+      "epc": "AAFCL-1940",
+      "nombre_referencia": "Placeholders de imagen según el tipo de tarjeta",
+      "prioridad": "CRITICAL",
+      "tipo": "directo",
+      "pasos_minimos": 2,
+      "cubre": [
+        {
+          "historia": "AAFCL-1944",
+          "escenario": "Los placeholders dejan de usar las llaves anteriores"
+        }
+      ]
+    },
+    {
+      "id": "QC-009",
+      "epc": "AAFCL-1971",
+      "nombre_referencia": "Splash inmediato al abrir la aplicación",
+      "prioridad": "CRITICAL",
+      "tipo": "directo",
+      "pasos_minimos": 2,
+      "cubre": [
+        {
+          "historia": "AAFCL-1988",
+          "escenario": "El Splash se pinta con recursos del build"
+        },
+        {
+          "historia": "AAFCL-1988",
+          "escenario": "La resolución del país ocurre en paralelo"
+        }
+      ]
+    },
+    {
+      "id": "QC-010",
+      "epc": "AAFCL-1971",
+      "nombre_referencia": "Usuario con sesión entra directo a Selección de perfil",
+      "prioridad": "BLOCKER",
+      "tipo": "directo",
+      "pasos_minimos": 1,
+      "cubre": [
+        {
+          "historia": "AAFCL-1990",
+          "escenario": "Con identificador local se va a Selección de perfil"
+        }
+      ]
+    },
+    {
+      "id": "QC-011",
+      "epc": "AAFCL-1971",
+      "nombre_referencia": "Usuario sin sesión llega a Landing u Onboarding",
+      "prioridad": "BLOCKER",
+      "tipo": "directo",
+      "pasos_minimos": 2,
+      "cubre": [
+        {
+          "historia": "AAFCL-1989",
+          "escenario": "Los textos e imágenes iniciales salen del build"
+        },
+        {
+          "historia": "AAFCL-1989",
+          "escenario": "La imagen de Landing sigue siendo dinámica"
+        },
+        {
+          "historia": "AAFCL-1990",
+          "escenario": "Sin identificador local se va a Landing u Onboarding"
+        }
+      ]
+    },
+    {
+      "id": "QC-012",
+      "epc": "AAFCL-1971",
+      "nombre_referencia": "Red Telmex sin sesión: no hay inicio de sesión automático",
+      "prioridad": "BLOCKER",
+      "tipo": "directo",
+      "pasos_minimos": 3,
+      "cubre": [
+        {
+          "historia": "AAFCL-1990",
+          "escenario": "Sin identificador local no hay vinculación automática"
+        }
+      ]
+    },
+    {
+      "id": "QC-013",
+      "epc": "AAFCL-1971",
+      "nombre_referencia": "Sesión vencida al abrir la aplicación",
+      "prioridad": "CRITICAL",
+      "tipo": "directo",
+      "pasos_minimos": 2,
+      "cubre": [
+        {
+          "historia": "AAFCL-1990",
+          "escenario": "Una respuesta de no autorizado dispara una sola renovación"
+        },
+        {
+          "historia": "AAFCL-1990",
+          "escenario": "Si la renovación falla se trata como sin sesión"
+        }
+      ]
+    },
+    {
+      "id": "QC-014",
+      "epc": "AAFCL-1971",
+      "nombre_referencia": "Error de conexión al abrir la aplicación",
+      "prioridad": "CRITICAL",
+      "tipo": "directo",
+      "pasos_minimos": 2,
+      "cubre": [
+        {
+          "historia": "AAFCL-1990",
+          "escenario": "Ante error de país se conserva el manejo vigente"
+        }
+      ]
+    },
+    {
+      "id": "QC-015",
+      "epc": "AAFCL-1971",
+      "nombre_referencia": "Pantalla de migración a Claro tv+ en el arranque",
+      "prioridad": "CRITICAL",
+      "tipo": "directo",
+      "pasos_minimos": 3,
+      "cubre": [
+        {
+          "historia": "AAFCL-1989",
+          "escenario": "Un cambio de la llave de migración no altera la sesión en curso"
+        },
+        {
+          "historia": "AAFCL-1989",
+          "escenario": "La migración aparece en el arranque siguiente"
+        },
+        {
+          "historia": "AAFCL-1990",
+          "escenario": "Con la migración habilitada, su pantalla es la primera"
+        }
+      ]
+    }
+  ],
+  "no_generan_caso": [
+    {
+      "historia": "AAFCL-1921",
+      "escenario": "Registro del tamaño de la respuesta",
+      "epc": "AAFCL-1919",
+      "criterio_que_falla": "superficie",
+      "motivo": "Sin superficie visible para el usuario final",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1921",
+      "escenario": "Baja de una llave sin uso",
+      "epc": "AAFCL-1919",
+      "criterio_que_falla": "actor",
+      "motivo": "Operación del administrador / APA que ejecuta TL o Dev; sin acción del usuario final",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1921",
+      "escenario": "Normalización de una llave con regiones ajenas",
+      "epc": "AAFCL-1919",
+      "criterio_que_falla": "superficie",
+      "motivo": "Sin superficie visible para el usuario final",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1921",
+      "escenario": "La normalización no altera el valor efectivo",
+      "epc": "AAFCL-1919",
+      "criterio_que_falla": "actor",
+      "motivo": "Operación del administrador / APA que ejecuta TL o Dev; sin acción del usuario final",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1921",
+      "escenario": "La resolución por región contempla el respaldo por defecto",
+      "epc": "AAFCL-1919",
+      "criterio_que_falla": "actor",
+      "motivo": "Operación del administrador / APA que ejecuta TL o Dev; sin acción del usuario final",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1921",
+      "escenario": "No se escribe sobre translations",
+      "epc": "AAFCL-1919",
+      "criterio_que_falla": "actor",
+      "motivo": "Operación del administrador / APA que ejecuta TL o Dev; sin acción del usuario final",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1921",
+      "escenario": "Toda operación es reversible",
+      "epc": "AAFCL-1919",
+      "criterio_que_falla": "actor",
+      "motivo": "Operación del administrador / APA que ejecuta TL o Dev; sin acción del usuario final",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1922",
+      "escenario": "Retiro de la lectura y de su valor por defecto",
+      "epc": "AAFCL-1919",
+      "criterio_que_falla": "verificacion_en_dispositivo",
+      "motivo": "Revisión de código, build o manifiesto; corresponde a QA / Dev",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1922",
+      "escenario": "La limpieza no introduce cambios ajenos",
+      "epc": "AAFCL-1919",
+      "criterio_que_falla": "verificacion_en_dispositivo",
+      "motivo": "Revisión de código, build o manifiesto; corresponde a QA / Dev",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1922",
+      "escenario": "Cierre del lote sin referencias residuales",
+      "epc": "AAFCL-1919",
+      "criterio_que_falla": "verificacion_en_dispositivo",
+      "motivo": "Revisión de código, build o manifiesto; corresponde a QA / Dev",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1922",
+      "escenario": "Un defecto compilado que apaga la funcionalidad se verifica antes de la baja",
+      "epc": "AAFCL-1919",
+      "criterio_que_falla": "verificacion_en_dispositivo",
+      "motivo": "Revisión de código, build o manifiesto; corresponde a QA / Dev",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1923",
+      "escenario": "Alcance de la lectura",
+      "epc": "AAFCL-1919",
+      "criterio_que_falla": "actor",
+      "motivo": "Entregable documental o de proceso (inventario, listado, entrega a Arquitectura, cierre de ficha)",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1923",
+      "escenario": "Llaves de traducción construidas en tiempo de ejecución",
+      "epc": "AAFCL-1919",
+      "criterio_que_falla": "actor",
+      "motivo": "Entregable documental o de proceso (inventario, listado, entrega a Arquitectura, cierre de ficha)",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1923",
+      "escenario": "El modo de fallo de una baja equivocada queda demostrado",
+      "epc": "AAFCL-1919",
+      "criterio_que_falla": "actor",
+      "motivo": "Entregable documental o de proceso (inventario, listado, entrega a Arquitectura, cierre de ficha)",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1923",
+      "escenario": "Entrega de la lista",
+      "epc": "AAFCL-1919",
+      "criterio_que_falla": "actor",
+      "motivo": "Entregable documental o de proceso (inventario, listado, entrega a Arquitectura, cierre de ficha)",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1923",
+      "escenario": "Formato del registro",
+      "epc": "AAFCL-1919",
+      "criterio_que_falla": "actor",
+      "motivo": "Entregable documental o de proceso (inventario, listado, entrega a Arquitectura, cierre de ficha)",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1923",
+      "escenario": "La baja no la ejecuta esta épica",
+      "epc": "AAFCL-1919",
+      "criterio_que_falla": "actor",
+      "motivo": "Entregable documental o de proceso (inventario, listado, entrega a Arquitectura, cierre de ficha)",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1924",
+      "escenario": "El inventario no da de baja la llave correcta por culpa de la lectura mal formada",
+      "epc": "AAFCL-1919",
+      "criterio_que_falla": "actor",
+      "motivo": "Entregable documental o de proceso (inventario, listado, entrega a Arquitectura, cierre de ficha)",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1924",
+      "escenario": "Cada lectura mal formada recibe una decisión explícita",
+      "epc": "AAFCL-1919",
+      "criterio_que_falla": "actor",
+      "motivo": "Entregable documental o de proceso (inventario, listado, entrega a Arquitectura, cierre de ficha)",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1924",
+      "escenario": "Si se da de baja la llave, la decisión queda justificada",
+      "epc": "AAFCL-1919",
+      "criterio_que_falla": "actor",
+      "motivo": "Entregable documental o de proceso (inventario, listado, entrega a Arquitectura, cierre de ficha)",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1924",
+      "escenario": "El análisis busca también lecturas con espacio al inicio",
+      "epc": "AAFCL-1919",
+      "criterio_que_falla": "actor",
+      "motivo": "Entregable documental o de proceso (inventario, listado, entrega a Arquitectura, cierre de ficha)",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1942",
+      "escenario": "La llave se construye con la región del usuario",
+      "epc": "AAFCL-1940",
+      "criterio_que_falla": "superficie",
+      "motivo": "Sin superficie visible para el usuario final",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1942",
+      "escenario": "Si la región no se resuelve se aplica el valor por defecto",
+      "epc": "AAFCL-1940",
+      "criterio_que_falla": "superficie",
+      "motivo": "Sin superficie visible para el usuario final",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1942",
+      "escenario": "No se agrega ninguna consulta nueva al servicio",
+      "epc": "AAFCL-1940",
+      "criterio_que_falla": "superficie",
+      "motivo": "Sin superficie visible para el usuario final",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1943",
+      "escenario": "Ninguna pantalla depende ya de una dirección escrita en el código",
+      "epc": "AAFCL-1940",
+      "criterio_que_falla": "verificacion_en_dispositivo",
+      "motivo": "Revisión de código, build o manifiesto; corresponde a QA / Dev",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1944",
+      "escenario": "Cada punto de renderizado consulta la llave que le corresponde",
+      "epc": "AAFCL-1940",
+      "criterio_que_falla": "verificacion_en_dispositivo",
+      "motivo": "Revisión de código, build o manifiesto; corresponde a QA / Dev",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1944",
+      "escenario": "Ninguna llave del alta queda sin consumir",
+      "epc": "AAFCL-1940",
+      "criterio_que_falla": "verificacion_en_dispositivo",
+      "motivo": "Revisión de código, build o manifiesto; corresponde a QA / Dev",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1944",
+      "escenario": "Sin el mapa acordado no se repunta ninguna pantalla",
+      "epc": "AAFCL-1940",
+      "criterio_que_falla": "actor",
+      "motivo": "Entregable documental o de proceso (inventario, listado, entrega a Arquitectura, cierre de ficha)",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1945",
+      "escenario": "El arranque no se degrada",
+      "epc": "AAFCL-1940",
+      "criterio_que_falla": "verificacion_en_dispositivo",
+      "motivo": "Llamadas de servicio, telemetría o métricas; requiere herramienta, sin efecto visible para el usuario",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1989",
+      "escenario": "La configuración no editorial también es local",
+      "epc": "AAFCL-1971",
+      "criterio_que_falla": "superficie",
+      "motivo": "Sin superficie visible para el usuario final",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1989",
+      "escenario": "Las llaves remotas que tocan esas pantallas quedan auditadas",
+      "epc": "AAFCL-1971",
+      "criterio_que_falla": "superficie",
+      "motivo": "Sin superficie visible para el usuario final",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1991",
+      "escenario": "Falta una llave crítica y el pipeline detiene la liberación",
+      "epc": "AAFCL-1971",
+      "criterio_que_falla": "superficie",
+      "motivo": "Sin superficie visible para el usuario final",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1991",
+      "escenario": "El paquete excede el límite y el pipeline detiene la liberación",
+      "epc": "AAFCL-1971",
+      "criterio_que_falla": "superficie",
+      "motivo": "Sin superficie visible para el usuario final",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1988",
+      "escenario": "El país devuelto es la única entrada de la configuración local",
+      "epc": "AAFCL-1971",
+      "criterio_que_falla": "verificacion_en_dispositivo",
+      "motivo": "Llamadas de servicio, telemetría o métricas; requiere herramienta, sin efecto visible para el usuario",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1988",
+      "escenario": "La consulta de país se hace siempre",
+      "epc": "AAFCL-1971",
+      "criterio_que_falla": "verificacion_en_dispositivo",
+      "motivo": "Llamadas de servicio, telemetría o métricas; requiere herramienta, sin efecto visible para el usuario",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1988",
+      "escenario": "Las tareas del arranque no forman una cadena",
+      "epc": "AAFCL-1971",
+      "criterio_que_falla": "verificacion_en_dispositivo",
+      "motivo": "Revisión de código, build o manifiesto; corresponde a QA / Dev",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1989",
+      "escenario": "El Splash se empaqueta una sola vez",
+      "epc": "AAFCL-1971",
+      "criterio_que_falla": "verificacion_en_dispositivo",
+      "motivo": "Revisión de código, build o manifiesto; corresponde a QA / Dev",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1989",
+      "escenario": "Un recurso dinámico no bloquea la vista actual",
+      "epc": "AAFCL-1971",
+      "criterio_que_falla": "verificacion_en_dispositivo",
+      "motivo": "Revisión de código, build o manifiesto; corresponde a QA / Dev",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1989",
+      "escenario": "La llave de migración también viaja en el build",
+      "epc": "AAFCL-1971",
+      "criterio_que_falla": "verificacion_en_dispositivo",
+      "motivo": "Revisión de código, build o manifiesto; corresponde a QA / Dev",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1990",
+      "escenario": "Con identificador local no se invoca IsLoggedIn",
+      "epc": "AAFCL-1971",
+      "criterio_que_falla": "verificacion_en_dispositivo",
+      "motivo": "Llamadas de servicio, telemetría o métricas; requiere herramienta, sin efecto visible para el usuario",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1990",
+      "escenario": "IsLoggedIn no aparece en ningún otro escenario",
+      "epc": "AAFCL-1971",
+      "criterio_que_falla": "verificacion_en_dispositivo",
+      "motivo": "Llamadas de servicio, telemetría o métricas; requiere herramienta, sin efecto visible para el usuario",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1990",
+      "escenario": "La vigencia de la sesión no se valida en el arranque",
+      "epc": "AAFCL-1971",
+      "criterio_que_falla": "verificacion_en_dispositivo",
+      "motivo": "Llamadas de servicio, telemetría o métricas; requiere herramienta, sin efecto visible para el usuario",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1990",
+      "escenario": "El freno del auto-login por IP Telmex se verifica antes de darlo por hecho",
+      "epc": "AAFCL-1971",
+      "criterio_que_falla": "verificacion_en_dispositivo",
+      "motivo": "Revisión de código, build o manifiesto; corresponde a QA / Dev",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1991",
+      "escenario": "La configuración se congela una sola vez y fuera del dispositivo",
+      "epc": "AAFCL-1971",
+      "criterio_que_falla": "superficie",
+      "motivo": "Sin superficie visible para el usuario final",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1991",
+      "escenario": "El manifiesto es auditable",
+      "epc": "AAFCL-1971",
+      "criterio_que_falla": "verificacion_en_dispositivo",
+      "motivo": "Revisión de código, build o manifiesto; corresponde a QA / Dev",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1991",
+      "escenario": "La integridad se valida antes de empaquetar",
+      "epc": "AAFCL-1971",
+      "criterio_que_falla": "superficie",
+      "motivo": "Sin superficie visible para el usuario final",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1991",
+      "escenario": "Cada pantalla reporta con el identificador del catálogo",
+      "epc": "AAFCL-1971",
+      "criterio_que_falla": "verificacion_en_dispositivo",
+      "motivo": "Llamadas de servicio, telemetría o métricas; requiere herramienta, sin efecto visible para el usuario",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1991",
+      "escenario": "Las pantallas de migración también están en el catálogo",
+      "epc": "AAFCL-1971",
+      "criterio_que_falla": "verificacion_en_dispositivo",
+      "motivo": "Llamadas de servicio, telemetría o métricas; requiere herramienta, sin efecto visible para el usuario",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1991",
+      "escenario": "La medición usa el tiempo de vista automático",
+      "epc": "AAFCL-1971",
+      "criterio_que_falla": "verificacion_en_dispositivo",
+      "motivo": "Llamadas de servicio, telemetría o métricas; requiere herramienta, sin efecto visible para el usuario",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1991",
+      "escenario": "La comparación se hace entre versiones",
+      "epc": "AAFCL-1971",
+      "criterio_que_falla": "superficie",
+      "motivo": "Sin superficie visible para el usuario final",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1991",
+      "escenario": "Sin secretos ni datos personales en la medición",
+      "epc": "AAFCL-1971",
+      "criterio_que_falla": "verificacion_en_dispositivo",
+      "motivo": "Llamadas de servicio, telemetría o métricas; requiere herramienta, sin efecto visible para el usuario",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1991",
+      "escenario": "El límite de tamaño se toma del piso del parque",
+      "epc": "AAFCL-1971",
+      "criterio_que_falla": "verificacion_en_dispositivo",
+      "motivo": "Revisión de código, build o manifiesto; corresponde a QA / Dev",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1993",
+      "escenario": "El TL registra las llaves de configuración",
+      "epc": "AAFCL-1987",
+      "criterio_que_falla": "superficie",
+      "motivo": "Sin superficie visible para el usuario final",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1993",
+      "escenario": "Los contratos quedan intactos",
+      "epc": "AAFCL-1987",
+      "criterio_que_falla": "superficie",
+      "motivo": "Sin superficie visible para el usuario final",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1992",
+      "escenario": "Cada pantalla queda registrada con su flujo",
+      "epc": "AAFCL-1987",
+      "criterio_que_falla": "actor",
+      "motivo": "Entregable documental o de proceso (inventario, listado, entrega a Arquitectura, cierre de ficha)",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1992",
+      "escenario": "Cada llave se clasifica por tipo y por origen",
+      "epc": "AAFCL-1987",
+      "criterio_que_falla": "actor",
+      "motivo": "Entregable documental o de proceso (inventario, listado, entrega a Arquitectura, cierre de ficha)",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1992",
+      "escenario": "Las llaves compartidas con la primera interacción quedan señaladas",
+      "epc": "AAFCL-1987",
+      "criterio_que_falla": "actor",
+      "motivo": "Entregable documental o de proceso (inventario, listado, entrega a Arquitectura, cierre de ficha)",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1992",
+      "escenario": "La primera interacción no queda colgando de la appKey nueva",
+      "epc": "AAFCL-1987",
+      "criterio_que_falla": "actor",
+      "motivo": "Entregable documental o de proceso (inventario, listado, entrega a Arquitectura, cierre de ficha)",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1992",
+      "escenario": "Lo que no se conoce no se inventa",
+      "epc": "AAFCL-1987",
+      "criterio_que_falla": "actor",
+      "motivo": "Entregable documental o de proceso (inventario, listado, entrega a Arquitectura, cierre de ficha)",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1992",
+      "escenario": "El criterio usado queda escrito",
+      "epc": "AAFCL-1987",
+      "criterio_que_falla": "actor",
+      "motivo": "Entregable documental o de proceso (inventario, listado, entrega a Arquitectura, cierre de ficha)",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1993",
+      "escenario": "Existe una sola appKey para el dispositivo",
+      "epc": "AAFCL-1987",
+      "criterio_que_falla": "actor",
+      "motivo": "Operación del administrador / APA que ejecuta TL o Dev; sin acción del usuario final",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1993",
+      "escenario": "El nombre de la appKey no lleva el país",
+      "epc": "AAFCL-1987",
+      "criterio_que_falla": "actor",
+      "motivo": "Operación del administrador / APA que ejecuta TL o Dev; sin acción del usuario final",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1993",
+      "escenario": "La creación deja evidencia",
+      "epc": "AAFCL-1987",
+      "criterio_que_falla": "actor",
+      "motivo": "Operación del administrador / APA que ejecuta TL o Dev; sin acción del usuario final",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1993",
+      "escenario": "La fábrica no registra llaves editoriales",
+      "epc": "AAFCL-1987",
+      "criterio_que_falla": "actor",
+      "motivo": "Operación del administrador / APA que ejecuta TL o Dev; sin acción del usuario final",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1993",
+      "escenario": "La appKey contiene solo segunda interacción",
+      "epc": "AAFCL-1987",
+      "criterio_que_falla": "actor",
+      "motivo": "Operación del administrador / APA que ejecuta TL o Dev; sin acción del usuario final",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1994",
+      "escenario": "El listado contiene solo material editorial",
+      "epc": "AAFCL-1987",
+      "criterio_que_falla": "actor",
+      "motivo": "Entregable documental o de proceso (inventario, listado, entrega a Arquitectura, cierre de ficha)",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1994",
+      "escenario": "Cada fila trae los nueve campos exigidos",
+      "epc": "AAFCL-1987",
+      "criterio_que_falla": "actor",
+      "motivo": "Entregable documental o de proceso (inventario, listado, entrega a Arquitectura, cierre de ficha)",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1994",
+      "escenario": "Los nombres de llave son reales",
+      "epc": "AAFCL-1987",
+      "criterio_que_falla": "actor",
+      "motivo": "Entregable documental o de proceso (inventario, listado, entrega a Arquitectura, cierre de ficha)",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1994",
+      "escenario": "El listado se organiza por dispositivo",
+      "epc": "AAFCL-1987",
+      "criterio_que_falla": "actor",
+      "motivo": "Entregable documental o de proceso (inventario, listado, entrega a Arquitectura, cierre de ficha)",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1994",
+      "escenario": "La entrega queda formalizada",
+      "epc": "AAFCL-1987",
+      "criterio_que_falla": "actor",
+      "motivo": "Entregable documental o de proceso (inventario, listado, entrega a Arquitectura, cierre de ficha)",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1994",
+      "escenario": "La carga en GCO no es requisito de cierre",
+      "epc": "AAFCL-1987",
+      "criterio_que_falla": "actor",
+      "motivo": "Entregable documental o de proceso (inventario, listado, entrega a Arquitectura, cierre de ficha)",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1995",
+      "escenario": "Cada pantalla trae los cinco campos exigidos",
+      "epc": "AAFCL-1987",
+      "criterio_que_falla": "actor",
+      "motivo": "Entregable documental o de proceso (inventario, listado, entrega a Arquitectura, cierre de ficha)",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1995",
+      "escenario": "La referencia técnica se toma de lo que existe",
+      "epc": "AAFCL-1987",
+      "criterio_que_falla": "actor",
+      "motivo": "Entregable documental o de proceso (inventario, listado, entrega a Arquitectura, cierre de ficha)",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1995",
+      "escenario": "Sin referencia técnica se dice que no la hay",
+      "epc": "AAFCL-1987",
+      "criterio_que_falla": "actor",
+      "motivo": "Entregable documental o de proceso (inventario, listado, entrega a Arquitectura, cierre de ficha)",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1995",
+      "escenario": "La fábrica no asigna nombres de Datadog",
+      "epc": "AAFCL-1987",
+      "criterio_que_falla": "actor",
+      "motivo": "Entregable documental o de proceso (inventario, listado, entrega a Arquitectura, cierre de ficha)",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1995",
+      "escenario": "Las pantallas sin verificar quedan señaladas",
+      "epc": "AAFCL-1987",
+      "criterio_que_falla": "actor",
+      "motivo": "Entregable documental o de proceso (inventario, listado, entrega a Arquitectura, cierre de ficha)",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1995",
+      "escenario": "La entrega queda formalizada",
+      "epc": "AAFCL-1987",
+      "criterio_que_falla": "actor",
+      "motivo": "Entregable documental o de proceso (inventario, listado, entrega a Arquitectura, cierre de ficha)",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    },
+    {
+      "historia": "AAFCL-1995",
+      "escenario": "La instrumentación queda fuera",
+      "epc": "AAFCL-1987",
+      "criterio_que_falla": "actor",
+      "motivo": "Entregable documental o de proceso (inventario, listado, entrega a Arquitectura, cierre de ficha)",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC"
+      ]
+    }
+  ]
+}

@@ -47,23 +47,40 @@ _KEY_CONFIG = re.compile(
     r"la llave se encuentra vac[ií]a|"
     r"llave.{0,80}(inexistente|vac[ií]a|no se encuentra|faltante|no encontrada)|"
     r"alta de llaves|"
+    r"baja de (una |las )?llaves?|"
+    r"llave (clasificada )?(como )?sin uso|"
+    r"normalizaci[oó]n (de (la |las )?llaves?|no altera)|"
+    r"valor efectivo de la llave|"
+    r"limpieza de llaves|"
+    r"referencias a llaves|"
+    r"llaves dadas de baja|"
     r"construcci[oó]n de (la |las )?llaves?|"
     r"la llave resuelta|"
-    r"llaves? (apa|de metadata|de leyenda|de configuraci[oó]n)|"
-    r"apa[\s/]+metadata|"
+    r"llaves? (de metadata|de leyenda|de configuraci[oó]n|de traducci[oó]n)|"
     r"creaci[oó]n de llaves|"
     r"registro de llaves|"
-    r"\bappkeys\b|"
+    r"clasificar llave|"
+    r"consulta(r)? la llave|"
+    r"llaves? del alta|"
+    r"listado de llaves|"
+    r"inventario de (pantallas y )?llaves|"
+    r"cat[aá]logo de pantallas|"
     r"espacio donde.{0,80}(mostrarse la leyenda|la llave)|"
     r"(mostrar|mostrarse|muestra) la llave",
     re.IGNORECASE,
+)
+_FLAG_CONTROL_UX = re.compile(
+    r"(deshabilitad|apagad).{0,250}(no se muestra|se oculta).{0,80}(bot[oó]n|control|icono|men[uú]|opci[oó]n)|"
+    r"(habilitad|encendid).{0,250}(se muestra|aparece).{0,80}(bot[oó]n|control|icono|men[uú]|opci[oó]n)",
+    re.IGNORECASE | re.DOTALL,
 )
 _EVENT_TITLE = re.compile(
     r"se registra evento|evento de (selecci|anal[ií]tica|inicio|[eé]xito|error|clic)|"
     r"transmisi[oó]n y persistencia del evento|la estructura del evento|"
     r"carga el esquema de m[eé]tricas|esquema de m[eé]tricas por defecto|"
     r"nomenclatura DAT|dispara el evento|se instrumenta|payment_method_selected|"
-    r"incluye trazabilidad",
+    r"incluye trazabilidad|herramienta de medici[oó]n|medir tiempo|"
+    r"tiempo de vista|nombres de datadog|eventos emitidos",
     re.IGNORECASE,
 )
 _INTERNAL_ONLY = re.compile(
@@ -78,7 +95,7 @@ _BLOCKER = re.compile(
     r"canal lineal|linear|"
     r"transacci|paypal|pago|checkout|compra|"
     r"parental|cancelaci|"
-    r"npvr|timeshift|time[\s-]?shift|perfiles?)\b",
+    r"grabaci[oó]n en la nube|timeshift|time[\s-]?shift|perfiles?)\b",
     re.IGNORECASE,
 )
 _TECHNICAL_ACTION = re.compile(
@@ -107,8 +124,11 @@ def normalize(text: str) -> str:
 
 
 def is_key_config_scenario(title: str, body: str) -> bool:
-    """Legacy QC does not materialize empty/missing keys, key setup, or leyenda-token Gherkin."""
-    return bool(_KEY_CONFIG.search(f"{title}\n{body}"))
+    """Ledger helper: configuration/metadata language. Does not decide case creation."""
+    blob = f"{title}\n{body}"
+    if _FLAG_CONTROL_UX.search(blob):
+        return False
+    return bool(_KEY_CONFIG.search(blob))
 
 
 def is_key_config_candidate(candidate: GeneratedCaseCandidate) -> bool:
@@ -781,8 +801,6 @@ def apply_qc_rules(
 ) -> list[GeneratedCaseCandidate]:
     kept: list[tuple[str, GeneratedCaseCandidate]] = []
     for candidate in candidates:
-        if is_key_config_candidate(candidate) or is_metrics_only_candidate(candidate):
-            continue
         if is_accessibility_audit_only(candidate, release_context):
             continue
         original_name = candidate.name

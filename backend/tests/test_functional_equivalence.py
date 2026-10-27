@@ -381,6 +381,14 @@ def test_empty_action_does_not_merge_distinct_pin_intents() -> None:
         covers=["COV-M"],
     )
     assert apply_qc_rules([metrics_ux]) == []
+    baja_llave = _cand(
+        name="Baja de llave clasificada como sin uso",
+        epic="AAFCL-1919",
+        action="Ejecutar la baja de la llave",
+        expected="La llave es eliminada del administrador",
+        covers=["COV-B"],
+    )
+    assert apply_qc_rules([baja_llave]) == []
     other_epc = _cand(
         name="Calificar Me gusta",
         epic="ADTCL-999",

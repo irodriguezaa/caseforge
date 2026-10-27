@@ -68,11 +68,14 @@ def composition_mode() -> str:
 
 
 def scenario_group_key(unit: CoverageUnit) -> str:
+    grouped = (unit.scenario_group or "").strip()
+    if grouped and "|scenario|" not in grouped:
+        return grouped
     if (unit.outline_strategy or "single") in {"split_functional", "group"}:
         base = re.sub(r"\s*\([^)]*\)\s*$", "", unit.scenario or "").strip()
         obs = re.sub(r"\W+", " ", " ".join(unit.observable_then or []).lower()).strip()
         return f"{unit.story_key or unit.jira_key}|{base}|{unit.outline_strategy}|{obs}"
-    return (unit.scenario_group or "").strip() or (
+    return grouped or (
         f"{unit.story_key or unit.jira_key}|{unit.scenario}|{unit.technical_group or ''}|{unit.outline_strategy}"
     )
 
@@ -427,7 +430,7 @@ def compose_scenario_units(units: list[CoverageUnit]) -> FlowDraft:
         steps[-1].expected_result = merged_expected
     if pending_then and steps:
         _attach_then("; ".join(pending_then))
-    if not system_when and not any(is_tester_action(step.action) for step in steps):
+    if not any(is_tester_action(step.action) for step in steps):
         for unit in units:
             fallback = _nav_action(unit.user_action or "") or to_infinitive(unit.user_action or "")
             if is_tester_action(fallback) or is_user_action(unit.user_action or ""):
@@ -513,9 +516,14 @@ def compose_scenario_units(units: list[CoverageUnit]) -> FlowDraft:
         step.step_number = index
         if step.expected_result and not _STATE_THEN.search(step.expected_result):
             step.expected_result = polish_expected(step.expected_result) or step.expected_result
-    title_clean, title_ids = lift_technical(strip_title_prefix(primary.scenario))
-    tech.extend(title_ids)
-    title = (title_clean or strip_title_prefix(primary.scenario))[:120]
+    if "impacto-superficie" in (primary.applied_rules or []):
+        visible = (primary.observable_then or [primary.behavior or primary.scenario])[0]
+        title = re.sub(r"^se muestra\s+", "", visible or "", flags=re.I).strip()[:120]
+        title = title[:1].upper() + title[1:] if title else strip_title_prefix(primary.scenario)
+    else:
+        title_clean, title_ids = lift_technical(strip_title_prefix(primary.scenario))
+        tech.extend(title_ids)
+        title = (title_clean or strip_title_prefix(primary.scenario))[:120]
     kept_pre: list[str] = []
     story_title = _short_phrase(primary.story_summary, limit=12)
     for clause in pre:
@@ -538,7 +546,7 @@ def compose_scenario_units(units: list[CoverageUnit]) -> FlowDraft:
         rule
         for unit in units
         for rule in (unit.applied_rules or [])
-        if rule in {"verificacion-tecnica", "regresion-funcional", "na-ambiente"}
+        if rule in {"verificacion-tecnica", "regresion-funcional", "na-ambiente", "impacto-superficie"}
         or str(rule).startswith("pendiente-qc")
     }]
     if pending == "verificación técnica" and "verificacion-tecnica" not in rules:
@@ -665,8 +673,9 @@ def fill_scenario_ledger(
     for candidate in candidates:
         for cid in candidate.covers or candidate.covered_unit_ids or []:
             covered[cid] = candidate
-    seen: set[tuple[str, str]] = {
-        (str(row.get("story") or ""), str(row.get("scenario") or "")) for row in stats.scenario_ledger
+    seen: dict[tuple[str, str], int] = {
+        (str(row.get("story") or ""), str(row.get("scenario") or "")): index
+        for index, row in enumerate(stats.scenario_ledger)
     }
     for unit in inventory:
         if (unit.source_origin or "gherkin") != "gherkin":
@@ -674,8 +683,14 @@ def fill_scenario_ledger(
         scenario = re.sub(r"\s*\([^)]*\)\s*$", "", unit.scenario or "").strip()
         key = (unit.story_key or "", scenario)
         if key in seen:
+            prior = stats.scenario_ledger[seen[key]]
+            match = covered.get(unit.coverage_id)
+            if match and match.steps and prior.get("estado") != "caso ejecutable":
+                prior["estado"] = "caso ejecutable"
+                prior["motivo"] = ""
+                prior["case_id"] = match.name
             continue
-        seen.add(key)
+        seen[key] = len(stats.scenario_ledger)
         match = covered.get(unit.coverage_id)
         rules = list(unit.applied_rules or []) + list((match.applied_rules if match else []) or [])
         case_pending = bool(
@@ -692,6 +707,8 @@ def fill_scenario_ledger(
                 match.name if match else "",
             )
         elif match and match.steps and not case_pending:
+            estado, motivo, case_id = "caso ejecutable", "", match.name
+        elif match and match.steps:
             estado, motivo, case_id = "caso ejecutable", "", match.name
         elif any(str(rule) == "verificacion-tecnica" for rule in rules) and (
             match is None or not match.steps
@@ -719,3 +736,20 @@ def fill_scenario_ledger(
                 "case_id": case_id,
             }
         )
+    group_to_case: dict[str, str] = {}
+    for unit in inventory:
+        match = covered.get(unit.coverage_id)
+        if match and match.steps and unit.scenario_group:
+            group_to_case[unit.scenario_group] = match.name
+    note_prefix = "cubierto por"
+    for row in stats.scenario_ledger:
+        if str(row.get("estado") or "") != "verificación técnica":
+            continue
+        group = str(row.get("surface_group") or "")
+        cover = group_to_case.get(group)
+        if not cover:
+            continue
+        motivo = str(row.get("motivo") or "")
+        if note_prefix in motivo:
+            continue
+        row["motivo"] = f"{motivo}; cubierto por {cover}".strip("; ")

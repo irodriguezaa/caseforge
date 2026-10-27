@@ -208,7 +208,7 @@ def test_inventory_volume_and_roles_unchanged() -> None:
     scenarios = {unit.scenario for unit in units}
     assert "No se logra obtener una llave" not in scenarios
     assert "La llave se encuentra vacía" not in scenarios
-    assert len(units) == 6
+    assert len(units) == 5
     assert all(unit.role in {"A", "G"} for unit in units)
 
 
@@ -224,4 +224,9 @@ def test_length_exceeded_condition_is_not_the_step() -> None:
     assert all("supera el límite" not in step.action.lower() for step in long_text.steps)
     expected_blob = " ".join(step.expected_result for step in long_text.steps)
     assert "..." in expected_blob or "límite" in expected_blob.lower()
-    assert long_text.steps[0].action == STABLE_GENERIC_STEP or "usuario" in long_text.steps[0].action.lower()
+    action = long_text.steps[0].action.lower()
+    assert (
+        long_text.steps[0].action == STABLE_GENERIC_STEP
+        or "usuario" in action
+        or action.startswith("abrir")
+    )
