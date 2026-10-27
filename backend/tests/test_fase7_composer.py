@@ -226,6 +226,73 @@ Scenario: Configuración remota vacía
     }
 
 
+def test_given_becomes_tester_state_not_estar_en() -> None:
+    description = """
+Scenario: Ver panel
+  Given un usuario que ingresa al Panel Más información
+  When el usuario selecciona Recordatorio
+  Then se muestra el modal de recordatorio
+"""
+    cases = candidates_from_jira_artifacts(
+        _artifacts(("EPC-1", "ST-1", "Feature panel", description)),
+        "rn.pdf",
+        [],
+        lambda *_a: None,
+    )
+    case = next(row for row in cases if row.steps)
+    pre = case.precondition or ""
+    assert "Panel Más información abierto" in pre
+    assert "Estar en" not in pre
+    actions = [step.action.lower() for step in case.steps]
+    assert all("verificar" not in action for action in actions)
+    assert all(action != (case.name or "").lower() for action in actions)
+    assert any("abrir" in action and "panel" in action for action in actions) or any(
+        "seleccion" in action for action in actions
+    )
+    for step in case.steps:
+        assert (step.expected_result or "").strip()
+        assert (step.expected_result or "").lower()[:40] != (case.name or "").lower()[:40]
+        assert (step.expected_result or "").lower() != (step.action or "").lower()
+
+
+def test_then_hidden_action_becomes_own_step() -> None:
+    description = """
+Scenario: Salir
+  Given un usuario que accede al player de TV en vivo
+  When el control player se encuentra activo
+  Then al presionar el botón Salir se muestra la Guía
+"""
+    cases = candidates_from_jira_artifacts(
+        _artifacts(("EPC-1", "ST-1", "Feature player", description)),
+        "rn.pdf",
+        [],
+        lambda *_a: None,
+    )
+    case = next(row for row in cases if row.steps)
+    actions = " ".join(step.action.lower() for step in case.steps)
+    assert "presion" in actions
+    assert "verificar" not in actions
+    assert any("guía" in (step.expected_result or "").lower() or "guia" in (step.expected_result or "").lower() for step in case.steps)
+
+
+def test_igual_que_antes_only_on_impact() -> None:
+    description = """
+Scenario: Nueva botonera
+  Given un usuario que accede al player de TV en vivo
+  When el usuario abre el control
+  Then se muestran los botones nuevos
+"""
+    cases = candidates_from_jira_artifacts(
+        _artifacts(("EPC-1", "ST-1", "Feature botonera nueva", description)),
+        "rn.pdf",
+        [],
+        lambda *_a: None,
+    )
+    case = next(row for row in cases if row.steps)
+    blob = " ".join(f"{step.action} {step.expected_result}" for step in case.steps).lower()
+    assert "igual que antes" not in blob
+
+
 def test_no_generic_startup_step() -> None:
     description = """
 Scenario: Ver player
@@ -243,7 +310,8 @@ Scenario: Ver player
     actions = [step.action.lower() for step in case.steps]
     assert "abrir la aplicación" not in " ".join(actions)
     assert "pantalla de partida" not in " ".join(step.expected_result.lower() for step in case.steps)
-    assert "player" in (case.precondition or "").lower() or "estar en" in (case.precondition or "").lower()
+    assert "player" in (case.precondition or "").lower()
+    assert "estar en" not in (case.precondition or "").lower()
     assert len(actions) == len(set(actions))
 
 
@@ -310,6 +378,37 @@ def test_76_excel_has_escenarios_de_jira_sheet() -> None:
     sheet = book["Escenarios de Jira"]
     assert sheet["A2"].value == "ST-1"
     assert sheet["C2"].value == "caso ejecutable"
+
+
+def test_llm_invalid_uses_deterministic_engine(monkeypatch) -> None:
+    from app.services import scenario_llm as sl
+
+    def boom(*_a, **_k):
+        raise RuntimeError("timeout quota")
+
+    monkeypatch.setattr(sl, "_call_llm", boom)
+    base = GeneratedCaseCandidate(
+        name="Seleccionar Recordatorio",
+        description="d",
+        evidence="e",
+        justification="j",
+        covers=["COV-1"],
+        steps=[
+            CandidateStep(
+                step_number=1,
+                action="Seleccionar Recordatorio",
+                expected_result="Se muestra el modal de recordatorio",
+            )
+        ],
+    )
+    rewritten, meta = sl._rewrite_one(base, None, "story", "", [], 1.0)
+    assert rewritten.steps
+    assert rewritten.steps[0].action == "Seleccionar Recordatorio"
+    assert meta.get("ok") is False
+    assert "determinista" in (meta.get("error") or "").lower() or meta.get("error")
+    assert not any(
+        str(rule).startswith("pendiente-qc") for rule in (rewritten.applied_rules or [])
+    )
 
 
 def test_77_unsafe_llm_rewrite_falls_back_to_deterministic() -> None:

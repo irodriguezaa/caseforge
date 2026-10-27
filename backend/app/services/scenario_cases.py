@@ -30,6 +30,30 @@ from app.services.qc_eligibility import (
 )
 
 _LINT_TECH_VISIBLE = re.compile(r"\bmetadata\b", re.I)
+_FEMININE_PLACE = re.compile(
+    r"\b(gu[ií]a|botonera|pantalla|ventana|ficha|celda|barra|opci[oó]n|"
+    r"informaci[oó]n|metadata)\b",
+    re.I,
+)
+_THEN_CUE = re.compile(
+    r"^\s*(?P<cue>al presionar|al seleccionar|al hacer clic(?: en)?|"
+    r"al posicionar el cursor(?: sobre)?|posiciona el cursor(?: sobre)?|"
+    r"selecciona|presiona)\s+(?P<rest>.+)$",
+    re.I,
+)
+_CUE_TO_ACTION = {
+    "al presionar": "Presionar",
+    "al seleccionar": "Seleccionar",
+    "al hacer clic": "Hacer clic en",
+    "al hacer clic en": "Hacer clic en",
+    "al posicionar el cursor": "Posicionar el cursor sobre",
+    "al posicionar el cursor sobre": "Posicionar el cursor sobre",
+    "posiciona el cursor": "Posicionar el cursor sobre",
+    "posiciona el cursor sobre": "Posicionar el cursor sobre",
+    "selecciona": "Seleccionar",
+    "presiona": "Presionar",
+}
+_EQUAL_BEFORE = re.compile(r"se ve(n)? igual que antes", re.I)
 _EVENT_THEN = re.compile(
     r"\b(se env[ií]a|se registra|se dispara|se reporta|se llama|se emite|debe emitirse).{0,80}\b(evento|m[eé]trica|servicio|api|endpoint)\b",
     re.I,
@@ -232,14 +256,14 @@ def _scrub_visible(text: str | None, title: str = "", fallback: str = "") -> str
     out = re.sub(r"<[^>]{0,40}>", " ", out)
     out = _LINT_TECH.sub(" ", out)
     if _LINT_GEN.search(out):
-        out = fallback or "Se observa el resultado en el dispositivo"
+        out = fallback if fallback and not _LINT_GEN.search(fallback) else ""
     out = re.sub(r"\s+", " ", out).strip(" .;,-")
     title_n = re.sub(r"^\s*\d+\.\s*", "", title or "").strip().lower()[:40]
     body_n = out.lower()[:40]
     if title_n and body_n == title_n:
-        out = fallback or "Se observa el resultado en el dispositivo"
+        out = fallback if fallback and fallback.lower()[:40] != title_n else ""
     if re.match(r"se muestra verificar\b", out, re.I):
-        out = fallback or "Se observa el resultado en el dispositivo"
+        out = fallback if fallback and not re.match(r"se muestra verificar\b", fallback, re.I) else ""
     return out
 
 
@@ -359,10 +383,8 @@ def _action_from_title(title: str) -> str:
         flags=re.I,
     ).strip()
     inf = to_infinitive(raw)
-    if is_tester_action(inf):
+    if is_tester_action(inf) and not re.match(r"^\s*verificar\b", inf, re.I):
         return inf
-    if raw:
-        return f"Verificar {raw[0].lower() + raw[1:]}" if raw else ""
     return ""
 
 
@@ -373,27 +395,87 @@ def _strip_markup(text: str | None) -> str:
 
 
 def _given_precondition(clause: str) -> str:
-    text = re.sub(r"^\s*(que )?", "", clause or "", flags=re.I).strip()
-    if re.search(r"sesi[oó]n iniciada|usuario (registrado|autenticado)|inicia sesi[oó]n", text, re.I):
+    raw = _strip_markup(re.sub(r"^\s*(que )?", "", clause or "", flags=re.I))
+    if re.search(r"sesi[oó]n iniciada|usuario (registrado|autenticado)|inicia sesi[oó]n", raw, re.I):
         return "Sesión iniciada"
-    if re.search(r"\bplayer\b", text, re.I):
-        return "Estar en el Player de TV"
-    if re.search(r"gu[ií]a de programaci[oó]n|\bla gu[ií]a\b", text, re.I):
-        return "Estar en la Guía"
-    text = re.sub(r"^\s*un usuario que accede( a| al)?\s*", "", text, flags=re.I)
+    if re.search(r"control player", raw, re.I) and re.search(r"activo", raw, re.I):
+        return "Control Player activo"
+    if re.search(r"reproduciendo|reproducci[oó]n en curso", raw, re.I):
+        return "Reproducción en curso"
     text = re.sub(
-        r"^\s*((el|la) usuario\s+)?(está|esta|se encuentra|se halla)(\s+en)?\s+",
+        r"^\s*((un|el|la) usuario( que)?\s+)?"
+        r"(ingresa( al| a la| a)?|accede( al| a la| a)?|abre|abrir|"
+        r"visualiza|se encuentra en|est[aá] en|entra (al|a la|a)|"
+        r"da clic en el bot[oó]n)\s+",
         "",
-        text,
+        raw,
         flags=re.I,
-    )
-    text = re.sub(r"^\s*(que )?accede( a| al)?\s*", "", text, flags=re.I)
-    text = re.sub(r"^\s*abrir (la |el |los |las )?", "", text, flags=re.I).strip(" .")
+    ).strip(" .")
+    text = re.sub(r"^\s*(al |a la |a el |a los |a las )\s*", "", text, flags=re.I)
+    text = re.sub(r"^\s*estar en\s+", "", text, flags=re.I).strip(" .")
     if not text:
         return ""
-    if re.match(r"^(estar |sesi[oó]n )", text, re.I):
-        return _strip_markup(text[0].upper() + text[1:])
-    return _strip_markup(f"Estar en {text[0].upper() + text[1:]}")
+    if re.search(r"\b(abierto|abierta|activo|activa|iniciada)\s*$", text, re.I):
+        return text[0].upper() + text[1:]
+    place = re.sub(r"^(el |la |los |las |un |una )", "", text, flags=re.I).strip()
+    if not place:
+        return ""
+    titled = place[0].upper() + place[1:]
+    if re.match(r"^(panel|player|control|modal|men[uú])\b", titled, re.I):
+        adj = "abierto"
+    else:
+        adj = "abierta" if _FEMININE_PLACE.search(titled) else "abierto"
+    return f"{titled} {adj}"
+
+
+def _entry_navigation_step(states: list[str], steps: list[CandidateStep]) -> CandidateStep | None:
+    blob = " ".join(step.action or "" for step in steps).lower()
+    for state in states:
+        if re.match(r"^sesi[oó]n ", state or "", re.I):
+            continue
+        place = re.sub(
+            r"\s+(abierto|abierta|activo|activa|iniciada)\s*$",
+            "",
+            state or "",
+            flags=re.I,
+        ).strip()
+        if not place:
+            continue
+        if place.lower()[:18] in blob:
+            continue
+        if re.search(r"gu[ií]a", place, re.I):
+            action, expected = (
+                "Abrir la Guía de programación desde el botón Guía",
+                "Se muestra la Guía de programación",
+            )
+        elif re.search(r"player", place, re.I):
+            action, expected = ("Abrir el Player de TV", "Se muestra el Player de TV")
+        elif re.search(r"panel", place, re.I):
+            action, expected = (f"Abrir {place}", f"Se muestra {place}")
+        else:
+            article = "la" if _FEMININE_PLACE.search(place) else "el"
+            target = place if re.match(r"^(el |la |los |las )", place, re.I) else f"{article} {place}"
+            action, expected = (f"Abrir {target}", f"Se muestra {target}")
+        if re.match(r"^\s*abrir la aplicaci[oó]n\b", action, re.I):
+            continue
+        return CandidateStep(step_number=1, action=action, expected_result=expected, covered_unit_ids=[])
+    return None
+
+
+def _embedded_then_action(text: str) -> tuple[str, str] | None:
+    match = _THEN_CUE.match(text or "")
+    if not match:
+        return None
+    cue = re.sub(r"\s+", " ", match.group("cue").strip().lower())
+    rest = match.group("rest").strip()
+    split = re.split(r",\s*|\s+(?=se\s+)|,\s+(?=y\s+)", rest, maxsplit=1)
+    target = split[0].strip(" .")
+    result = split[1].strip() if len(split) > 1 else ""
+    verb = _CUE_TO_ACTION.get(cue, to_infinitive(cue))
+    action = f"{verb} {target}".strip()
+    if not is_tester_action(action) and not is_user_action(action):
+        return None
+    return action, result
 
 
 def _merge_steps_without_result(steps: list[CandidateStep]) -> list[CandidateStep]:
@@ -566,15 +648,19 @@ def compose_scenario_units(units: list[CoverageUnit]) -> FlowDraft:
                 pre.append(_given_precondition(text))
                 continue
             if not is_tester_action(action) and not is_user_action(text):
-                tech.append(text)
+                pre.append(_given_precondition(text))
                 system_when = True  # noqa: F841 - used after the walk
                 continue
             if not is_tester_action(action):
                 continue
+            if re.match(r"^\s*verificar\b", action, re.I):
+                continue
             story_lead = _short_phrase(primary.story_summary, limit=8).lower()
-            if story_lead and story_lead in action.lower():
+            if story_lead and story_lead in action.lower() and not is_user_action(text):
                 continue
             if re.match(r"^\s*(implementar |se muestra el resultado de:)", action, re.I):
+                continue
+            if _norm_text(action) == _norm_text(strip_title_prefix(primary.scenario or "")):
                 continue
             expected = polish_expected("; ".join(pending_then)) if pending_then else ""
             pending_then = []
@@ -599,6 +685,20 @@ def compose_scenario_units(units: list[CoverageUnit]) -> FlowDraft:
             )
             continue
         if kind == "then":
+            embedded = _embedded_then_action(text)
+            if embedded:
+                action, rest = embedded
+                steps.append(
+                    CandidateStep(
+                        step_number=len(steps) + 1,
+                        action=to_infinitive(action) or action,
+                        expected_result="",
+                        covered_unit_ids=list(covers),
+                    )
+                )
+                if rest:
+                    _attach_then(rest)
+                continue
             _attach_then(text)
     if table_buf:
         listed = _flush_table()
@@ -638,23 +738,33 @@ def compose_scenario_units(units: list[CoverageUnit]) -> FlowDraft:
         kind == "when" and _SYSTEM_WHEN.search(text) and not is_user_action(text) for kind, text in walked
     )
     if not any(is_tester_action(step.action) for step in steps):
-        title_action = _action_from_title(primary.scenario or "")
         given_action = next(iter(nav), "")
-        fallback = given_action or title_action
-        if fallback:
+        if given_action and not re.match(r"^\s*verificar\b", given_action, re.I):
             steps.append(
                 CandidateStep(
                     step_number=1,
-                    action=fallback,
-                    expected_result=merged_expected or polish_expected("; ".join(pending_then)),
+                    action=given_action,
+                    expected_result=merged_expected or polish_expected("; ".join(pending_then)) or _arrival_result(given_action),
                     covered_unit_ids=list(covers),
                 )
             )
         elif when_is_system and not visible_then:
             pending = "verificación técnica"
             steps = []
+    bg_steps: list[CandidateStep] = []
     for action, result in _navigation_steps(primary.feature_background or ""):
-        pre.append(_given_precondition(action if not result else f"{action}: {result}"))
+        if re.match(r"^\s*abrir la aplicaci[oó]n\b", action or "", re.I):
+            continue
+        bg_steps.append(
+            CandidateStep(
+                step_number=len(bg_steps) + 1,
+                action=action,
+                expected_result=result or _arrival_result(action),
+                covered_unit_ids=list(covers),
+            )
+        )
+    if bg_steps:
+        steps = bg_steps + steps
     for step in steps:
         if _NAV_GIVEN.search(step.action or "") and not (step.expected_result or "").strip():
             step.expected_result = _arrival_result(step.action)
@@ -718,6 +828,11 @@ def compose_scenario_units(units: list[CoverageUnit]) -> FlowDraft:
         pending = pending or "verificación técnica"
         if not has_visible:
             steps = []
+    entry = _entry_navigation_step(pre, steps)
+    if entry:
+        entry.covered_unit_ids = list(covers)
+        steps.insert(0, entry)
+        steps = _dedupe_steps(steps)
     for index, step in enumerate(steps, start=1):
         step.step_number = index
         step.action = _strip_markup(step.action)
@@ -740,6 +855,7 @@ def compose_scenario_units(units: list[CoverageUnit]) -> FlowDraft:
     for clause in pre:
         clause_clean, clause_ids = lift_technical(clause)
         tech.extend(clause_ids)
+        clause_clean = re.sub(r"^\s*estar en\s+", "", clause_clean, flags=re.I).strip()
         if not clause_clean:
             continue
         if _TECH_PRE.search(clause_clean) or (
@@ -762,6 +878,11 @@ def compose_scenario_units(units: list[CoverageUnit]) -> FlowDraft:
     }]
     if pending == "verificación técnica" and "verificacion-tecnica" not in rules:
         rules.append("verificacion-tecnica")
+    is_impact = "impacto-superficie" in rules
+    if not is_impact:
+        for step in steps:
+            cleaned = _EQUAL_BEFORE.sub("", step.expected_result or "").strip(" ;.")
+            step.expected_result = cleaned
     if "|robustez-consumo" in (primary.scenario_group or "") or all(
         is_robust_consumption(unit.scenario or "", unit.body or "") for unit in units
     ):
@@ -775,7 +896,11 @@ def compose_scenario_units(units: list[CoverageUnit]) -> FlowDraft:
             title = f"{title} ({' · '.join(unique_surfaces[:4])})"[:120]
         kept_pre = list(dict.fromkeys([*kept_pre, "Requiere apoyo de Dev"]))
     for step in steps:
-        if _norm_text(step.expected_result)[:40] == _norm_text(title)[:40]:
+        if not (step.expected_result or "").strip() and re.search(r"^\s*abrir\b", step.action or "", re.I):
+            step.expected_result = _arrival_result(step.action)
+        if _norm_text(step.expected_result)[:40] == _norm_text(title)[:40] or _norm_text(
+            step.expected_result
+        ) == _norm_text(step.action):
             rebuilt = polish_expected(
                 "; ".join(item for unit in units for item in (_unit_expected(unit),) if item)
             )
@@ -783,6 +908,7 @@ def compose_scenario_units(units: list[CoverageUnit]) -> FlowDraft:
                 step.expected_result = _strip_markup(rebuilt)
             elif title:
                 title = strip_title_prefix(primary.scenario or title)[:80]
+        step.expected_result = re.sub(r"^\s*estar en\s+", "", step.expected_result or "", flags=re.I)
     return FlowDraft(
         story_key=primary.story_key or primary.jira_key or "",
         epic_key=primary.artifact_key or primary.rn_key or "",

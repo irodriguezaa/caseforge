@@ -1729,21 +1729,11 @@ def generate_release_app_candidates(
         if final:
             analysis_details.append(f"LLM rechazos finales: {final}")
         ia_errors = [
-            row for row in rows if (row.get("error") or "") == "no evaluado por error de IA"
+            row for row in rows if row.get("error") and not row.get("ok")
         ]
         if ia_errors:
             analysis_details.append(
-                f"IA: {len(ia_errors)} escenario(s) no evaluado(s) por error de IA; se conservó el caso determinista."
-            )
-            stats.scenario_ledger.append(
-                {
-                    "story": "",
-                    "epic": "",
-                    "scenario": "IA",
-                    "estado": "no evaluado por error de IA",
-                    "motivo": "no evaluado por error de IA",
-                    "case_id": "",
-                }
+                f"IA: {len(ia_errors)} escenario(s) sin redacción LLM válida; se redactó con el motor determinista."
             )
     fill_scenario_ledger(stats, inventory, candidates)
     candidates = [row for row in candidates if row.steps]
