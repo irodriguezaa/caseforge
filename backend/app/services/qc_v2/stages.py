@@ -158,6 +158,8 @@ def run_stage_a(bundle: EpicBundle, ctx: DeviceContext, chat: ChatFn = chat_json
     model = settings.qc_v2_model_a
     try:
         payload, meta = chat(messages, model=model, temperature=_temperature(), **_reasoning("a"))
+    except QuotaExhausted:
+        return StageAResult(error="no evaluado por error de IA")
     except LlmError as exc:
         return StageAResult(error=str(exc))
     result = parse_stage_a(payload, bundle)
@@ -352,7 +354,15 @@ def run_stage_b(
             except QuotaExhausted as exc:
                 quota = exc
         if quota is not None:
-            raise quota
+            done = {row.scenario_id for row in results}
+            for scenario in scenarios:
+                if scenario.id not in done:
+                    results.append(
+                        StageBResult(
+                            scenario_id=scenario.id,
+                            error="no evaluado por error de IA",
+                        )
+                    )
     return results
 
 

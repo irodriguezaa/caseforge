@@ -264,14 +264,7 @@ def ux_fingerprint(name: str, steps: list[CandidateStep], test_data: str | None 
 
 
 def example_strategy(examples: list[dict[str, str]]) -> str:
-    """group | split_functional | group_by_outcome."""
-    if not examples:
-        return "group"
-    keys = list(examples[0].keys())
-    if any(OUTCOME_EXAMPLE_KEYS.match(key or "") for key in keys):
-        return "group_by_outcome"
-    if any(FUNCTIONAL_EXAMPLE_KEYS.match(key or "") for key in keys):
-        return "split_functional"
+    """One case; Examples become variants, not extra cases."""
     return "group"
 
 
@@ -294,9 +287,9 @@ def group_examples_by_outcome(
 def format_examples(examples: list[dict[str, str]]) -> str:
     lines = []
     for example in examples:
-        label = ", ".join(f"{key}={value}" for key, value in example.items() if value)
-        if label:
-            lines.append(label)
+        bits = [f"{key} {value}" for key, value in example.items() if value]
+        if bits:
+            lines.append("Cuando " + ", ".join(bits))
     return "Variantes técnicas (mismo comportamiento de usuario): " + "; ".join(lines)
 
 

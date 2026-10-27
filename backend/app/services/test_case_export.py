@@ -506,7 +506,9 @@ def build_test_cases_workbook(
         QC_HEADERS,
         [10, 42, 16, 12, 16, 14, 40, 40, 28, 22, 28, 32, 16, 18, 28, 12, 14, 14, 32, 36],
     )
-    for row_index, case in enumerate(ordered, start=2):
+    for row_index, case in enumerate(
+        (row for row in ordered if not _is_na_ambiente(row)), start=2
+    ):
         precondition, compact_data, _notes = split_stored_test_data(case.test_data)
         tech, variants = split_stored_extras(case.test_data)
         values = [

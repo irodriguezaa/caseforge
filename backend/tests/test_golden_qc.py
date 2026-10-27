@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from types import SimpleNamespace
+
+import pytest
 
 from app.schemas.case_generation import GenerationStats
 from app.services.case_persistence import next_test_case_id
@@ -22,6 +25,10 @@ def _cases_and_ledger():
     candidates = candidates_from_jira_artifacts(
         artifacts, "golden.pdf", [], lambda *_a: None, stats=stats
     )
+    return _excel_from_candidates(candidates, stats.scenario_ledger)
+
+
+def _excel_from_candidates(candidates, ledger):
     used: list[str] = []
     cases = []
     name_to_id: dict[str, str] = {}
@@ -63,11 +70,11 @@ def _cases_and_ledger():
                 ],
             )
         )
-    for row in stats.scenario_ledger:
-        ref = str(row.get("case_id") or "")
+    for row in ledger:
+        ref = str(row.get("case_id") or "").split(";")[0].strip()
         if ref in name_to_id:
             row["case_id"] = name_to_id[ref]
-    return cases, stats.scenario_ledger
+    return cases, ledger
 
 
 def test_golden_aaf_legacy_release47(tmp_path, capsys) -> None:
@@ -78,6 +85,62 @@ def test_golden_aaf_legacy_release47(tmp_path, capsys) -> None:
         scenario_ledger=ledger,
     )
     excel_path = tmp_path / "golden_aaf.xlsx"
+    excel_path.write_bytes(payload)
+    result = compare(GOLDEN_JSON, excel_path)
+    print(result["report"])
+    assert result["ok"], result["report"]
+
+
+class _DumpReader:
+    def __init__(self, artifacts: list[dict]):
+        self._issues: dict[str, dict] = {}
+        self._children: dict[str, list[dict]] = {}
+        for epic in artifacts:
+            issue = self._as_issue(epic)
+            self._issues[issue["key"]] = issue
+            kids = []
+            for child in epic.get("children") or []:
+                mapped = self._as_issue(child)
+                self._issues[mapped["key"]] = mapped
+                kids.append(mapped)
+            self._children[issue["key"]] = kids
+
+    @staticmethod
+    def _as_issue(row: dict) -> dict:
+        return {
+            "key": row["key"],
+            "fields": {
+                "summary": row.get("summary") or "",
+                "issuetype": {"name": row.get("issuetype") or "Technical Story"},
+                "description": row.get("description") or "",
+                "parent": None,
+            },
+        }
+
+    def get(self, key: str):
+        return self._issues.get(key)
+
+    def children(self, key: str):
+        return list(self._children.get(key) or [])
+
+
+@pytest.mark.manual
+def test_golden_aaf_v2_release47(tmp_path, capsys) -> None:
+    if os.environ.get("QC_GOLDEN_V2") != "1":
+        pytest.skip("gasta tokens; corre a mano con QC_GOLDEN_V2=1")
+    from app.services.qc_v2.engine import run_epics
+
+    artifacts = load_jira_artifacts()
+    runs = run_epics(list(GOLDEN_EPC_KEYS), "AAF Legacy", reader=_DumpReader(artifacts))
+    candidates = [c for run in runs for c in run.candidates]
+    ledger = [row for run in runs for row in run.ledger]
+    cases, ledger = _excel_from_candidates(candidates, ledger)
+    payload = build_test_cases_workbook(
+        cases,
+        scope_keys=list(GOLDEN_EPC_KEYS),
+        scenario_ledger=ledger,
+    )
+    excel_path = tmp_path / "golden_aaf_v2.xlsx"
     excel_path.write_bytes(payload)
     result = compare(GOLDEN_JSON, excel_path)
     print(result["report"])

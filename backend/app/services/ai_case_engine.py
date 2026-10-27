@@ -1684,17 +1684,10 @@ def generate_release_app_candidates(
 
         if composition_mode() == "scenario" and candidates is not jira_candidates:
             candidates = align_llm_to_deterministic(jira_candidates, candidates)
-    candidates = _merge_last_resort(
-        pdf_bytes,
-        rn_filename or "",
-        existing_cases,
-        candidates,
-        inventory=inventory,
-        tickets=parsed_tickets,
-    )
-    if not candidates and pdf_bytes:
-        candidates = _from_evidence(pdf_bytes, rn_filename or "", existing_cases)
-        engine = "evidence"
+    if not inventory:
+        analysis_details.append(
+            "RN sin Gherkin observable: no se inventa caso genérico de respaldo."
+        )
 
     candidates = _keep_scoped_candidates(candidates, allowed or None)
     candidates = apply_qc_rules(candidates, release_context=release_context, stats=stats)
@@ -1735,6 +1728,23 @@ def generate_release_app_candidates(
             analysis_details.append(f"LLM rechazos primer intento: {first}")
         if final:
             analysis_details.append(f"LLM rechazos finales: {final}")
+        ia_errors = [
+            row for row in rows if (row.get("error") or "") == "no evaluado por error de IA"
+        ]
+        if ia_errors:
+            analysis_details.append(
+                f"IA: {len(ia_errors)} escenario(s) no evaluado(s) por error de IA; se conservó el caso determinista."
+            )
+            stats.scenario_ledger.append(
+                {
+                    "story": "",
+                    "epic": "",
+                    "scenario": "IA",
+                    "estado": "no evaluado por error de IA",
+                    "motivo": "no evaluado por error de IA",
+                    "case_id": "",
+                }
+            )
     fill_scenario_ledger(stats, inventory, candidates)
     candidates = [row for row in candidates if row.steps]
     stamp_source_types(candidates)
@@ -1754,6 +1764,11 @@ def generate_release_app_candidates(
         f"Se propusieron {len(candidates)} caso(s) candidato(s). La IA propone; QC decide. "
         "No se crearon Test Cases en la base de datos."
     )
+    if any(row.get("estado") == "no evaluado por error de IA" for row in stats.scenario_ledger):
+        message = (
+            "Algunos escenarios no se evaluaron por error de IA; se conservó el motor determinista. "
+            "En Excel aparecen como «no evaluado por error de IA»."
+        )
     if not analysis_present:
         message = "No hay análisis de RN asociado; no hay evidencia para proponer casos."
     elif not pdf_bytes and not candidates:

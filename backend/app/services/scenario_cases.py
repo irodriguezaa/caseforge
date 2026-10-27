@@ -23,6 +23,7 @@ from app.services.case_composer import (
 from app.services.coverage_quality import normalize_precondition
 from app.services.executability import is_user_action
 from app.services.gherkin_coverage import TECH_VERIFY_MARK
+from app.services.qc_eligibility import is_robust_consumption, split_visible_technical
 
 _EVENT_THEN = re.compile(
     r"\b(se env[ií]a|se registra|se dispara|se reporta|se llama|se emite|debe emitirse).{0,80}\b(evento|m[eé]trica|servicio|api|endpoint)\b",
@@ -71,13 +72,11 @@ def scenario_group_key(unit: CoverageUnit) -> str:
     grouped = (unit.scenario_group or "").strip()
     if grouped and "|scenario|" not in grouped:
         return grouped
-    if (unit.outline_strategy or "single") in {"split_functional", "group"}:
-        base = re.sub(r"\s*\([^)]*\)\s*$", "", unit.scenario or "").strip()
-        obs = re.sub(r"\W+", " ", " ".join(unit.observable_then or []).lower()).strip()
-        return f"{unit.story_key or unit.jira_key}|{base}|{unit.outline_strategy}|{obs}"
-    return grouped or (
-        f"{unit.story_key or unit.jira_key}|{unit.scenario}|{unit.technical_group or ''}|{unit.outline_strategy}"
-    )
+    blob = f"{unit.scenario or ''}\n{unit.body or ''}"
+    if re.search(r"no se logra obtener|se encuentra vac[ií]a|valor (ausente|vac[ií]o)", blob, re.I):
+        return f"{unit.artifact_key or unit.rn_key or ''}|robustez-consumo"
+    base = re.sub(r"\s*\([^)]*\)\s*$", "", unit.scenario or "").strip()
+    return f"{unit.story_key or unit.jira_key}|{base}"
 
 
 def _walk_gwt(body: str) -> list[tuple[str, str]]:
@@ -209,6 +208,34 @@ def _examples_as_data(units: list[CoverageUnit]) -> str | None:
     return "; ".join(dict.fromkeys(parts)) or None
 
 
+_LINT_TECH = re.compile(
+    r"\b(servicio|API|llamad[oa]|petici[oó]n|invoca|endpoint|request|metadata|"
+    r"valor recibido|llave de configuraci[oó]n|se recupera del|\blog\b|"
+    r"evento [a-z]+\.[a-z]+)\b",
+    re.I,
+)
+_LINT_GEN = re.compile(
+    r"Se muestra el resultado de|comportamiento definido|cambio en esa pantalla|Abrir y presenta",
+    re.I,
+)
+
+
+def _scrub_visible(text: str | None, title: str = "", fallback: str = "") -> str:
+    out = re.sub(r"@([A-Za-z_]\w*)", r"\1", text or "")
+    out = re.sub(r"<[^>]{0,40}>", " ", out)
+    out = _LINT_TECH.sub(" ", out)
+    if _LINT_GEN.search(out):
+        out = fallback or "Se observa el resultado en el dispositivo"
+    out = re.sub(r"\s+", " ", out).strip(" .;,-")
+    title_n = re.sub(r"^\s*\d+\.\s*", "", title or "").strip().lower()[:40]
+    body_n = out.lower()[:40]
+    if title_n and body_n == title_n:
+        out = fallback or "Se observa el resultado en el dispositivo"
+    if re.match(r"se muestra verificar\b", out, re.I):
+        out = fallback or "Se observa el resultado en el dispositivo"
+    return out
+
+
 def lift_technical(text: str | None) -> tuple[str, list[str]]:
     """Move a technical identifier out whole. Visible text keeps no fragment."""
     found: list[str] = []
@@ -259,9 +286,6 @@ def visible_outcome(*sources: str | None) -> str:
             rendered = render_expected(text)
             if rendered:
                 return rendered
-    title = strip_title_prefix(sources[0] if sources else "")
-    if title and not _EVENT_THEN.search(title):
-        return f"Se muestra {title[0].lower() + title[1:]}." if title else ""
     return ""
 
 
@@ -319,6 +343,22 @@ def _missing_data(walked: list[tuple[str, str]], source: str) -> list[str]:
     return list(dict.fromkeys(notes))
 
 
+def _action_from_title(title: str) -> str:
+    raw = strip_title_prefix(title or "")
+    raw = re.sub(
+        r"^(visualizaci[oó]n de| construcci[oó]n de|mostrar|implementaci[oó]n de)\s+",
+        "",
+        raw,
+        flags=re.I,
+    ).strip()
+    inf = to_infinitive(raw)
+    if is_tester_action(inf):
+        return inf
+    if raw:
+        return f"Verificar {raw[0].lower() + raw[1:]}" if raw else ""
+    return ""
+
+
 def _short_phrase(text: str | None, limit: int = 6) -> str:
     raw = re.sub(r"^\s*feature\s*:?\s*", "", (text or ""), flags=re.I).strip(" .:-")
     words = [word for word in re.split(r"\s+", raw) if word]
@@ -358,12 +398,16 @@ def compose_scenario_units(units: list[CoverageUnit]) -> FlowDraft:
         return text
 
     def _attach_then(text: str) -> None:
-        if _TECH_RESULT.search(text or "") or _ENDPOINT.search(text or "") or _EVENT_THEN.search(text or ""):
-            tech.append(text)
+        visible, technical = split_visible_technical(f"Then {text}", "")
+        for item in technical:
+            tech.append(item)
             if TECH_VERIFY_MARK not in tech:
                 tech.append(TECH_VERIFY_MARK)
-            return
-        cleaned = polish_expected(text)
+        if not visible:
+            if technical or _TECH_RESULT.search(text or "") or _ENDPOINT.search(text or "") or _EVENT_THEN.search(text or ""):
+                return
+            visible = [text] if text else []
+        cleaned = polish_expected("; ".join(visible))
         if not cleaned:
             return
         if steps:
@@ -385,6 +429,10 @@ def compose_scenario_units(units: list[CoverageUnit]) -> FlowDraft:
         for match in _TECH_RESULT.finditer(text):
             tech.append(match.group(0))
         if kind == "given":
+            if re.match(r"^\s*(que )?accede", text, re.I):
+                rest = re.sub(r"^\s*(que )?accede( a| al|)\s*", "", text, flags=re.I).strip()
+                nav.append(f"Estar en {rest}".strip())
+                continue
             action = _nav_action(text)
             if action:
                 nav.append(action)
@@ -398,6 +446,11 @@ def compose_scenario_units(units: list[CoverageUnit]) -> FlowDraft:
                 system_when = True  # noqa: F841 - used after the walk
                 continue
             if not is_tester_action(action):
+                continue
+            story_lead = _short_phrase(primary.story_summary, limit=8).lower()
+            if story_lead and story_lead in action.lower():
+                continue
+            if re.match(r"^\s*(implementar |se muestra el resultado de:)", action, re.I):
                 continue
             expected = polish_expected("; ".join(pending_then)) if pending_then else ""
             pending_then = []
@@ -423,6 +476,27 @@ def compose_scenario_units(units: list[CoverageUnit]) -> FlowDraft:
             0,
             CandidateStep(step_number=1, action=action, expected_result="", covered_unit_ids=list(covers)),
         )
+    for kind, text in walked:
+        if kind != "given":
+            continue
+        if _NAV_GIVEN.search(text) or _TECH_RESULT.search(text) or _ENDPOINT.search(text):
+            continue
+        rest = re.sub(
+            r"^\s*((el|la) usuario\s+)?(está|esta|se encuentra|se halla|tiene)(\s+en)?\s+",
+            "",
+            text,
+            flags=re.I,
+        ).strip()
+        if not rest or rest.lower() == (text or "").strip().lower():
+            continue
+        entry = f"Estar en {rest}"
+        if any(entry.lower() == (step.action or "").lower() for step in steps):
+            break
+        steps.insert(
+            0,
+            CandidateStep(step_number=1, action=entry, expected_result="", covered_unit_ids=list(covers)),
+        )
+        break
     merged_expected = polish_expected(
         "; ".join(dict.fromkeys(item for unit in units for item in (_unit_expected(unit),) if item))
     )
@@ -435,10 +509,6 @@ def compose_scenario_units(units: list[CoverageUnit]) -> FlowDraft:
             fallback = _nav_action(unit.user_action or "") or to_infinitive(unit.user_action or "")
             if is_tester_action(fallback) or is_user_action(unit.user_action or ""):
                 visible = merged_expected or polish_expected("; ".join(pending_then))
-                if not visible and any("regresion-funcional" in (unit.applied_rules or []) for unit in units):
-                    visible = visible_outcome(primary.scenario, primary.story_summary) or polish_expected(
-                        primary.story_summary or primary.scenario
-                    )
                 steps.append(
                     CandidateStep(
                         step_number=1,
@@ -469,14 +539,22 @@ def compose_scenario_units(units: list[CoverageUnit]) -> FlowDraft:
     when_is_system = system_when or any(
         kind == "when" and _SYSTEM_WHEN.search(text) and not is_user_action(text) for kind, text in walked
     )
-    if when_is_system and not any(is_tester_action(step.action) for step in steps) and not visible_then:
-        pending = "verificación técnica"
-        steps = []
-    elif not any(is_tester_action(step.action) for step in steps):
-        pending = "sin acción de usuario en Jira"
-        if any("verificacion-tecnica" in (unit.applied_rules or []) for unit in units):
+    if not any(is_tester_action(step.action) for step in steps):
+        title_action = _action_from_title(primary.scenario or "")
+        given_action = next(iter(nav), "")
+        fallback = given_action or title_action
+        if fallback:
+            steps.append(
+                CandidateStep(
+                    step_number=1,
+                    action=fallback,
+                    expected_result=merged_expected or polish_expected("; ".join(pending_then)),
+                    covered_unit_ids=list(covers),
+                )
+            )
+        elif when_is_system and not visible_then:
             pending = "verificación técnica"
-        steps = []
+            steps = []
     for action, result in _navigation_steps(primary.feature_background or ""):
         if any((step.action or "").lower() == action.lower() for step in steps):
             for step in steps:
@@ -489,6 +567,21 @@ def compose_scenario_units(units: list[CoverageUnit]) -> FlowDraft:
             0,
             CandidateStep(step_number=1, action=action, expected_result=result, covered_unit_ids=list(covers)),
         )
+    if len(steps) == 1:
+        given_nav = next((item for item in nav if item), "")
+        extra = ""
+        if given_nav and given_nav.lower() != (steps[0].action or "").lower():
+            extra = given_nav
+        if extra:
+            steps.insert(
+                0,
+                CandidateStep(
+                    step_number=1,
+                    action=extra,
+                    expected_result=_arrival_result(extra),
+                    covered_unit_ids=list(covers),
+                ),
+            )
     for step in steps:
         if _NAV_GIVEN.search(step.action or "") and not (step.expected_result or "").strip():
             step.expected_result = _arrival_result(step.action)
@@ -496,8 +589,13 @@ def compose_scenario_units(units: list[CoverageUnit]) -> FlowDraft:
         expected_clean, expected_ids = lift_technical(step.expected_result)
         tech.extend(action_ids)
         tech.extend(expected_ids)
-        step.action = action_clean or step.action
-        step.expected_result = render_expected(expected_clean or step.expected_result)
+        visible_fallback = polish_expected("; ".join(pending_then)) or merged_expected
+        step.action = _scrub_visible(action_clean or step.action, primary.scenario or "", "Abrir la aplicación")
+        step.expected_result = _scrub_visible(
+            render_expected(expected_clean or step.expected_result),
+            primary.scenario or "",
+            visible_fallback,
+        )
         if _EVENT_THEN.search(step.expected_result or "") or re.search(r"debe emitirse el evento", step.expected_result or "", re.I):
             outcome = visible_outcome(primary.scenario, primary.story_summary)
             if outcome and is_tester_action(step.action):
@@ -516,6 +614,18 @@ def compose_scenario_units(units: list[CoverageUnit]) -> FlowDraft:
         step.step_number = index
         if step.expected_result and not _STATE_THEN.search(step.expected_result):
             step.expected_result = polish_expected(step.expected_result) or step.expected_result
+    if len(steps) == 1:
+        only = steps[0]
+        if not re.match(r"^\s*abrir la aplicaci[oó]n\b", only.action or "", re.I):
+            steps.insert(
+                0,
+                CandidateStep(
+                    step_number=1,
+                    action="Abrir la aplicación",
+                    expected_result="Se muestra la pantalla de partida",
+                    covered_unit_ids=list(covers),
+                ),
+            )
     if "impacto-superficie" in (primary.applied_rules or []):
         visible = (primary.observable_then or [primary.behavior or primary.scenario])[0]
         title = re.sub(r"^se muestra\s+", "", visible or "", flags=re.I).strip()[:120]
@@ -551,6 +661,11 @@ def compose_scenario_units(units: list[CoverageUnit]) -> FlowDraft:
     }]
     if pending == "verificación técnica" and "verificacion-tecnica" not in rules:
         rules.append("verificacion-tecnica")
+    if "|robustez-consumo" in (primary.scenario_group or "") or all(
+        is_robust_consumption(unit.scenario or "", unit.body or "") for unit in units
+    ):
+        title = "Valor de configuración ausente o vacío"
+        kept_pre = list(dict.fromkeys([*kept_pre, "requiere apoyo Dev/Operación"]))
     return FlowDraft(
         story_key=primary.story_key or primary.jira_key or "",
         epic_key=primary.artifact_key or primary.rn_key or "",
@@ -588,9 +703,34 @@ def compose_scenario_inventory(
         if draft.technical_reference:
             candidate.technical_reference = draft.technical_reference
         candidate.variant_table = _variant_table(groups[key], _walk_gwt(groups[key][0].body or ""))
+        if key.endswith("|robustez-consumo"):
+            rows = ["Condición | Resultado esperado"]
+            for unit in groups[key]:
+                rows.append(
+                    f"{unit.story_key or unit.scenario} | "
+                    f"{_unit_expected(unit) or unit.scenario or ''}"
+                )
+            if len(rows) > 2:
+                candidate.variant_table = "\n".join(rows)
+            candidate.requires_condition = True
+            candidate.precondition = draft.precondition
         candidate.applied_rules = list(dict.fromkeys([*(candidate.applied_rules or []), *(draft.applied_rules or [])]))
         out.append(candidate)
-    return contextualize_duplicate_titles(out)
+    exe = {
+        ((row.related_jira or "").split(" | ")[0], re.sub(r"\W+", " ", (row.name or "").lower()).strip())
+        for row in out
+        if (row.applicability or "ejecutable") != "na_ambiente" and row.steps
+    }
+    filtered: list[GeneratedCaseCandidate] = []
+    for row in out:
+        ident = (
+            (row.related_jira or "").split(" | ")[0],
+            re.sub(r"\W+", " ", (row.name or "").lower()).strip(),
+        )
+        if (row.applicability or "") == "na_ambiente" and ident in exe:
+            continue
+        filtered.append(row)
+    return contextualize_duplicate_titles(filtered)
 
 
 def feature_context(candidate: GeneratedCaseCandidate) -> str:
@@ -606,20 +746,39 @@ def feature_context(candidate: GeneratedCaseCandidate) -> str:
 
 def contextualize_duplicate_titles(candidates: list[GeneratedCaseCandidate]) -> list[GeneratedCaseCandidate]:
     grouped: dict[str, list[GeneratedCaseCandidate]] = {}
+    order: list[str] = []
     for candidate in candidates:
-        epic = (candidate.related_functionality or "").split("|")[0].strip()
-        normalized = re.sub(r"\W+", " ", (candidate.name or "").lower()).strip()
-        grouped.setdefault(f"{epic}|{normalized}", []).append(candidate)
-    for rows in grouped.values():
-        if len(rows) < 2:
-            continue
-        for candidate in rows:
-            extra = feature_context(candidate)
-            base = strip_title_prefix(candidate.name)
-            base = re.sub(r"\s+—\s+.*$", "", base).strip()
-            if extra and extra.lower() not in base.lower():
-                candidate.name = f"{base} — {extra}".strip()[:120]
-    return candidates
+        story = (candidate.related_jira or "").split(" | ")[0].strip()
+        base = re.sub(r"\s+—\s+.*$", "", strip_title_prefix(candidate.name)).strip()
+        normalized = re.sub(r"\W+", " ", base.lower()).strip()
+        key = f"{story}|{normalized}"
+        if key not in grouped:
+            order.append(key)
+        grouped.setdefault(key, []).append(candidate)
+    fused: list[GeneratedCaseCandidate] = []
+    for key in order:
+        rows = grouped[key]
+        keep = rows[0]
+        if len(rows) > 1:
+            variants = [keep.variant_table or ""]
+            covers = list(keep.covers or keep.covered_unit_ids or [])
+            for extra in rows[1:]:
+                covers.extend(extra.covers or extra.covered_unit_ids or [])
+                if extra.variant_table:
+                    variants.append(extra.variant_table)
+                extra_data = getattr(extra, "test_data", None) or getattr(extra, "extra_test_data", None)
+                if extra_data:
+                    keep.test_data = "; ".join(
+                        part for part in (getattr(keep, "test_data", None), extra_data) if part
+                    )
+            keep.covers = list(dict.fromkeys(covers))
+            keep.covered_unit_ids = list(keep.covers)
+            table = [line for blob in variants for line in str(blob).splitlines() if line.strip()]
+            if len(rows) > 1:
+                keep.variant_table = "\n".join(dict.fromkeys(table)) or keep.variant_table
+            keep.name = re.sub(r"\s+—\s+.*$", "", strip_title_prefix(keep.name)).strip()[:120]
+        fused.append(keep)
+    return fused
 
 
 def llm_rewrite_is_safe(base: GeneratedCaseCandidate, llm: GeneratedCaseCandidate) -> bool:
@@ -720,8 +879,9 @@ def fill_scenario_ledger(
             )
         elif match is None or case_pending:
             estado, motivo, case_id = (
-                "pendiente de revisión QC",
-                (match.applicability_reason if match else None) or "sin acción de usuario en Jira",
+                "verificación técnica",
+                (match.applicability_reason if match else None)
+                or "sin Then observable o sin acción de tester derivable",
                 match.name if match else "",
             )
         else:

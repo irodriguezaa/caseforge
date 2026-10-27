@@ -109,20 +109,75 @@ def compare(golden_path: str | Path, excel_path: str | Path) -> dict:
             for line in rep[e][kind]:
                 details.append(f"  [{e}] {kind}: {line}")
     lines.extend(details)
+    quality = quality_issues(wb, gold)
+    for line in quality:
+        lines.append(f"  [calidad] {line}")
+        fail = True
     lines.append("RESULTADO: " + ("FALLA" if fail else "OK"))
     return {
         "ok": not fail,
         "report": "\n".join(lines),
         "counts": counts,
         "details": details,
+        "quality": quality,
     }
+
+
+_PLACEHOLDER = re.compile(r"<[^>]+>|@[A-Za-z_]\w*|\[#\]\.\w+|Valor\s*<", re.I)
+_GHERKIN_VERB = re.compile(
+    r"^\s*(Given|When|Then|And|Y |Que accede|Se muestra el resultado de:|Abrir y presenta)",
+    re.I,
+)
+_TECH_CLAUSE = re.compile(
+    r"\b(api\b|endpoint|petici[oó]n|consultar la llave|metadata|evento|m[eé]trica|\blogs?\b|build)\b",
+    re.I,
+)
+
+
+def quality_issues(wb, gold) -> list[str]:
+    issues: list[str] = []
+    min_steps = {g["id"]: int(g.get("pasos_minimos") or 0) for g in gold.get("casos") or []}
+    if "Test Cases" not in wb.sheetnames:
+        return ["falta hoja Test Cases"]
+    for r in wb["Test Cases"].iter_rows(min_row=2, values_only=True):
+        if not r[0] or str(r[2]) not in gold.get("epcs", []):
+            continue
+        cid, name, steps, expected = r[0], str(r[1] or ""), str(r[6] or ""), str(r[7] or "")
+        nsteps = len([ln for ln in steps.splitlines() if ln.strip()])
+        gold_id = None
+        blob = name + " " + steps + " " + expected
+        if _PLACEHOLDER.search(blob):
+            issues.append(f"{cid} placeholder crudo en nombre o pasos")
+        if _GHERKIN_VERB.search(steps):
+            issues.append(f"{cid} paso con verbo de Gherkin o plantilla prohibida")
+        if _TECH_CLAUSE.search(expected) and not re.search(
+            r"\b(muestra|pausa|abre|mensaje|notificaci)\b", expected, re.I
+        ):
+            issues.append(f"{cid} resultado no observable")
+        for gid, minimo in min_steps.items():
+            if minimo and gid.lower() in (name or "").lower():
+                gold_id = gid
+                if nsteps < minimo:
+                    issues.append(f"{cid} {gid} tiene {nsteps} pasos, mínimo {minimo}")
+        variants = str(r[19] or "") if len(r) > 19 else ""
+        if "<" in variants and _PLACEHOLDER.search(variants):
+            issues.append(f"{cid} variantes con placeholder")
+    return issues
 
 
 def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
-    result = compare(args[0], args[1])
-    print(result["report"])
-    return 0 if result["ok"] else 1
+    if len(args) < 2:
+        print("uso: compare_golden.py golden.json [golden2.json ...] generado.xlsx")
+        return 2
+    excel = args[-1]
+    goldens = args[:-1]
+    ok = True
+    for golden in goldens:
+        result = compare(golden, excel)
+        print(result["report"])
+        ok = ok and result["ok"]
+    return 0 if ok else 1
 
 
 if __name__ == "__main__":

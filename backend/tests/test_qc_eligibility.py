@@ -1,7 +1,9 @@
+from app.services.gherkin_coverage import expand_for_eval
 from app.services.qc_eligibility import (
     evaluate_scenario,
     impact_user_view,
     is_consumed_device_impact,
+    select_qc_gherkin,
 )
 
 
@@ -51,6 +53,87 @@ def test_consumed_placeholder_is_surface_impact() -> None:
     assert "placeholder" in then
     assert "llave" not in then
     assert "usuario" in action
+
+
+def test_select_qc_gherkin_keeps_impact_not_duplicate_direct() -> None:
+    kept, dropped = select_qc_gherkin(
+        "EPC-1",
+        [
+            (
+                "ST-1",
+                "Los placeholders dejan de usar las llaves anteriores",
+                "When se aplica el cambio\nThen pasan a consultar la llave de placeholder que corresponde a su forma de tarjeta",
+                "assets",
+            ),
+            (
+                "ST-1",
+                "El usuario ve el home",
+                "When el usuario abre la aplicación\nThen se muestra el home",
+                "",
+            ),
+        ],
+    )
+    titles = {row.title for row in kept}
+    assert "Los placeholders dejan de usar las llaves anteriores" in titles
+    assert any(row.kind == "impacto" for row in kept)
+    assert "El usuario ve el home" in titles
+
+
+def test_perceived_then_is_not_technical() -> None:
+    samples = [
+        (
+            "Pausar la reproducción al abrir el Panel de Audio y Subtítulos",
+            "When el usuario abre el Panel de Audio y Subtítulos\nThen la reproducción se pausa\n",
+        ),
+        (
+            "Solicitar PIN al intentar bloquear un canal",
+            "When el usuario intenta bloquear un canal\nThen se solicita el PIN\n",
+        ),
+        (
+            "Arrastrar ventana PIP",
+            "When el usuario arrastra la ventana PIP\nThen la ventana se mueve con el puntero\n",
+        ),
+        (
+            "Selección de fecha en Filtro",
+            "When el usuario selecciona una fecha en el filtro\nThen se muestran los eventos de esa fecha\n",
+        ),
+        (
+            "La vinculación no se completa",
+            "When el usuario intenta vincular la cuenta\nThen la vinculación no se completa\nAnd se muestra un mensaje\n",
+        ),
+    ]
+    for title, body in samples:
+        elig = evaluate_scenario(title, body)
+        assert elig.ok, (title, elig.reasons, elig.pending)
+
+
+def test_then_without_tech_object_is_visible() -> None:
+    elig = evaluate_scenario(
+        "Progress bar en el Panel de Más información",
+        "When el usuario abre el panel\nThen no deben mostrarse los siguientes elementos: tiempo, marca\n",
+    )
+    assert elig.ok
+    assert not elig.pending
+
+
+def test_then_list_without_pipes_is_visible() -> None:
+    title, body = expand_for_eval(
+        "Elementos visibles",
+        "When el usuario abre la guía\n"
+        "Then no deben mostrarse los siguientes elementos\n"
+        "Indicador de tiempo\n"
+        "Indicador de duración\n",
+        [],
+    )
+    elig = evaluate_scenario(title, body)
+    assert elig.ok
+    assert not elig.pending
+
+
+def test_empty_then_is_pending() -> None:
+    elig = evaluate_scenario("Líneas a mostrar de Sinopsis", "When el usuario abre el panel\nThen\n")
+    assert elig.pending
+    assert elig.ledger_estado == "pendiente de revisión QC"
 
 
 def test_pipeline_and_logs_fail_device() -> None:

@@ -59,11 +59,15 @@ def classify_complexity(candidate: GeneratedCaseCandidate) -> Complexity:
             if value in ("BAJA", "MEDIA", "ALTA"):
                 return value  # type: ignore[return-value]
     steps = len(candidate.steps)
-    if candidate.basic_validation and steps <= 1 and not candidate.requires_condition:
+    variants = 0
+    table = candidate.variant_table or candidate.test_data or ""
+    if table:
+        variants = max(len([line for line in str(table).splitlines() if line.strip()]) - 1, 0)
+    if candidate.basic_validation and steps <= 1 and not candidate.requires_condition and variants <= 1:
         return "BAJA"
-    if steps >= 4 or candidate.confidence == "low":
+    if steps >= 5 or variants >= 4 or candidate.confidence == "low":
         return "ALTA"
-    if candidate.requires_condition or steps >= 2 or candidate.confidence == "medium":
+    if candidate.requires_condition or steps >= 3 or variants >= 2 or candidate.confidence == "medium":
         return "MEDIA"
     return "BAJA"
 

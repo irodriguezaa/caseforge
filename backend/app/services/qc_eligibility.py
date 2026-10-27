@@ -22,6 +22,11 @@ _USER_ACTOR = re.compile(
     r"\b((el|la|los|las|un|una) usuari[oa]s?|el cliente|el espectador|el perfil)\b",
     re.IGNORECASE,
 )
+_STORY_NON_USER = re.compile(
+    r"como (tech lead|\btl\b|desarrollador|equipo de desarrollo|f[aá]brica|"
+    r"arquitectura|plataforma)\b",
+    re.IGNORECASE,
+)
 _APP_PRESENTS = re.compile(
     r"\b(arranca|se presenta(n)?|se muestra(n)?|se pinta(n)?|"
     r"se abre(n)?|se visualiza(n)?)\b",
@@ -45,12 +50,15 @@ _OFF_DEVICE = re.compile(
 _VISIBLE_THEN = re.compile(
     r"\b(se muestra(n)?|se visualiza(n)?|se pinta(n)?|se abre(n)?|se oculta(n)?|"
     r"no se muestra(n)?|deben? mostrar(se)?|debe visualizarse|redirige|se reproduce|"
-    r"mensaje de error|se cierra|se reanuda|"
+    r"mensaje de error|se cierra|se reanuda|se ven\b|"
     r"contin[uú]a la reproducci[oó]n|se aplica(n)?|"
     r"permanece en la pantalla|errores de renderizado|layout aprobado|"
     r"no debe presentar errores|no se rompe|transiciona|renderiza|"
     r"deja de mostrar|primera pantalla|se presenta(n)?|pantalla vac[ií]a|"
-    r"ve (el|la|los|las)|muestra el|muestra la|inicia sesi[oó]n)\b",
+    r"ve (el|la|los|las)|muestra el|muestra la|inicia sesi[oó]n|"
+    r"reflej|sincroniz|icono|ícono|estructura|texto de error|"
+    r"espacio donde|elementos|se pausa|se solicita|se mueve|"
+    r"vinculaci[oó]n no se completa|se permite)\b",
     re.IGNORECASE,
 )
 _CONSUMED = re.compile(
@@ -65,7 +73,8 @@ _GENERIC_REGRESSION = re.compile(
 _DOCUMENT_SURFACE = re.compile(
     r"\b(listado|inventario|manifiesto|documentaci[oó]n|"
     r"cat[aá]logo de pantallas|cat[aá]logo entregado|"
-    r"entrega a arquitectura|cierre de ficha)\b",
+    r"entrega a arquitectura|cierre de ficha|"
+    r"queda registrada|registro del tama[nñ]o)\b",
     re.IGNORECASE,
 )
 
@@ -77,7 +86,7 @@ _SURFACES: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("marca-operacion", re.compile(r"operaciones distintas|distintos por operaci[oó]n", re.I)),
     ("marca-modales", re.compile(r"modal.{0,60}pin|modal de perfil", re.I)),
     ("marca-chrome", re.compile(
-        r"identidad visual|imagen de (la )?marca|en cada ubicaci[oó]n|nodo del men[uú]|"
+        r"identidad visual|imagen de (la )?marca|logotipo|en cada ubicaci[oó]n|nodo del men[uú]|"
         r"se visualiza(n)? con su dimensi[oó]n",
         re.I,
     )),
@@ -108,7 +117,6 @@ _SURFACES: tuple[tuple[str, re.Pattern[str]], ...] = (
 _CRITERIO_ACTOR = "actor no es el usuario final de la app"
 _CRITERIO_SUPERFICIE = "no hay superficie visible en el dispositivo"
 _CRITERIO_VERIFICACION = "el resultado no se verifica mirando el dispositivo"
-_CRITERIO_DUDA = "duda: no hay actor de usuario, superficie y verificación de dispositivo a la vez"
 
 
 @dataclass
@@ -125,15 +133,17 @@ class Eligibility:
 
     @property
     def ledger_estado(self) -> str:
-        if self.pending or self.ok is False and not self.reasons:
+        if self.pending:
             return "pendiente de revisión QC"
+        if self.ok:
+            return "caso ejecutable"
         return "verificación técnica"
 
     @property
     def ledger_motivo(self) -> str:
         if self.reasons:
             return "; ".join(self.reasons)
-        return _CRITERIO_DUDA
+        return _CRITERIO_THEN
 
 
 def _clauses(body: str, pattern: re.Pattern[str]) -> str:
@@ -152,63 +162,185 @@ def detect_surface(title: str, body: str) -> str | None:
         blob = f"{title}\n{when}\n{then}"
     if _DOCUMENT_SURFACE.search(title or "") or _OFF_DEVICE.search(title or ""):
         return None
+    if _DOCUMENT_SURFACE.search(then):
+        return None
     if _OFF_DEVICE.search(when) and not _VISIBLE_THEN.search(then):
         return None
     if re.search(r"se ven igual que en la versi[oó]n anterior", blob, re.I):
         return "impacto-app"
+    if _GENERIC_REGRESSION.search(blob):
+        return "impacto-app"
     for key, pattern in _SURFACES:
         if pattern.search(blob):
+            if key == "marca-placeholder" and re.search(r"logotipo", blob, re.I):
+                continue
             return key
-    if _GENERIC_REGRESSION.search(blob):
-        return "regresion-generica"
     return None
+
+
+_NON_OBSERVABLE = re.compile(
+    r"\b(servicio|api\b|petici[oó]n|endpoint|llaves?|"
+    r"apa/metadata|apa/assets|manifiesto|"
+    r"m[eé]trica|\bdat\b|datadog|\blogs?\b|build|pipeline|c[oó]digo|"
+    r"inventario|hash|formaliz|consultar la llave|valor (efectivo|por defecto)|"
+    r"evento[s]? (de telemetr|\w+\.\w+)|se recupera del|consulta de pa[ií]s|"
+    r"gco|backend|embebido|remot[oa]s?|documentaci[oó]n)\b",
+    re.IGNORECASE,
+)
+_ROBUST_CONSUMPTION = re.compile(
+    r"no se logra obtener|se encuentra vac[ií]a",
+    re.IGNORECASE,
+)
+_UNREADABLE_THEN = re.compile(
+    r"demo mostrar|siguientes elementos\s*:?\s*$|<\s*>|^\s*[.:;,-]*\s*$",
+    re.IGNORECASE,
+)
+_CRITERIO_THEN = "Then vacío, ilegible o contradictorio"
+
+
+def result_clauses(body: str) -> list[str]:
+    """Then and the And/But that follow it, not Given/When And."""
+    clauses: list[str] = []
+    capturing = False
+    for raw in (body or "").splitlines():
+        line = raw.strip()
+        if re.match(r"^\s*(Then|Entonces)\b", line, re.I):
+            capturing = True
+            clauses.append(re.sub(r"^\s*(Then|Entonces)\s*", "", line, flags=re.I).strip())
+        elif capturing and re.match(r"^\s*(And|Y|Pero|But)\b", line, re.I):
+            clauses.append(re.sub(r"^\s*(And|Y|Pero|But)\s*", "", line, flags=re.I).strip())
+        elif capturing and re.match(r"^\s*(Given|Dado|When|Cuando|Scenario)\b", line, re.I):
+            capturing = False
+    return [item for item in clauses if item]
+
+
+def _normalize_verbs(text: str) -> str:
+    out = text or ""
+    out = re.sub(r"\bno\s+deben?\s+mostrarse\b", "no se muestra", out, flags=re.I)
+    out = re.sub(r"\bdeben?\s+mostrarse\b", "se muestra", out, flags=re.I)
+    out = re.sub(r"\bmostrarse\b", "se muestra", out, flags=re.I)
+    out = re.sub(r"\bno\s+mostrar\b", "no se muestra", out, flags=re.I)
+    out = re.sub(r"\bdebe mostrar\b", "se muestra", out, flags=re.I)
+    out = re.sub(r"\bredirigir\b", "redirige", out, flags=re.I)
+    out = re.sub(r"\bpermitir\s+", "se permite ", out, flags=re.I)
+    out = re.sub(r"\bocultarse\b", "se oculta", out, flags=re.I)
+    return out
+
+
+def _clause_kind(text: str) -> str:
+    blob = _normalize_verbs(text or "")
+    tech = bool(_NON_OBSERVABLE.search(blob) or _OFF_DEVICE.search(blob))
+    ui = bool(_VISIBLE_THEN.search(blob) or _APP_PRESENTS.search(blob))
+    if tech and not ui:
+        return "tech"
+    if tech and ui and re.search(
+        r"\b(backend|embebido|remot[oa]s?|valor por defecto compilado)\b", blob, re.I
+    ):
+        return "tech"
+    return "visible"
+
+
+def _then_is_broken(clauses: list[str]) -> str:
+    text = " ".join(clauses).strip()
+    if not text:
+        return _CRITERIO_THEN
+    if _UNREADABLE_THEN.search(text):
+        return _CRITERIO_THEN
+    positives = {
+        re.sub(r"\bno\s+", "", _normalize_verbs(item), flags=re.I).lower()
+        for item in clauses
+        if not re.search(r"\bno\s+", item, re.I)
+    }
+    for item in clauses:
+        if not re.search(r"\bno\s+", item, re.I):
+            continue
+        core = re.sub(r"\bno\s+", "", _normalize_verbs(item), flags=re.I).lower()
+        if core in positives:
+            return _CRITERIO_THEN
+    return ""
+
+
+def is_robust_consumption(title: str, body: str = "") -> bool:
+    return bool(_ROBUST_CONSUMPTION.search(f"{title}\n{body}"))
+
+
+def split_visible_technical(body: str, title: str = "") -> tuple[list[str], list[str]]:
+    clauses = result_clauses(body)
+    if not clauses and title:
+        clauses = [title]
+    visible = [item for item in clauses if _clause_kind(item) == "visible"]
+    technical = [item for item in clauses if _clause_kind(item) == "tech"]
+    return visible, technical
 
 
 def evaluate_scenario(title: str, body: str, summary: str = "") -> Eligibility:
     blob = f"{summary}\n{title}\n{body}"
     when = _clauses(body, _WHEN) or title
-    then = _clauses(body, _THEN) or body
+    then_parts = result_clauses(body)
+    then_norm = _normalize_verbs(" ".join(then_parts))
+    visible_cs, tech_cs = split_visible_technical(body, title)
     surface = detect_surface(title, body)
-    if (not surface or surface == "regresion-generica") and _VISIBLE_THEN.search(then or title):
+    if not surface and visible_cs:
         surface = "ui-visible"
+    if surface == "regresion-generica":
+        surface = "impacto-app"
     specific = bool(surface) and surface not in {"regresion-generica", "impacto-app", "ui-visible"}
     consumed = bool(_CONSUMED.search(blob))
     generic = bool(_GENERIC_REGRESSION.search(blob)) or surface in {"regresion-generica", "impacto-app"}
 
-    non_user = bool(_NON_USER_ACTOR.search(when) or _NON_USER_ACTOR.search(title))
+    non_user = bool(
+        _NON_USER_ACTOR.search(when)
+        or _NON_USER_ACTOR.search(title)
+        or _STORY_NON_USER.search(summary or "")
+        or _STORY_NON_USER.search(when)
+    )
     user = bool(_USER_ACTOR.search(when) or _USER_ACTOR.search(title))
-    visible = bool(_VISIBLE_THEN.search(then) or _VISIBLE_THEN.search(title))
+    ui_then = bool(_VISIBLE_THEN.search(then_norm) or _APP_PRESENTS.search(then_norm))
+    ui_hit = any(
+        _VISIBLE_THEN.search(_normalize_verbs(item)) or _APP_PRESENTS.search(item)
+        for item in visible_cs
+    )
+    visible = bool(ui_hit) or (bool(visible_cs) and not tech_cs)
+    if _OFF_DEVICE.search(when) and not ui_then:
+        visible = False
+        visible_cs = []
     if non_user and not user:
-        actor_ok: bool | None = False
+        actor_ok: bool | None = True if (
+            ui_then or _APP_PRESENTS.search(when) or generic
+        ) else False
     else:
         actor_ok = True
 
-    if specific:
-        surface_ok: bool | None = True
-    elif user and visible:
-        surface_ok = True
-    elif _DOCUMENT_SURFACE.search(title) and not _VISIBLE_THEN.search(then):
-        surface_ok = False
-    elif generic:
-        surface_ok = False
-    else:
-        surface_ok = False if not _VISIBLE_THEN.search(then) else None
-
-    off_title = bool(_OFF_DEVICE.search(title))
-    off_then = bool(_OFF_DEVICE.search(then))
-    off_any = bool(_OFF_DEVICE.search(blob))
-    if off_title and not visible:
+    all_tech = bool(tech_cs) and not visible_cs
+    broken = _then_is_broken(then_parts)
+    if broken:
+        surface_ok: bool | None = False
         device_ok: bool | None = False
-    elif off_any and not visible:
-        device_ok = False
-    elif visible and not off_title:
-        device_ok = True
-    elif off_then and not visible:
-        device_ok = False
-    elif specific and not visible:
-        device_ok = False
+        reasons = [broken]
+        return Eligibility(
+            ok=False,
+            pending=True,
+            actor_ok=actor_ok,
+            surface_ok=surface_ok,
+            device_ok=device_ok,
+            surface=surface,
+            consumed=consumed,
+            generic_regression=generic,
+            reasons=reasons,
+        )
+
+    if _DOCUMENT_SURFACE.search(title or "") and all_tech:
+        surface_ok = False
+    elif visible or specific:
+        surface_ok = True
+    elif generic and all_tech:
+        surface_ok = False
+    elif all_tech:
+        surface_ok = False
     else:
-        device_ok = True if visible else None
+        surface_ok = True
+
+    device_ok = True if visible else False
 
     reasons: list[str] = []
     if actor_ok is False:
@@ -218,11 +350,8 @@ def evaluate_scenario(title: str, body: str, summary: str = "") -> Eligibility:
     if device_ok is False:
         reasons.append(_CRITERIO_VERIFICACION)
 
-    doubt = actor_ok is None or surface_ok is None or device_ok is None
     ok = actor_ok is True and surface_ok is True and device_ok is True
-    pending = (not ok) and doubt and not reasons
-    if pending:
-        reasons = [_CRITERIO_DUDA]
+    pending = False
     return Eligibility(
         ok=ok,
         pending=pending,
@@ -282,6 +411,8 @@ def detect_entry(title: str, body: str, surface: str | None = None) -> str:
     for key, pattern in _ENTRY:
         if pattern.search(blob):
             if key == "con-sesion" and re.search(r"sin identificador|sin sesi[oó]n", blob, re.I):
+                continue
+            if key == "placeholder" and re.search(r"logotipo", blob, re.I):
                 continue
             return key
     if surface == "primera-sin-sesion":
@@ -352,12 +483,120 @@ _NAMED_IMPACT_SURFACES = (_SAME_BUG_SURFACES | {"boton", "home", "player", "chec
 def is_consumed_device_impact(elig: Eligibility) -> bool:
     """Technical Then on a consumed config that still names a user-visible surface."""
     return (
-        elig.actor_ok is not False
-        and elig.device_ok is False
+        elig.device_ok is False
         and elig.surface_ok is True
         and elig.consumed
         and (elig.surface or "") in _NAMED_IMPACT_SURFACES
     )
+
+
+@dataclass
+class SelectedGherkin:
+    story_key: str
+    title: str
+    body: str
+    group: str
+    kind: str
+
+
+def select_qc_gherkin(
+    epic_key: str,
+    rows: list[tuple[str, str, str, str]],
+) -> tuple[list[SelectedGherkin], list[dict]]:
+    """Shared gate: direct pass, one impact per surface, rest to ledger. No engine-specific rules."""
+    kept: list[SelectedGherkin] = []
+    dropped: list[dict] = []
+    direct_groups: set[str] = set()
+    classified: list[tuple[str, str, str, str, Eligibility]] = []
+    any_consumed = False
+    for story_key, title, body, summary in rows:
+        elig = evaluate_scenario(title, body, summary)
+        classified.append((story_key, title, body, summary, elig))
+        blob = f"{summary}\n{title}\n{body}"
+        if elig.consumed or _CONSUMED.search(blob):
+            any_consumed = True
+        group = surface_group_key(epic_key, elig.surface, title, story_key, body)
+        if elig.ok:
+            kept.append(SelectedGherkin(story_key, title, body, group, "directo"))
+            direct_groups.add(group)
+            continue
+        dropped.append(
+            {
+                "story": story_key,
+                "epic": epic_key,
+                "scenario": title,
+                "estado": elig.ledger_estado,
+                "motivo": elig.ledger_motivo,
+                "case_id": "",
+                "surface_group": group,
+            }
+        )
+
+    impact_groups: set[str] = set()
+    revived: list[SelectedGherkin] = []
+    note = "cubierto por el caso de la misma superficie y condición de entrada"
+    still_dropped: list[dict] = []
+    for story_key, title, body, summary, elig in classified:
+        if elig.ok:
+            continue
+        group = surface_group_key(epic_key, elig.surface, title, story_key, body)
+        row = next(
+            (item for item in dropped if item["story"] == story_key and item["scenario"] == title),
+            None,
+        )
+        blob = f"{summary}\n{title}\n{body}"
+        if is_consumed_device_impact(elig):
+            if group in direct_groups or group in impact_groups:
+                if row is not None:
+                    row["motivo"] = f"{row.get('motivo')}; {note}".strip("; ")
+                    still_dropped.append(row)
+                continue
+            action, then = impact_user_view(elig.surface or "", title)
+            revived.append(
+                SelectedGherkin(
+                    story_key,
+                    title,
+                    f"When {action}\nThen {then}",
+                    group,
+                    "impacto",
+                )
+            )
+            impact_groups.add(group)
+            continue
+        surface = detect_surface(title, body)
+        generic = elig.generic_regression or bool(
+            re.search(r"comportamiento de la aplicaci[oó]n|sin regresiones", blob, re.I)
+        )
+        if (
+            any_consumed
+            and generic
+            and (not surface or surface in {"regresion-generica", "ui-visible", "impacto-app", None})
+        ):
+            group = f"{epic_key}|impacto-app"
+            if group in direct_groups:
+                if row is not None:
+                    row["motivo"] = f"{row.get('motivo')}; {note}".strip("; ")
+                    still_dropped.append(row)
+                continue
+            revived.append(
+                SelectedGherkin(
+                    story_key,
+                    title,
+                    "When el usuario abre las pantallas afectadas\n"
+                    "Then se ven igual que en la versión anterior",
+                    group,
+                    "impacto",
+                )
+            )
+            continue
+        if row is not None:
+            still_dropped.append(row)
+    kept.extend(revived)
+    drop_keys = {(item.story_key, item.title) for item in kept}
+    leftover = [
+        row for row in dropped if (row["story"], row["scenario"]) not in drop_keys
+    ]
+    return kept, leftover
 
 
 def impact_user_view(surface: str, title: str) -> tuple[str, str]:
@@ -372,7 +611,7 @@ def impact_user_view(surface: str, title: str) -> tuple[str, str]:
         return ("el usuario abre la pantalla", "se muestra el logotipo en esa pantalla")
     if surface == "texto-ui" or re.search(r"textos?", blob, re.I):
         return ("el usuario abre la pantalla", "se muestra el texto vigente")
-    return ("el usuario abre la pantalla afectada", "se muestra el cambio en esa pantalla")
+    return ("el usuario abre la pantalla afectada", "se ve el efecto del cambio en el dispositivo")
 
 
 def _annotate_covered_surface(stats: GenerationStats, story_key: str, title: str) -> None:
@@ -395,7 +634,11 @@ def synthesize_impact_units(
     existing_units: list[CoverageUnit] | None = None,
 ) -> list[CoverageUnit]:
     """One impact case per affected user surface when consumed config is not device-verifiable."""
-    existing_groups = {unit.scenario_group for unit in (existing_units or []) if unit.scenario_group}
+    existing_groups = {
+        (unit.scenario_group, unit.story_key)
+        for unit in (existing_units or [])
+        if unit.scenario_group
+    }
     consumed = False
     want_named: dict[str, list[tuple[dict, dict]]] = {}
     want_generic: dict[str, list[tuple[dict, dict]]] = {}
@@ -414,7 +657,7 @@ def synthesize_impact_units(
             continue
         if is_consumed_device_impact(elig):
             group = surface_group_key(epic_key, elig.surface, title, story_key, body)
-            if group in existing_groups:
+            if (group, story_key) in existing_groups:
                 _annotate_covered_surface(stats, story_key, title)
                 continue
             want_named.setdefault(group, []).append((story, block))

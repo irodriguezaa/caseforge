@@ -14,7 +14,8 @@ from app.schemas.case_generation import (
     GenerationStats,
 )
 from app.services.qc_v2 import ENGINE_TAG
-from app.services.qc_v2.collect import EpicBundle, JiraReader, collect_epic
+from app.services.qc_eligibility import evaluate_scenario, select_qc_gherkin
+from app.services.qc_v2.collect import EpicBundle, Item, JiraReader, collect_epic
 from app.services.qc_v2.context import DeviceContext, device_context
 from app.services.qc_v2.llm import QuotaExhausted, chat_json
 from app.services.qc_v2.stages import (
@@ -39,6 +40,61 @@ _SITUACION = {
 }
 
 
+def apply_positive_filter(bundle: EpicBundle) -> tuple[list[dict], list[tuple[str, str, str]]]:
+    """Keep only QC-eligible Gherkin/CRN (and impact units). Shared rules live in qc_eligibility."""
+    ledger: list[dict] = []
+    aliases: list[tuple[str, str, str]] = []
+    for story in bundle.technical_stories:
+        rows = [(story.key, item.title, item.text, story.summary) for item in story.scenarios]
+        kept, dropped = select_qc_gherkin(bundle.key, rows)
+        ledger.extend(dropped)
+        by_title = {item.title: item for item in story.scenarios}
+        used: set[str] = set()
+        new_items: list[Item] = []
+        for selected in kept:
+            item = by_title.get(selected.title)
+            if item is None:
+                continue
+            if selected.group in used:
+                ledger.append(
+                    {
+                        "story": selected.story_key,
+                        "epic": bundle.key,
+                        "scenario": selected.title,
+                        "estado": "verificación técnica",
+                        "motivo": "cubierto por el caso de la misma superficie y condición de entrada",
+                        "case_id": "",
+                    }
+                )
+                aliases.append((selected.story_key, selected.title, new_items[-1].id if new_items else item.id))
+                continue
+            used.add(selected.group)
+            text = selected.body
+            new_items.append(Item(item.id, item.title, text, item.source_key))
+            aliases.append((selected.story_key, selected.title, item.id))
+        story.scenarios = new_items
+    for story in bundle.user_stories:
+        kept_crn: list[Item] = []
+        for item in story.criteria:
+            elig = evaluate_scenario(item.title, item.text, story.summary)
+            if elig.ok:
+                kept_crn.append(item)
+                aliases.append((story.key, item.title, item.id))
+            else:
+                ledger.append(
+                    {
+                        "story": story.key,
+                        "epic": bundle.key,
+                        "scenario": item.title,
+                        "estado": elig.ledger_estado,
+                        "motivo": elig.ledger_motivo,
+                        "case_id": "",
+                    }
+                )
+        story.criteria = kept_crn
+    return ledger, aliases
+
+
 @dataclass
 class EpicRun:
     bundle: EpicBundle
@@ -46,6 +102,7 @@ class EpicRun:
     stage_b: list[StageBResult] = field(default_factory=list)
     candidates: list[GeneratedCaseCandidate] = field(default_factory=list)
     ledger: list[dict[str, Any]] = field(default_factory=list)
+    qc_aliases: list[tuple[str, str, str]] = field(default_factory=list)
     ms: int = 0
     llm_calls: int = 0
     prompt_tokens: int = 0
@@ -128,7 +185,36 @@ def _to_candidate(
 
 def _ledger(run: EpicRun) -> list[dict[str, Any]]:
     bundle, stage_a = run.bundle, run.stage_a
-    rows: list[dict[str, Any]] = []
+    rows: list[dict[str, Any]] = list(run.ledger)
+    names_by_id: dict[str, list[str]] = {}
+    for candidate in run.candidates:
+        for cid in candidate.covers or []:
+            names_by_id.setdefault(cid, []).append(candidate.name)
+    seen_jira: set[tuple[str, str]] = {
+        (str(row.get("story") or ""), str(row.get("scenario") or "")) for row in rows
+    }
+    for story, title, cov_id in run.qc_aliases:
+        key = (story, title)
+        names = names_by_id.get(cov_id) or []
+        if names:
+            if key in seen_jira:
+                for row in rows:
+                    if row.get("story") == story and row.get("scenario") == title:
+                        row["estado"] = "caso ejecutable"
+                        row["case_id"] = "; ".join(names)
+                        row["motivo"] = ""
+                continue
+            rows.append(
+                {
+                    "story": story,
+                    "epic": bundle.key,
+                    "scenario": title,
+                    "estado": "caso ejecutable",
+                    "case_id": "; ".join(names),
+                    "motivo": "",
+                }
+            )
+            seen_jira.add(key)
     for warning in bundle.warnings:
         rows.append({"story": bundle.key, "epic": bundle.key, "scenario": "Aviso", "estado": "aviso", "case_id": "", "motivo": warning})
     if run.error:
@@ -151,7 +237,18 @@ def _ledger(run: EpicRun) -> list[dict[str, Any]]:
         elif scenario is None:
             rows.append({"story": item.source_key, "epic": bundle.key, "scenario": label, "estado": "pendiente de revisión QC", "case_id": "", "motivo": "sin cobertura en v2 (revisar)"})
         elif scenario.id in errors_by_scenario:
-            rows.append({"story": item.source_key, "epic": bundle.key, "scenario": label, "estado": "error", "case_id": "", "motivo": f"{scenario.id}: {errors_by_scenario[scenario.id]}"})
+            err = str(errors_by_scenario[scenario.id] or "")
+            ia_fail = "error de IA" in err
+            rows.append(
+                {
+                    "story": item.source_key,
+                    "epic": bundle.key,
+                    "scenario": label,
+                    "estado": "no evaluado por error de IA" if ia_fail else "error",
+                    "case_id": "",
+                    "motivo": "no evaluado por error de IA" if ia_fail else f"{scenario.id}: {err}",
+                }
+            )
         else:
             rows.append({
                 "story": item.source_key,
@@ -179,15 +276,53 @@ def _ledger(run: EpicRun) -> list[dict[str, Any]]:
 def run_epic(bundle: EpicBundle, ctx: DeviceContext, chat: ChatFn = chat_json) -> EpicRun:
     started = time.monotonic()
     run = EpicRun(bundle=bundle)
+    run.ledger, run.qc_aliases = apply_positive_filter(bundle)
     if not bundle.covs and not bundle.crns:
         run.error = "sin contenido en Jira para generar"
         run.ledger = _ledger(run)
         return run
-    run.stage_a = run_stage_a(bundle, ctx, chat=chat)
-    if run.stage_a.error:
+    try:
+        run.stage_a = run_stage_a(bundle, ctx, chat=chat)
+    except QuotaExhausted:
+        run.ledger.append(
+            {
+                "story": bundle.key,
+                "epic": bundle.key,
+                "scenario": "IA",
+                "estado": "no evaluado por error de IA",
+                "motivo": "no evaluado por error de IA",
+                "case_id": "",
+            }
+        )
+        run.ms = int((time.monotonic() - started) * 1000)
+        run.ledger = _ledger(run)
+        return run
+    if (run.stage_a.error or "") == "no evaluado por error de IA":
+        run.ledger.append(
+            {
+                "story": bundle.key,
+                "epic": bundle.key,
+                "scenario": "IA",
+                "estado": "no evaluado por error de IA",
+                "motivo": "no evaluado por error de IA",
+                "case_id": "",
+            }
+        )
+    elif run.stage_a.error:
         run.error = f"Etapa A: {run.stage_a.error}"
     else:
         run.stage_b = run_stage_b(bundle, ctx, run.stage_a, chat=chat)
+        if any((row.error or "") == "no evaluado por error de IA" for row in run.stage_b):
+            run.ledger.append(
+                {
+                    "story": bundle.key,
+                    "epic": bundle.key,
+                    "scenario": "IA",
+                    "estado": "no evaluado por error de IA",
+                    "motivo": "no evaluado por error de IA",
+                    "case_id": "",
+                }
+            )
         run_stage_c(run.stage_b)
         by_id = {s.id: s for s in run.stage_a.scenarios}
         for result in run.stage_b:
@@ -225,11 +360,19 @@ def run_epics(
     for bundle in bundles:
         try:
             runs.append(run_epic(bundle, ctx, chat=chat))
-        except QuotaExhausted as exc:
-            run = EpicRun(bundle=bundle, error=f"corrida detenida: {exc}")
-            run.ledger = _ledger(run)
+        except QuotaExhausted:
+            run = EpicRun(bundle=bundle)
+            run.ledger = [
+                {
+                    "story": bundle.key,
+                    "epic": bundle.key,
+                    "scenario": "IA",
+                    "estado": "no evaluado por error de IA",
+                    "case_id": "",
+                    "motivo": "no evaluado por error de IA",
+                }
+            ]
             runs.append(run)
-            break
     return runs
 
 
@@ -250,10 +393,13 @@ def generate_release_v2(
     stats.scenario_ledger = [row for run in runs for row in run.ledger]
     details = [run.summary() for run in runs]
     details += [f"{run.bundle.key} aviso: {w}" for run in runs for w in run.bundle.warnings]
-    quota_stop = any((run.error or "").startswith("corrida detenida") for run in runs)
+    quota_stop = any(
+        row.get("estado") == "no evaluado por error de IA"
+        for run in runs
+        for row in run.ledger
+    )
     if quota_stop:
-        message = "La corrida se detuvo: OpenAI no tiene créditos. Recarga saldo y vuelve a generar."
-        candidates = []
+        message = "La IA no evaluó algunos escenarios (error de IA). Se conservan los casos deterministas."
     elif candidates:
         message = f"QcPulse v2 propuso {len(candidates)} caso(s). La IA propone; QC decide."
     else:

@@ -679,11 +679,19 @@ def _rewrite_one(
             meta["rejections"].append({"attempt": attempt + 1, "reasons": [last_error]})
             feedback = last_error
             logger.warning("scenario LLM rewrite failed attempt=%s error=%s", attempt + 1, last_error)
+            if any(token in last_error.lower() for token in ("429", "timeout", "quota", "rate limit")):
+                meta["error"] = "no evaluado por error de IA"
+                meta["ms"] = int((time.perf_counter() - started) * 1000)
+                if base.steps:
+                    return base.model_copy(deep=True), meta
+                break
     meta["error"] = last_error
     meta["ms"] = int((time.perf_counter() - started) * 1000)
     if base.steps:
+        if last_error and any(token in last_error.lower() for token in ("429", "timeout", "quota", "rate limit")):
+            meta["error"] = "no evaluado por error de IA"
         return base.model_copy(deep=True), meta
-    return _mark_pending(base, last_error or "LLM no redactó un caso válido"), meta
+    return _mark_pending(base, "LLM no redactó un caso válido"), meta
 
 
 def rewrite_scenario_candidates(

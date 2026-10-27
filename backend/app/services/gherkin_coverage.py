@@ -44,6 +44,7 @@ from app.services.qc_eligibility import (
     collapse_redundant_surfaces,
     evaluate_scenario,
     has_end_user_actor,
+    is_robust_consumption,
     surface_group_key,
     synthesize_impact_units,
 )
@@ -131,7 +132,11 @@ def _fill_placeholders(
             if not value:
                 continue
             out = re.sub(rf"<{re.escape(str(key))}>", str(value), out, flags=re.I)
-    return re.sub(r"<([A-Za-zÁ-ú_][\wÁ-ú]*)>", r"\1", out)
+    out = re.sub(r"<([A-Za-zÁ-ú_][\wÁ-ú]*)>", r"\1", out)
+    out = re.sub(r"@([A-Za-z_]\w*)", r"\1", out)
+    out = re.sub(r"\[#\]\.(\w+)", r"\1", out)
+    out = re.sub(r"Valor\s*<\s*", "valor ", out, flags=re.I)
+    return out
 
 
 def _is_functional_source(item: dict[str, Any]) -> bool:
@@ -705,11 +710,12 @@ def parse_gherkin_blocks(description: str) -> list[dict[str, Any]]:
         is_outline = "outline" in kind or "esquemático" in kind
         examples = _parse_examples(body) if is_outline else []
         scenario_body = _EXAMPLES_SPLIT.split(body, maxsplit=1)[0]
+        title, scenario_body = expand_for_eval(title, scenario_body.strip(), examples)
         blocks.append(
             {
                 "title": title,
                 "outline": is_outline,
-                "body": scenario_body.strip(),
+                "body": scenario_body,
                 "examples": examples,
             }
         )
@@ -721,6 +727,68 @@ def parse_gherkin_blocks(description: str) -> list[dict[str, Any]]:
     remainder_parts.append(description[cursor:])
     blocks.extend(_parse_headless_gwt("\n".join(remainder_parts)))
     return blocks
+
+
+def attach_step_payloads(body: str) -> str:
+    """Join each DataTable/DocString onto the Gherkin step that precedes it."""
+    out: list[str] = []
+    payload: list[str] = []
+    in_doc = False
+
+    def flush() -> None:
+        nonlocal payload
+        if payload and out:
+            extra = re.sub(r"\s+", " ", " ".join(part for part in payload if part)).strip()
+            if extra:
+                out[-1] = f"{out[-1].rstrip()} {extra}".strip()
+        payload = []
+
+    for raw in (body or "").splitlines():
+        stripped = raw.strip()
+        if in_doc:
+            if stripped in {'"""', "'''"}:
+                in_doc = False
+                flush()
+                continue
+            payload.append(stripped)
+            continue
+        if stripped in {'"""', "'''"}:
+            in_doc = True
+            continue
+        if stripped.startswith("|"):
+            cells = [cell.strip() for cell in stripped.strip("|").split("|") if cell.strip()]
+            if cells:
+                payload.append(", ".join(cells))
+            continue
+        if (
+            out
+            and stripped
+            and not re.match(
+                r"^\s*(Given|Dado|When|Cuando|Then|Entonces|And|Y|But|Pero|"
+                r"Scenario|Escenario|Examples|Ejemplos|Feature|Rule|Background)\b",
+                stripped,
+                re.I,
+            )
+            and not stripped.startswith("#")
+        ):
+            payload.append(stripped)
+            continue
+        flush()
+        out.append(raw)
+    flush()
+    return "\n".join(out)
+
+
+def expand_for_eval(
+    title: str, body: str, examples: list[dict[str, str]] | None = None
+) -> tuple[str, str]:
+    """Fill Outline Examples and attach tables before eligibility runs."""
+    attached = attach_step_payloads(body or "")
+    rows = list(examples or [])
+    if rows:
+        title = _fill_placeholders(title, rows[0], rows)
+        attached = _fill_placeholders(attached, rows[0], rows)
+    return title, attached
 
 
 def _parse_examples(body: str) -> list[dict[str, str]]:
@@ -1094,9 +1162,7 @@ def _merge_scroll_family(
 def _merge_key_degradation_family(
     coverable: list[tuple[dict[str, Any], ScenarioClassification]],
 ) -> list[tuple[dict[str, Any], ScenarioClassification]]:
-    """Same-story legend keys merge only when the functional observable matches."""
-    from app.services.functional_equivalence import normalize_observable_text
-
+    """Same-story robustness of missing/empty consumed config: one case per surface."""
     if len(coverable) < 2:
         return coverable
     matched: list[tuple[dict[str, Any], ScenarioClassification]] = []
@@ -1104,6 +1170,11 @@ def _merge_key_degradation_family(
     for block, clf in coverable:
         blob = f"{block.get('title') or ''}\n{block.get('body') or ''}"
         if _KEY_DEGRADATION.search(blob):
+            from app.services.qc_eligibility import detect_surface
+
+            surface = detect_surface(block.get("title") or "", block.get("body") or "") or "superficie"
+            block = dict(block)
+            block["_robust_surface"] = surface
             matched.append((block, clf))
         else:
             rest.append((block, clf))
@@ -1112,8 +1183,7 @@ def _merge_key_degradation_family(
     buckets: dict[str, list[tuple[dict[str, Any], ScenarioClassification]]] = {}
     order: list[str] = []
     for block, clf in matched:
-        obs = " ".join(clf.observable_then or clf.qc_observables or [block.get("title") or ""])
-        key = normalize_observable_text(obs)
+        key = str(block.get("_robust_surface") or "superficie")
         if key not in buckets:
             order.append(key)
         buckets.setdefault(key, []).append((block, clf))
@@ -1261,8 +1331,15 @@ def _units_from_story_blocks(
         body = block["body"]
         source_origin = str(block.get("source_origin") or "gherkin")
         user_action = _pick_user_action(clf)
-        elig = evaluate_scenario(title, body, story_summary)
-        if not elig.ok:
+        title, body = expand_for_eval(title, body, block.get("examples") or [])
+        framing = ""
+        match = re.search(r"Como [^\n]+", story.get("description") or "")
+        if match:
+            framing = match.group(0)
+        elig = evaluate_scenario(title, body, f"{story_summary}\n{framing}")
+        if not elig.ok and not (
+            is_robust_consumption(title, body) and elig.actor_ok is not False
+        ):
             ledger_motivo = elig.ledger_motivo
             if is_key_config_scenario(title, body):
                 ledger_motivo = f"{ledger_motivo}; llave de configuración/metadata"
@@ -1285,19 +1362,7 @@ def _units_from_story_blocks(
                 }
             )
             continue
-        if source_origin != "gherkin" and not has_end_user_actor(f"{title}\n{body}"):
-            stats.scenario_ledger.append(
-                {
-                    "story": story_key or "",
-                    "epic": epic_key or "",
-                    "scenario": title,
-                    "estado": "verificación técnica",
-                    "motivo": "criterio de épica sin escenario de usuario",
-                    "case_id": "",
-                }
-            )
-            continue
-        if not user_action:
+        if not user_action and source_origin == "gherkin":
             user_action = "el usuario abre la aplicación"
         if block.get("_qc_extra"):
             extra_support = "; ".join(
@@ -1350,12 +1415,14 @@ def _units_from_story_blocks(
                     technical_notes=notes,
                 )
             else:
-                extra_rules.append("pendiente-qc:sin acción de usuario en Jira")
+                extra_rules.append("verificacion-tecnica")
                 clf = replace(
                     clf,
                     role="G",
                     technical_notes=notes,
                 )
+                if not user_action:
+                    user_action = f"el usuario verifica {title}"
         elif technical_then and user_action:
             extra_rules.append("regresion-funcional")
             notes = list(clf.technical_notes or [])
@@ -1551,7 +1618,15 @@ def _units_from_story_blocks(
             unit.feature_background = preamble
     for unit in units:
         grouped = evaluate_scenario(unit.scenario, unit.body, unit.story_summary or "")
-        if grouped.ok:
+        if is_robust_consumption(unit.scenario or "", unit.body or ""):
+            unit.scenario_group = f"{epic_key}|robustez-consumo"
+            unit.normal_precondition = "; ".join(
+                part
+                for part in (unit.normal_precondition, "requiere apoyo Dev/Operación")
+                if part
+            )
+            unit.requires_condition = True
+        elif grouped.ok:
             unit.scenario_group = surface_group_key(
                 epic_key,
                 grouped.surface,
