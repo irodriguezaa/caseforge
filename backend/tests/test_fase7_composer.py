@@ -336,6 +336,76 @@ Scenario: Ver detalle
     assert "historia de recordatorio en catálogo" not in pre.lower()
 
 
+def test_story_title_and_figma_never_in_pre_steps_or_result() -> None:
+    description = """
+Scenario: Ver detalle
+  Given según Figma https://www.figma.com/design/abc123
+  And Historia de recordatorio en catálogo
+  When el usuario selecciona el evento según Figma
+  Then se muestra Historia de recordatorio en catálogo
+"""
+    cases = candidates_from_jira_artifacts(
+        _artifacts(("EPC-1", "ST-1", "Historia de recordatorio en catálogo", description)),
+        "rn.pdf",
+        [],
+        lambda *_a: None,
+    )
+    case = next((row for row in cases if row.steps), None)
+    blob = " ".join(
+        [
+            (case.precondition or "") if case else "",
+            *([step.action for step in case.steps] if case else []),
+            *([step.expected_result for step in case.steps] if case else []),
+        ]
+    ).lower()
+    assert "figma" not in blob
+    assert "historia de recordatorio en catálogo" not in blob
+
+
+def test_no_abrir_aplicacion_when_screen_nav_exists() -> None:
+    description = """
+Scenario: Ver panel
+  Given un usuario que ingresa al Panel Más información
+  When el usuario selecciona Recordatorio
+  Then se muestra el modal de recordatorio
+"""
+    cases = candidates_from_jira_artifacts(
+        _artifacts(("EPC-1", "ST-1", "Feature panel", description)),
+        "rn.pdf",
+        [],
+        lambda *_a: None,
+    )
+    case = next(row for row in cases if row.steps)
+    actions = [step.action.lower() for step in case.steps]
+    assert any("abrir" in action for action in actions)
+    assert all("abrir la aplicación" not in action for action in actions)
+
+
+def test_consecutive_steps_with_same_result_merge() -> None:
+    description = """
+Scenario: Modal
+  Given un usuario que ingresa al Panel Más información
+  When el usuario selecciona Recordatorio
+  Then se muestra el modal
+  When el usuario confirma
+  Then se muestra el modal
+"""
+    cases = candidates_from_jira_artifacts(
+        _artifacts(("EPC-1", "ST-1", "Feature panel", description)),
+        "rn.pdf",
+        [],
+        lambda *_a: None,
+    )
+    case = next(row for row in cases if row.steps)
+    expecteds = [step.expected_result for step in case.steps if (step.expected_result or "").strip()]
+    assert expecteds
+    consecutive = [
+        expecteds[i] == expecteds[i + 1]
+        for i in range(len(expecteds) - 1)
+    ]
+    assert not any(consecutive)
+
+
 def test_redactar_caso_is_identity_today() -> None:
     from app.services.scenario_cases import redactar_caso
 
