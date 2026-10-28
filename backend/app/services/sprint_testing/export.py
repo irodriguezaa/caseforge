@@ -66,7 +66,7 @@ _TESTING_ORDER = ("QA Validation", "Validation", "Validate QC")
 _STATUS_BARS = (
     ("development", "Desarrollo"),
     ("integration", "Integración"),
-    ("testing", "Testing"),
+    ("testing", "Calidad"),
     ("closed", "Cerrado"),
 )
 
@@ -641,7 +641,7 @@ def _build_status_slide(slide: Any, payload: SprintTestingRead) -> None:
         Inches(1.92),
         Inches(12.4),
         Inches(0.24),
-        "Por dispositivo. En Testing, cada color es el estado real en Jira.",
+        "Por dispositivo. En Calidad, cada color es el estado real en Jira.",
         size=11,
         color=MUTED,
     )

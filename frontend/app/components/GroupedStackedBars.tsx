@@ -6,7 +6,7 @@ import type { SprintTestingProgramMetrics } from "@/lib/types";
 const BAR_KEYS = [
   { id: "development", label: "Desarrollo" },
   { id: "integration", label: "Integración" },
-  { id: "testing", label: "Testing" },
+  { id: "testing", label: "Calidad" },
   { id: "closed", label: "Cerrado" },
 ] as const;
 
