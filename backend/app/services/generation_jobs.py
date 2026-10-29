@@ -121,6 +121,8 @@ def _run(release_id: int, regenerate: bool) -> None:
         persisted = 0
         empty: list[str] = []
         failed: list[str] = []
+        empty_reasons: list[str] = []
+        engine_tag = ""
         for index, key in enumerate(keys, start=1):
             _set_job(
                 release_id,
@@ -137,23 +139,36 @@ def _run(release_id: int, regenerate: bool) -> None:
                     chunked=True,
                     functionality_key=key,
                 )
+                engine_tag = chunk.engine or engine_tag
                 n = chunk.test_case_count or 0
                 persisted += n
-                if not chunk.persisted or n == 0:
+                reason = (chunk.message or "").strip()
+                quota = "crédito" in reason.lower() or "corrida detenida" in reason.lower()
+                if quota:
+                    failed.append(key)
+                    empty_reasons.append(f"{key}: {reason}")
+                elif not chunk.persisted or n == 0:
                     empty.append(key)
-            except Exception:
+                    if reason:
+                        empty_reasons.append(f"{key}: {reason}")
+            except Exception as exc:
                 logger.exception("background generate-cases failed release_id=%s key=%s", release_id, key)
                 failed.append(key)
+                empty_reasons.append(f"{key}: {exc}")
             finally:
                 chunk_db.close()
         message = (
             f"Procesadas {len(keys) - len(failed)}/{len(keys)} funcionalidades del RN. "
             f"Test Cases persistidos: {persisted}."
         )
+        if engine_tag:
+            message += f" Motor: {engine_tag}."
         if empty:
             message += f" Sin casos: {', '.join(empty)}."
         if failed:
             message += f" Error: {', '.join(failed)}."
+        if empty_reasons:
+            message += " " + empty_reasons[0][:400]
         if not (keys and len(failed) == len(keys)):
             _persist_matrix_cases(release_id)
         _set_job(

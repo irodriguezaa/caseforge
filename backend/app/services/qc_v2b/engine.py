@@ -200,13 +200,19 @@ def generate_release_v2b(
     details = [run.summary() for run in runs]
     details += [f"{run.bundle.key} aviso: {w}" for run in runs for w in run.bundle.warnings]
     quota_stop = any((run.error or "").startswith("corrida detenida") for run in runs)
+    run_errors = [f"{run.bundle.key}: {run.error}" for run in runs if run.error]
     if quota_stop:
-        message = "La corrida se detuvo: OpenAI no tiene créditos. Recarga saldo y vuelve a generar."
+        message = (
+            "La corrida se detuvo: OpenAI no tiene créditos. Recarga saldo y vuelve a generar."
+            + (f" ({run_errors[0]})" if run_errors else "")
+        )
         candidates = []
     elif candidates:
         message = f"QcPulse v2-B propuso {len(candidates)} caso(s) del paquete QC. La IA propone; QC decide."
     else:
         message = "QcPulse v2-B no generó casos de paquete; revisa los avisos en Escenarios de Jira."
+        if run_errors:
+            message += " " + "; ".join(run_errors)
     covered = sorted({f"{c.related_functionality}:{cid}" for c in candidates for cid in c.covers})
     required = [f"{run.bundle.key}:{item.id}" for run in runs for item in run.bundle.crns + run.bundle.covs]
     return GenerateCasesResponse(
