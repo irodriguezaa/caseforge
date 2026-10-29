@@ -1531,10 +1531,23 @@ def generate_release_app_candidates(
                     if tid.upper() not in {item.upper() for item in dropped_nco}
                 ],
             }
-    if (settings.qc_engine or "").strip().lower() == "v2":
+    engine_name = (settings.qc_engine or "").strip().lower()
+    if engine_name == "v2":
         from app.services.qc_v2.engine import generate_release_v2
 
         return generate_release_v2(
+            release_id=release_id,
+            release_name=release_name,
+            validation_type=validation_type,
+            analysis_present=analysis_present,
+            release_context=release_context,
+            functionality_keys=functionality_keys,
+            stats=stats,
+        )
+    if engine_name == "v2b":
+        from app.services.qc_v2b.engine import generate_release_v2b
+
+        return generate_release_v2b(
             release_id=release_id,
             release_name=release_name,
             validation_type=validation_type,

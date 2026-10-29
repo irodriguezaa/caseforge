@@ -20,3 +20,4 @@ backend/.pytest_cache/
 # Salidas locales de QcPulse v2 (contienen datos de Jira del cliente; no versionar)
 exports/benchmark/
 exports/qcv2/
+exports/qcv2b/

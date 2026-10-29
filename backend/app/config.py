@@ -25,8 +25,8 @@ class Settings:
     qc_release_effort_factor: float = float(os.getenv("QC_RELEASE_EFFORT_FACTOR", "3.0"))
     qc_hours_per_day: float = float(os.getenv("QC_HOURS_PER_DAY", "6"))
     case_composition_mode: str = os.getenv("CASE_COMPOSITION_MODE", "scenario")
-    # QcPulse v2 (dos etapas). "legacy" mantiene el motor actual; "v2" activa backend/app/services/qc_v2.
-    qc_engine: str = os.getenv("QC_ENGINE", "legacy")
+    # QcPulse: "legacy" (default) | "v2" | "v2b". Solo afecta la generación de casos.
+    qc_engine: str = (os.getenv("QC_ENGINE", "legacy") or "legacy").strip().lower()
     qc_v2_model_a: str = (
         os.getenv("OPENAI_QC_MODEL_A") or os.getenv("OPENAI_QC_MODEL") or os.getenv("OPENAI_MODEL", "gpt-4o-mini")
     )
