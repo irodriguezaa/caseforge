@@ -22,10 +22,12 @@ CRITICAL_MINUTES = 10
 QC_CASE_MINUTES = {
     "CRITICAL": {"BAJA": 10, "MEDIA": 15, "ALTA": 20},
     "BLOCKER": {"BAJA": 15, "MEDIA": 25, "ALTA": 35},
+    "MAJOR": {"BAJA": 8, "MEDIA": 10, "ALTA": 15},
 }
 _PRIORITY_CANON = {
     "BLOCKER": "BLOCKER",
     "CRITICAL": "CRITICAL",
+    "MAJOR": "MAJOR",
 }
 _COMPLEXITY_CANON = {
     "BAJA": "BAJA",
@@ -54,8 +56,9 @@ def classify_complexity(candidate: GeneratedCaseCandidate) -> Complexity:
     BLOCKER/CRITICAL no entran aquí; solo eligen la fila de minutos.
     """
     for rule in candidate.applied_rules or []:
-        if str(rule).startswith("qc-v2:complejidad="):
-            value = str(rule).split("=", 1)[1]
+        token = str(rule)
+        if token.startswith("qc-v2:complejidad=") or token.startswith("qc-v2b:complejidad="):
+            value = token.split("=", 1)[1]
             if value in ("BAJA", "MEDIA", "ALTA"):
                 return value  # type: ignore[return-value]
     steps = len(candidate.steps)

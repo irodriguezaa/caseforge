@@ -16,7 +16,7 @@ Prompts versionados: `prompts/etapa_a.md`, `prompts/etapa_b.md`.
 ## Configuración (`.env`)
 
 ```
-QC_ENGINE=v2                    # legacy | v2 (solo afecta la generación desde el portal)
+QC_ENGINE=v2                    # legacy | v2 | v2b (solo afecta la generación desde el portal)
 OPENAI_QC_MODEL=gpt-5.6-sol     # o OPENAI_QC_MODEL_A / OPENAI_QC_MODEL_B por etapa
 OPENAI_QC_TEMPERATURE=0.25      # vacío = sin temperature (algunos modelos no la aceptan; se reintenta solo)
 QC_V2_CONCURRENCY=5
