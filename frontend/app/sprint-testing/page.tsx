@@ -7,7 +7,45 @@ import { GroupedStackedBars } from "@/app/components/GroupedStackedBars";
 import { api } from "@/lib/api";
 import { JiraFilterLink } from "@/app/components/JiraFilterLink";
 import { jiraIssueUrl } from "@/lib/jira";
-import type { SprintTestingOptions, SprintTestingRead } from "@/lib/types";
+import type { SprintTestingOptions, SprintTestingRead, SprintTestingSprintOption, SprintTestingSwfOption } from "@/lib/types";
+
+const SPRINT_STORAGE_KEY = "qcpulse.sprintTesting.sprint";
+const SWF_STORAGE_KEY = "qcpulse.sprintTesting.swf";
+
+function readStored(key: string): string | null {
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function writeStored(key: string, value: string): void {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    // Private mode / quota: keep the in-memory selection only.
+  }
+}
+
+function pickSprint(sprints: SprintTestingSprintOption[]): string {
+  const lastActionable =
+    [...sprints].reverse().find((item) => item.actionable) ?? sprints.at(-1) ?? sprints[0];
+  const stored = readStored(SPRINT_STORAGE_KEY);
+  const match = sprints.find((item) => item.id === stored);
+  if (match?.actionable) {
+    return match.id;
+  }
+  return lastActionable?.id ?? "";
+}
+
+function pickSwf(swfs: SprintTestingSwfOption[]): string {
+  const stored = readStored(SWF_STORAGE_KEY);
+  if (stored && swfs.some((item) => item.id === stored)) {
+    return stored;
+  }
+  return swfs[0]?.id ?? "";
+}
 
 function formatJiraDateTime(raw: string | null | undefined): string {
   if (!raw) {
@@ -70,8 +108,8 @@ function JiraKeyLink({ issueKey }: { issueKey: string }): React.ReactElement {
 
 export default function SprintTestingPage(): React.ReactElement {
   const [options, setOptions] = useState<SprintTestingOptions | null>(null);
-  const [sprint, setSprint] = useState("44");
-  const [swf, setSwf] = useState("hitss");
+  const [sprint, setSprint] = useState("");
+  const [swf, setSwf] = useState("");
   const [data, setData] = useState<SprintTestingRead | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -84,9 +122,16 @@ export default function SprintTestingPage(): React.ReactElement {
       .getSprintTestingOptions()
       .then((body) => {
         setOptions(body);
-        const first = body.sprints.find((item) => item.actionable) ?? body.sprints[0];
-        if (first) setSprint(first.id);
-        if (body.swfs[0]) setSwf(body.swfs[0].id);
+        const nextSprint = pickSprint(body.sprints);
+        const nextSwf = pickSwf(body.swfs);
+        if (nextSprint) {
+          setSprint(nextSprint);
+          writeStored(SPRINT_STORAGE_KEY, nextSprint);
+        }
+        if (nextSwf) {
+          setSwf(nextSwf);
+          writeStored(SWF_STORAGE_KEY, nextSwf);
+        }
       })
       .catch((err: unknown) => setError(err instanceof Error ? err.message : "Error"));
   }, []);
@@ -183,7 +228,14 @@ export default function SprintTestingPage(): React.ReactElement {
       >
         <label className="muted" style={{ display: "flex", alignItems: "center", gap: "8px" }}>
           Sprint
-          <select value={sprint} onChange={(event) => setSprint(event.target.value)}>
+          <select
+            value={sprint}
+            onChange={(event) => {
+              const next = event.target.value;
+              setSprint(next);
+              writeStored(SPRINT_STORAGE_KEY, next);
+            }}
+          >
             {(options?.sprints ?? []).map((item) => (
               <option key={item.id} value={item.id} disabled={!item.actionable}>
                 {item.label}
@@ -194,7 +246,14 @@ export default function SprintTestingPage(): React.ReactElement {
         </label>
         <label className="muted" style={{ display: "flex", alignItems: "center", gap: "8px" }}>
           SWF
-          <select value={swf} onChange={(event) => setSwf(event.target.value)}>
+          <select
+            value={swf}
+            onChange={(event) => {
+              const next = event.target.value;
+              setSwf(next);
+              writeStored(SWF_STORAGE_KEY, next);
+            }}
+          >
             {(options?.swfs ?? []).map((item) => (
               <option key={item.id} value={item.id}>
                 {item.label}
@@ -216,7 +275,7 @@ export default function SprintTestingPage(): React.ReactElement {
             className="secondary"
             disabled={!canQuery || loading || exportingPack}
             onClick={() => void handleExportPack()}
-            title={`PPTX (1 slide por SWF) + Excel de blockers (${packLabel})`}
+            title={`PPTX (estado y blockers por SWF) + Excel de blockers (${packLabel})`}
           >
             {exportingPack ? "Generando pack..." : `Pack ${packLabel}`}
           </button>

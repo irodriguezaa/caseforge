@@ -81,6 +81,7 @@ class ExecutionBlockerRow(BaseModel):
     priority: str = ""
     created: str | None = None
     principal: str | None = None
+    principal_summary: str = ""
     status_changed_at: str | None = None
     status_changed_from: str | None = None
     status_changed_to: str | None = None

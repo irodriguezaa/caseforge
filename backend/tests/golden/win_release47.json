@@ -1,0 +1,1277 @@
+{
+  "version": 1,
+  "release": "Sprint Release 47 · WIN",
+  "dispositivo": "WIN",
+  "epcs": [
+    "WINCL-609",
+    "WINCL-619",
+    "WINCL-636"
+  ],
+  "conteo_esperado": {
+    "WINCL-609": 16,
+    "WINCL-619": 20,
+    "WINCL-636": 18
+  },
+  "reglas_de_comparacion": {
+    "match": "Un caso generado corresponde a un caso dorado si cubre al menos uno de sus escenarios.",
+    "faltante": "Caso dorado sin ningún caso generado que cubra alguno de sus escenarios.",
+    "de_mas": "Caso generado cuyos escenarios están todos en no_generan_caso (o sin escenario).",
+    "fragmentado": "Un caso dorado repartido en 2+ casos generados (viola la regla del bug).",
+    "fusionado": "Un caso generado que cubre 2+ casos dorados (advertencia, no error).",
+    "escenario_mal_clasificado": "Escenario de no_generan_caso que terminó como caso ejecutable."
+  },
+  "casos": [
+    {
+      "id": "WIN-609-01",
+      "epc": "WINCL-609",
+      "nombre_referencia": "Elementos del Control Player activo",
+      "prioridad": "BLOCKER",
+      "tipo": "directo",
+      "pasos_minimos": 3,
+      "variantes": null,
+      "cubre": [
+        {
+          "historia": "WINCL-610",
+          "escenario": "Elementos del \"Control Player\""
+        },
+        {
+          "historia": "WINCL-611",
+          "escenario": "Mostrar Chevrones para cambio de canal en control player de TV"
+        }
+      ]
+    },
+    {
+      "id": "WIN-609-02",
+      "epc": "WINCL-609",
+      "nombre_referencia": "Opción Salir cierra el Control Player y abre la Guía",
+      "prioridad": "BLOCKER",
+      "tipo": "directo",
+      "pasos_minimos": 2,
+      "variantes": null,
+      "cubre": [
+        {
+          "historia": "WINCL-610",
+          "escenario": "Opción Salir en \"Control Player\""
+        }
+      ]
+    },
+    {
+      "id": "WIN-609-03",
+      "epc": "WINCL-609",
+      "nombre_referencia": "Estado hover de los chevrones de cambio de canal",
+      "prioridad": "CRITICAL",
+      "tipo": "directo",
+      "pasos_minimos": 2,
+      "variantes": null,
+      "cubre": [
+        {
+          "historia": "WINCL-611",
+          "escenario": "Selección de chevron con flecha hacia arriba"
+        },
+        {
+          "historia": "WINCL-611",
+          "escenario": "Selección de chevron con flecha hacia abajo"
+        }
+      ]
+    },
+    {
+      "id": "WIN-609-04",
+      "epc": "WINCL-609",
+      "nombre_referencia": "Cambio de canal con los chevrones",
+      "prioridad": "BLOCKER",
+      "tipo": "directo",
+      "pasos_minimos": 2,
+      "variantes": "Variantes: canal anterior (flecha arriba) · siguiente canal (flecha abajo)",
+      "cubre": [
+        {
+          "historia": "WINCL-611",
+          "escenario": "Cambio al canal anterior disponible"
+        },
+        {
+          "historia": "WINCL-611",
+          "escenario": "Cambio al siguiente canal disponible"
+        }
+      ]
+    },
+    {
+      "id": "WIN-609-05",
+      "epc": "WINCL-609",
+      "nombre_referencia": "Progress Bar de un evento en vivo sin Timeshift",
+      "prioridad": "CRITICAL",
+      "tipo": "directo",
+      "pasos_minimos": 3,
+      "variantes": null,
+      "cubre": [
+        {
+          "historia": "WINCL-612",
+          "escenario": "Estructura gráfica de la Progress Bar sin funcionalidad de Timeshift"
+        },
+        {
+          "historia": "WINCL-612",
+          "escenario": "Sincronización del tiempo en eventos en vivo"
+        },
+        {
+          "historia": "WINCL-612",
+          "escenario": "Visualización del Pin de la Progress Bar"
+        },
+        {
+          "historia": "WINCL-612",
+          "escenario": "Estado hover de Progress bar"
+        },
+        {
+          "historia": "WINCL-612",
+          "escenario": "Información de tiempo de eventos en Control Player"
+        }
+      ]
+    },
+    {
+      "id": "WIN-609-06",
+      "epc": "WINCL-609",
+      "nombre_referencia": "Progress Bar de un evento con Timeshift",
+      "prioridad": "CRITICAL",
+      "tipo": "directo",
+      "pasos_minimos": 1,
+      "variantes": null,
+      "cubre": [
+        {
+          "historia": "WINCL-612",
+          "escenario": "Estructura gráfica de la Progress Bar con funcionalidad de Timeshift"
+        }
+      ]
+    },
+    {
+      "id": "WIN-609-07",
+      "epc": "WINCL-609",
+      "nombre_referencia": "Progress Bar en el panel Más información sin indicadores de tiempo",
+      "prioridad": "CRITICAL",
+      "tipo": "directo",
+      "pasos_minimos": 2,
+      "variantes": null,
+      "cubre": [
+        {
+          "historia": "WINCL-612",
+          "escenario": "Progress bar en el Panel de Más información"
+        }
+      ]
+    },
+    {
+      "id": "WIN-609-08",
+      "epc": "WINCL-609",
+      "nombre_referencia": "Botonera del Control Player en vista reducida",
+      "prioridad": "CRITICAL",
+      "tipo": "directo",
+      "pasos_minimos": 2,
+      "variantes": null,
+      "cubre": [
+        {
+          "historia": "WINCL-613",
+          "escenario": "Construcción de la \"Botonera del Control Player\" pantalla reducida"
+        }
+      ]
+    },
+    {
+      "id": "WIN-609-09",
+      "epc": "WINCL-609",
+      "nombre_referencia": "Botonera del Control Player en pantalla completa",
+      "prioridad": "CRITICAL",
+      "tipo": "directo",
+      "pasos_minimos": 2,
+      "variantes": null,
+      "cubre": [
+        {
+          "historia": "WINCL-613",
+          "escenario": "Construcción de la \"Botonera del Control Player\" pantalla completa"
+        }
+      ]
+    },
+    {
+      "id": "WIN-609-10",
+      "epc": "WINCL-609",
+      "nombre_referencia": "Acciones de cada botón de la botonera",
+      "prioridad": "BLOCKER",
+      "tipo": "directo",
+      "pasos_minimos": 7,
+      "variantes": null,
+      "cubre": [
+        {
+          "historia": "WINCL-613",
+          "escenario": "Acciones al seleccionar opciones de navegación"
+        }
+      ]
+    },
+    {
+      "id": "WIN-609-11",
+      "epc": "WINCL-609",
+      "nombre_referencia": "Texto de los botones en hover según la región",
+      "prioridad": "CRITICAL",
+      "tipo": "directo",
+      "pasos_minimos": 2,
+      "variantes": "Variantes: texto visible · texto oculto",
+      "cubre": [
+        {
+          "historia": "WINCL-613",
+          "escenario": "Visualización de texto en estado hover"
+        },
+        {
+          "historia": "WINCL-614",
+          "escenario": "Visualización de texto en botones de control player"
+        }
+      ]
+    },
+    {
+      "id": "WIN-609-12",
+      "epc": "WINCL-609",
+      "nombre_referencia": "Opciones y orden de la botonera según la región",
+      "prioridad": "CRITICAL",
+      "tipo": "directo",
+      "pasos_minimos": 2,
+      "variantes": "Variantes: región con configuración propia · región con configuración default",
+      "cubre": [
+        {
+          "historia": "WINCL-614",
+          "escenario": "Mostrar la opción correspondiente según el valor de configuración en \"enabled_options\""
+        },
+        {
+          "historia": "WINCL-614",
+          "escenario": "Mostrar las opciones del Control Player según configuración"
+        }
+      ]
+    },
+    {
+      "id": "WIN-609-13",
+      "epc": "WINCL-609",
+      "nombre_referencia": "El Control Player se oculta automáticamente",
+      "prioridad": "CRITICAL",
+      "tipo": "directo",
+      "pasos_minimos": 1,
+      "variantes": null,
+      "cubre": [
+        {
+          "historia": "WINCL-614",
+          "escenario": "Tiempo de visualización del Control Player"
+        }
+      ]
+    },
+    {
+      "id": "WIN-609-14",
+      "epc": "WINCL-609",
+      "nombre_referencia": "Metadata del evento en el Control Player",
+      "prioridad": "CRITICAL",
+      "tipo": "directo",
+      "pasos_minimos": 2,
+      "variantes": null,
+      "cubre": [
+        {
+          "historia": "WINCL-726",
+          "escenario": "Construcción de la \"Metadata del evento\""
+        }
+      ]
+    },
+    {
+      "id": "WIN-609-15",
+      "epc": "WINCL-609",
+      "nombre_referencia": "Metadata del Control Player con datos faltantes",
+      "prioridad": "CRITICAL",
+      "tipo": "directo",
+      "pasos_minimos": 1,
+      "variantes": null,
+      "cubre": [
+        {
+          "historia": "WINCL-726",
+          "escenario": "Algún elemento no se encuentra disponible"
+        }
+      ]
+    },
+    {
+      "id": "WIN-609-16",
+      "epc": "WINCL-609",
+      "nombre_referencia": "Textos del Control Player con llave ausente o vacía",
+      "prioridad": "CRITICAL",
+      "tipo": "robustez",
+      "pasos_minimos": 2,
+      "variantes": "Superficies: Control Player · Botonera · Metadata del evento",
+      "cubre": [
+        {
+          "historia": "WINCL-610",
+          "escenario": "No se logra obtener una llave"
+        },
+        {
+          "historia": "WINCL-610",
+          "escenario": "La llave se encuentra vacía"
+        },
+        {
+          "historia": "WINCL-613",
+          "escenario": "No se logra obtener una llave"
+        },
+        {
+          "historia": "WINCL-613",
+          "escenario": "La llave se encuentra vacía"
+        },
+        {
+          "historia": "WINCL-726",
+          "escenario": "No se logra obtener una llave"
+        },
+        {
+          "historia": "WINCL-726",
+          "escenario": "La llave se encuentra vacía"
+        }
+      ]
+    },
+    {
+      "id": "WIN-619-01",
+      "epc": "WINCL-619",
+      "nombre_referencia": "Abrir la Guía de programación: posición, foco y elementos",
+      "prioridad": "BLOCKER",
+      "tipo": "directo",
+      "pasos_minimos": 3,
+      "variantes": null,
+      "cubre": [
+        {
+          "historia": "WINCL-621",
+          "escenario": "Posición de la Guía de Programación"
+        },
+        {
+          "historia": "WINCL-621",
+          "escenario": "Elementos de la guía de programación"
+        }
+      ]
+    },
+    {
+      "id": "WIN-619-02",
+      "epc": "WINCL-619",
+      "nombre_referencia": "Salir de TV desde la Guía",
+      "prioridad": "BLOCKER",
+      "tipo": "directo",
+      "pasos_minimos": 2,
+      "variantes": null,
+      "cubre": [
+        {
+          "historia": "WINCL-621",
+          "escenario": "Salir de \"Guía de programación\""
+        }
+      ]
+    },
+    {
+      "id": "WIN-619-03",
+      "epc": "WINCL-619",
+      "nombre_referencia": "Cerrar la Guía de programación",
+      "prioridad": "BLOCKER",
+      "tipo": "directo",
+      "pasos_minimos": 2,
+      "variantes": null,
+      "cubre": [
+        {
+          "historia": "WINCL-621",
+          "escenario": "Cerrar \"Guía de programación\""
+        }
+      ]
+    },
+    {
+      "id": "WIN-619-04",
+      "epc": "WINCL-619",
+      "nombre_referencia": "Control de volumen en la Guía",
+      "prioridad": "CRITICAL",
+      "tipo": "directo",
+      "pasos_minimos": 2,
+      "variantes": null,
+      "cubre": [
+        {
+          "historia": "WINCL-621",
+          "escenario": "Desplegar control de volumen"
+        },
+        {
+          "historia": "WINCL-621",
+          "escenario": "Desactivar o activar volumen"
+        }
+      ]
+    },
+    {
+      "id": "WIN-619-05",
+      "epc": "WINCL-619",
+      "nombre_referencia": "Desplazamiento vertical y regreso al evento actual",
+      "prioridad": "CRITICAL",
+      "tipo": "directo",
+      "pasos_minimos": 3,
+      "variantes": null,
+      "cubre": [
+        {
+          "historia": "WINCL-621",
+          "escenario": "Desplazamiento de la barra lateral de navegación"
+        },
+        {
+          "historia": "WINCL-625",
+          "escenario": "Visualización del \"Chevron de Regreso a evento actual\""
+        }
+      ]
+    },
+    {
+      "id": "WIN-619-06",
+      "epc": "WINCL-619",
+      "nombre_referencia": "Celdas vacías mientras cargan los datos",
+      "prioridad": "CRITICAL",
+      "tipo": "directo",
+      "pasos_minimos": 2,
+      "variantes": null,
+      "cubre": [
+        {
+          "historia": "WINCL-621",
+          "escenario": "Visualización de celdas hasta disponibilidad de datos"
+        },
+        {
+          "historia": "WINCL-727",
+          "escenario": "La metadata del evento tarda en cargarse"
+        }
+      ]
+    },
+    {
+      "id": "WIN-619-07",
+      "epc": "WINCL-619",
+      "nombre_referencia": "Timeline de la Guía",
+      "prioridad": "CRITICAL",
+      "tipo": "directo",
+      "pasos_minimos": 2,
+      "variantes": null,
+      "cubre": [
+        {
+          "historia": "WINCL-622",
+          "escenario": "Implementar \"Timeline\" en guía de programación"
+        }
+      ]
+    },
+    {
+      "id": "WIN-619-08",
+      "epc": "WINCL-619",
+      "nombre_referencia": "Celdas de canales",
+      "prioridad": "CRITICAL",
+      "tipo": "directo",
+      "pasos_minimos": 3,
+      "variantes": null,
+      "cubre": [
+        {
+          "historia": "WINCL-623",
+          "escenario": "Construcción de las \"Celdas de canales\""
+        }
+      ]
+    },
+    {
+      "id": "WIN-619-09",
+      "epc": "WINCL-619",
+      "nombre_referencia": "Celdas de eventos y sus estados",
+      "prioridad": "CRITICAL",
+      "tipo": "directo",
+      "pasos_minimos": 3,
+      "variantes": null,
+      "cubre": [
+        {
+          "historia": "WINCL-624",
+          "escenario": "Construcción de las \"Celdas de eventos\""
+        }
+      ]
+    },
+    {
+      "id": "WIN-619-10",
+      "epc": "WINCL-619",
+      "nombre_referencia": "Chevrones de desplazamiento horizontal: visualización y hover",
+      "prioridad": "CRITICAL",
+      "tipo": "directo",
+      "pasos_minimos": 2,
+      "variantes": null,
+      "cubre": [
+        {
+          "historia": "WINCL-624",
+          "escenario": "Visualización de \"Chevrones de desplazamiento\""
+        },
+        {
+          "historia": "WINCL-624",
+          "escenario": "Visualización de Chevrones en estado hover"
+        }
+      ]
+    },
+    {
+      "id": "WIN-619-11",
+      "epc": "WINCL-619",
+      "nombre_referencia": "Recorrer eventos con los chevrones horizontales",
+      "prioridad": "CRITICAL",
+      "tipo": "directo",
+      "pasos_minimos": 2,
+      "variantes": "Variantes: 1, 2 y 3 selecciones por dirección",
+      "cubre": [
+        {
+          "historia": "WINCL-624",
+          "escenario": "Recorrer hacia la derecha con Chevron de flecha \"izquierda\""
+        },
+        {
+          "historia": "WINCL-624",
+          "escenario": "Recorrer hacia la Izquierda con Chevron de flecha \"derecha\""
+        }
+      ]
+    },
+    {
+      "id": "WIN-619-12",
+      "epc": "WINCL-619",
+      "nombre_referencia": "Abrir Más información desde una celda de evento",
+      "prioridad": "CRITICAL",
+      "tipo": "directo",
+      "pasos_minimos": 2,
+      "variantes": null,
+      "cubre": [
+        {
+          "historia": "WINCL-624",
+          "escenario": "Acceder al panel de más información desde la celda de evento"
+        }
+      ]
+    },
+    {
+      "id": "WIN-619-13",
+      "epc": "WINCL-619",
+      "nombre_referencia": "Filtro de fecha: hover y listado de fechas",
+      "prioridad": "CRITICAL",
+      "tipo": "directo",
+      "pasos_minimos": 3,
+      "variantes": null,
+      "cubre": [
+        {
+          "historia": "WINCL-626",
+          "escenario": "Visualizar filtro de fecha en estado hover"
+        },
+        {
+          "historia": "WINCL-626",
+          "escenario": "Construcción del \"Filtro de fecha\""
+        }
+      ]
+    },
+    {
+      "id": "WIN-619-14",
+      "epc": "WINCL-619",
+      "nombre_referencia": "Seleccionar una fecha en el filtro",
+      "prioridad": "CRITICAL",
+      "tipo": "directo",
+      "pasos_minimos": 2,
+      "variantes": "Variantes: Ayer · Hoy · Mañana · fecha DD/MM",
+      "cubre": [
+        {
+          "historia": "WINCL-626",
+          "escenario": "Selección de fecha en filtro"
+        }
+      ]
+    },
+    {
+      "id": "WIN-619-15",
+      "epc": "WINCL-619",
+      "nombre_referencia": "La metadata sigue al evento seleccionado y al hover",
+      "prioridad": "CRITICAL",
+      "tipo": "directo",
+      "pasos_minimos": 2,
+      "variantes": null,
+      "cubre": [
+        {
+          "historia": "WINCL-727",
+          "escenario": "Mostrar metadata de evento seleccionado"
+        },
+        {
+          "historia": "WINCL-727",
+          "escenario": "Mostrar metadata de evento en estado hover"
+        }
+      ]
+    },
+    {
+      "id": "WIN-619-16",
+      "epc": "WINCL-619",
+      "nombre_referencia": "Contenido de la metadata de un evento no seriado",
+      "prioridad": "CRITICAL",
+      "tipo": "directo",
+      "pasos_minimos": 3,
+      "variantes": "Variantes de duración: con minutos · horas exactas · menor a 1 hora",
+      "cubre": [
+        {
+          "historia": "WINCL-727",
+          "escenario": "Construcción de la \"Metadata del evento\""
+        },
+        {
+          "historia": "WINCL-727",
+          "escenario": "Duración con horas exactas"
+        },
+        {
+          "historia": "WINCL-727",
+          "escenario": "Duración menor a una hora"
+        },
+        {
+          "historia": "WINCL-727",
+          "escenario": "Configuración de líneas de sinopsis"
+        }
+      ]
+    },
+    {
+      "id": "WIN-619-17",
+      "epc": "WINCL-619",
+      "nombre_referencia": "Metadata de un evento seriado",
+      "prioridad": "CRITICAL",
+      "tipo": "directo",
+      "pasos_minimos": 2,
+      "variantes": null,
+      "cubre": [
+        {
+          "historia": "WINCL-727",
+          "escenario": "Construcción de la \"Metadata de un evento seriado\""
+        }
+      ]
+    },
+    {
+      "id": "WIN-619-18",
+      "epc": "WINCL-619",
+      "nombre_referencia": "Metadata de la Guía con datos faltantes",
+      "prioridad": "CRITICAL",
+      "tipo": "directo",
+      "pasos_minimos": 1,
+      "variantes": null,
+      "cubre": [
+        {
+          "historia": "WINCL-727",
+          "escenario": "Algún elemento no se encuentra disponible"
+        }
+      ]
+    },
+    {
+      "id": "WIN-619-19",
+      "epc": "WINCL-619",
+      "nombre_referencia": "Íconos de Timeshift y Grabar en la metadata",
+      "prioridad": "CRITICAL",
+      "tipo": "directo",
+      "pasos_minimos": 2,
+      "variantes": "Variantes: Timeshift · NPVR",
+      "cubre": [
+        {
+          "historia": "WINCL-727",
+          "escenario": "Mostrar icono de Timeshift en Guía de programación"
+        },
+        {
+          "historia": "WINCL-727",
+          "escenario": "Mostrar icono de Grabar en Guía de programación"
+        }
+      ]
+    },
+    {
+      "id": "WIN-619-20",
+      "epc": "WINCL-619",
+      "nombre_referencia": "Textos de la Guía con llave ausente o vacía",
+      "prioridad": "CRITICAL",
+      "tipo": "robustez",
+      "pasos_minimos": 2,
+      "variantes": "Superficies: Guía · Timeline · Celdas de eventos · Filtro de fecha · Metadata",
+      "cubre": [
+        {
+          "historia": "WINCL-621",
+          "escenario": "No se logra obtener una llave"
+        },
+        {
+          "historia": "WINCL-621",
+          "escenario": "La llave se encuentra vacía"
+        },
+        {
+          "historia": "WINCL-622",
+          "escenario": "No se logra obtener una llave"
+        },
+        {
+          "historia": "WINCL-622",
+          "escenario": "La llave se encuentra vacía"
+        },
+        {
+          "historia": "WINCL-624",
+          "escenario": "No se logra obtener una llave"
+        },
+        {
+          "historia": "WINCL-624",
+          "escenario": "La llave se encuentra vacía"
+        },
+        {
+          "historia": "WINCL-626",
+          "escenario": "No se logra obtener una llave"
+        },
+        {
+          "historia": "WINCL-626",
+          "escenario": "La llave se encuentra vacía"
+        },
+        {
+          "historia": "WINCL-727",
+          "escenario": "No se logra obtener una llave"
+        },
+        {
+          "historia": "WINCL-727",
+          "escenario": "La llave se encuentra vacía"
+        }
+      ]
+    },
+    {
+      "id": "WIN-636-01",
+      "epc": "WINCL-636",
+      "nombre_referencia": "Programar un recordatorio desde Más información",
+      "prioridad": "BLOCKER",
+      "tipo": "directo",
+      "pasos_minimos": 2,
+      "variantes": null,
+      "cubre": [
+        {
+          "historia": "WINCL-637",
+          "escenario": "Programar recordatorio"
+        }
+      ]
+    },
+    {
+      "id": "WIN-636-02",
+      "epc": "WINCL-636",
+      "nombre_referencia": "Eliminar un recordatorio desde Más información",
+      "prioridad": "CRITICAL",
+      "tipo": "directo",
+      "pasos_minimos": 2,
+      "variantes": null,
+      "cubre": [
+        {
+          "historia": "WINCL-637",
+          "escenario": "Eliminar recordatorio"
+        },
+        {
+          "historia": "WINCL-728",
+          "escenario": "Visualización de ícono de \"Recordatorio programado\" en panel de \"Más información\""
+        }
+      ]
+    },
+    {
+      "id": "WIN-636-03",
+      "epc": "WINCL-636",
+      "nombre_referencia": "Grabar programa desde Más información (NPVR)",
+      "prioridad": "CRITICAL",
+      "tipo": "directo",
+      "pasos_minimos": 2,
+      "variantes": null,
+      "cubre": [
+        {
+          "historia": "WINCL-637",
+          "escenario": "Visualización del botón \"Grabar programa\""
+        },
+        {
+          "historia": "WINCL-728",
+          "escenario": "Visualización de ícono de \"Grabar\""
+        }
+      ]
+    },
+    {
+      "id": "WIN-636-04",
+      "epc": "WINCL-636",
+      "nombre_referencia": "Sin opción Grabar en eventos no disponibles",
+      "prioridad": "CRITICAL",
+      "tipo": "directo",
+      "pasos_minimos": 1,
+      "variantes": null,
+      "cubre": [
+        {
+          "historia": "WINCL-637",
+          "escenario": "No mostrar la opción de grabar en eventos no disponibles"
+        },
+        {
+          "historia": "WINCL-728",
+          "escenario": "No mostrar opción grabar en eventos no disponibles"
+        }
+      ]
+    },
+    {
+      "id": "WIN-636-05",
+      "epc": "WINCL-636",
+      "nombre_referencia": "Agregar un canal a favoritos",
+      "prioridad": "CRITICAL",
+      "tipo": "directo",
+      "pasos_minimos": 2,
+      "variantes": null,
+      "cubre": [
+        {
+          "historia": "WINCL-637",
+          "escenario": "Agregar a favoritos"
+        }
+      ]
+    },
+    {
+      "id": "WIN-636-06",
+      "epc": "WINCL-636",
+      "nombre_referencia": "Eliminar un canal de favoritos",
+      "prioridad": "CRITICAL",
+      "tipo": "directo",
+      "pasos_minimos": 2,
+      "variantes": null,
+      "cubre": [
+        {
+          "historia": "WINCL-637",
+          "escenario": "Eliminar de favoritos"
+        }
+      ]
+    },
+    {
+      "id": "WIN-636-07",
+      "epc": "WINCL-636",
+      "nombre_referencia": "Bloquear un canal desde Más información",
+      "prioridad": "CRITICAL",
+      "tipo": "directo",
+      "pasos_minimos": 2,
+      "variantes": null,
+      "cubre": [
+        {
+          "historia": "WINCL-637",
+          "escenario": "Bloquear canal"
+        }
+      ]
+    },
+    {
+      "id": "WIN-636-08",
+      "epc": "WINCL-636",
+      "nombre_referencia": "Foco y hover en el panel Más información",
+      "prioridad": "CRITICAL",
+      "tipo": "directo",
+      "pasos_minimos": 2,
+      "variantes": null,
+      "cubre": [
+        {
+          "historia": "WINCL-637",
+          "escenario": "Foco sobre botón principal en pantalla de \"Más información\""
+        },
+        {
+          "historia": "WINCL-637",
+          "escenario": "Estado hover sobre los elementos interactivos del Panel"
+        }
+      ]
+    },
+    {
+      "id": "WIN-636-09",
+      "epc": "WINCL-636",
+      "nombre_referencia": "Opciones del panel según las características del evento",
+      "prioridad": "CRITICAL",
+      "tipo": "directo",
+      "pasos_minimos": 2,
+      "variantes": "Variantes: Timeshift · NPVR · Ya emitido / Ahora / Más tarde",
+      "cubre": [
+        {
+          "historia": "WINCL-637",
+          "escenario": "Actualización dinámica de las opciones del panel \"Más información\""
+        },
+        {
+          "historia": "WINCL-728",
+          "escenario": "Ajuste de opciones mostradas con base a características del evento"
+        },
+        {
+          "historia": "WINCL-728",
+          "escenario": "Visualización de ícono de \"Reiniciar\""
+        }
+      ]
+    },
+    {
+      "id": "WIN-636-10",
+      "epc": "WINCL-636",
+      "nombre_referencia": "Recordatorio: evento por comenzar",
+      "prioridad": "BLOCKER",
+      "tipo": "directo",
+      "pasos_minimos": 1,
+      "variantes": null,
+      "cubre": [
+        {
+          "historia": "WINCL-638",
+          "escenario": "Mostrar modal de \"Recordatorio de evento por comenzar\" antes de iniciar el evento"
+        },
+        {
+          "historia": "WINCL-638",
+          "escenario": "Construcción del modal \"Recordatorio de evento por comenzar\""
+        }
+      ]
+    },
+    {
+      "id": "WIN-636-11",
+      "epc": "WINCL-636",
+      "nombre_referencia": "Recordatorio: evento ya comenzado",
+      "prioridad": "CRITICAL",
+      "tipo": "directo",
+      "pasos_minimos": 1,
+      "variantes": null,
+      "cubre": [
+        {
+          "historia": "WINCL-638",
+          "escenario": "Mostrar modal de \"Recordatorio de evento ya comenzó\" con evento iniciado"
+        },
+        {
+          "historia": "WINCL-638",
+          "escenario": "Construcción del modal \"Recordatorio de evento ya comenzó\""
+        }
+      ]
+    },
+    {
+      "id": "WIN-636-12",
+      "epc": "WINCL-636",
+      "nombre_referencia": "Acciones del modal de recordatorio",
+      "prioridad": "BLOCKER",
+      "tipo": "directo",
+      "pasos_minimos": 3,
+      "variantes": "Variantes: Ver ahora · Cerrar · X",
+      "cubre": [
+        {
+          "historia": "WINCL-638",
+          "escenario": "Iniciar la reproducción al presionar el botón \"Ver ahora\""
+        },
+        {
+          "historia": "WINCL-638",
+          "escenario": "Cerrar el modal de \"Recordatorio de evento\" al presionar el botón \"Cerrar\""
+        },
+        {
+          "historia": "WINCL-638",
+          "escenario": "Ocultar el modal de \"Recordatorio de evento\" al presionar la opción \"Cerrar\""
+        }
+      ]
+    },
+    {
+      "id": "WIN-636-13",
+      "epc": "WINCL-636",
+      "nombre_referencia": "Abrir Más información desde el Control Player",
+      "prioridad": "BLOCKER",
+      "tipo": "directo",
+      "pasos_minimos": 1,
+      "variantes": null,
+      "cubre": [
+        {
+          "historia": "WINCL-728",
+          "escenario": "Ingreso al panel de más información desde la botonera del control player"
+        }
+      ]
+    },
+    {
+      "id": "WIN-636-14",
+      "epc": "WINCL-636",
+      "nombre_referencia": "Abrir Más información desde la Guía",
+      "prioridad": "CRITICAL",
+      "tipo": "directo",
+      "pasos_minimos": 1,
+      "variantes": null,
+      "cubre": [
+        {
+          "historia": "WINCL-728",
+          "escenario": "Ingreso al panel de más información desde la celda del evento"
+        }
+      ]
+    },
+    {
+      "id": "WIN-636-15",
+      "epc": "WINCL-636",
+      "nombre_referencia": "Cerrar Más información regresa a la pantalla de origen",
+      "prioridad": "CRITICAL",
+      "tipo": "directo",
+      "pasos_minimos": 2,
+      "variantes": "Variantes: origen Control Player · origen Guía",
+      "cubre": [
+        {
+          "historia": "WINCL-728",
+          "escenario": "Cerrar \"Panel de más información\""
+        }
+      ]
+    },
+    {
+      "id": "WIN-636-16",
+      "epc": "WINCL-636",
+      "nombre_referencia": "Contenido del panel Más información",
+      "prioridad": "CRITICAL",
+      "tipo": "directo",
+      "pasos_minimos": 3,
+      "variantes": "Variantes de duración: con minutos · horas exactas · menor a 1 hora",
+      "cubre": [
+        {
+          "historia": "WINCL-728",
+          "escenario": "Construcción del nuevo panel \"Más información\" de TV"
+        },
+        {
+          "historia": "WINCL-728",
+          "escenario": "Duración con horas exactas"
+        },
+        {
+          "historia": "WINCL-728",
+          "escenario": "Duración menor a una hora"
+        },
+        {
+          "historia": "WINCL-728",
+          "escenario": "Las etiquetas de estado del programa coinciden con el diseño de Figma"
+        }
+      ]
+    },
+    {
+      "id": "WIN-636-17",
+      "epc": "WINCL-636",
+      "nombre_referencia": "Barra de progreso en Más información para eventos AHORA",
+      "prioridad": "CRITICAL",
+      "tipo": "directo",
+      "pasos_minimos": 1,
+      "variantes": null,
+      "cubre": [
+        {
+          "historia": "WINCL-728",
+          "escenario": "Mostrar barra de progreso en \"Panel de Más información\""
+        }
+      ]
+    },
+    {
+      "id": "WIN-636-18",
+      "epc": "WINCL-636",
+      "nombre_referencia": "Textos de Más información y recordatorios con llave ausente o vacía",
+      "prioridad": "CRITICAL",
+      "tipo": "robustez",
+      "pasos_minimos": 2,
+      "variantes": "Superficies: Botonera del panel · Modales de recordatorio · Panel Más información",
+      "cubre": [
+        {
+          "historia": "WINCL-637",
+          "escenario": "No se logra obtener una llave"
+        },
+        {
+          "historia": "WINCL-637",
+          "escenario": "La llave se encuentra vacía"
+        },
+        {
+          "historia": "WINCL-638",
+          "escenario": "No se logra obtener una llave"
+        },
+        {
+          "historia": "WINCL-638",
+          "escenario": "La llave se encuentra vacía"
+        },
+        {
+          "historia": "WINCL-728",
+          "escenario": "No se logra obtener una llave"
+        },
+        {
+          "historia": "WINCL-728",
+          "escenario": "La llave se encuentra vacía"
+        }
+      ]
+    }
+  ],
+  "no_generan_caso": [
+    {
+      "historia": "WINCL-613",
+      "escenario": "Configuración operativa de la Botonera",
+      "epc": "WINCL-609",
+      "criterio_que_falla": "actor",
+      "motivo": "Lo configura Operación en el administrador; no es acción del usuario final",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC",
+        "na_ambiente"
+      ]
+    },
+    {
+      "historia": "WINCL-614",
+      "escenario": "Configuración no disponible en la apa/metadata",
+      "epc": "WINCL-609",
+      "criterio_que_falla": "verificacion_en_dispositivo",
+      "motivo": "Requiere que la API falle; comportamiento de respaldo interno",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC",
+        "na_ambiente"
+      ]
+    },
+    {
+      "historia": "WINCL-626",
+      "escenario": "Configuración de fechas pasadas y futuras",
+      "epc": "WINCL-619",
+      "criterio_que_falla": "verificacion_en_dispositivo",
+      "motivo": "Lectura de configuración por región/default; lo visible ya está en el listado de fechas",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC",
+        "na_ambiente"
+      ]
+    },
+    {
+      "historia": "WINCL-626",
+      "escenario": "Máximo de días hacia el pasado y futuro",
+      "epc": "WINCL-619",
+      "criterio_que_falla": "verificacion_en_dispositivo",
+      "motivo": "Requiere cambiar la configuración a valores > 7; regla interna",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC",
+        "na_ambiente"
+      ]
+    },
+    {
+      "historia": "WINCL-627",
+      "escenario": "Días visibles en el filtro de fechas",
+      "epc": "WINCL-619",
+      "criterio_que_falla": "verificacion_en_dispositivo",
+      "motivo": "Obtención de configuración; sin resultado en pantalla",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC",
+        "na_ambiente"
+      ]
+    },
+    {
+      "historia": "WINCL-627",
+      "escenario": "Configuración no disponible en la apa/metadata",
+      "epc": "WINCL-619",
+      "criterio_que_falla": "verificacion_en_dispositivo",
+      "motivo": "Requiere que la API falle; comportamiento de respaldo interno",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC",
+        "na_ambiente"
+      ]
+    },
+    {
+      "historia": "WINCL-629",
+      "escenario": "Maximo de líneas a mostrar en Sinopsis",
+      "epc": "WINCL-619",
+      "criterio_que_falla": "verificacion_en_dispositivo",
+      "motivo": "Obtención de configuración; lo visible (líneas de sinopsis) está en la metadata",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC",
+        "na_ambiente"
+      ]
+    },
+    {
+      "historia": "WINCL-629",
+      "escenario": "Configuración no disponible en la apa/metadata",
+      "epc": "WINCL-619",
+      "criterio_que_falla": "verificacion_en_dispositivo",
+      "motivo": "Requiere que la API falle; comportamiento de respaldo interno",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC",
+        "na_ambiente"
+      ]
+    },
+    {
+      "historia": "WINCL-728",
+      "escenario": "Líneas a mostrar de Sinopsis",
+      "epc": "WINCL-636",
+      "criterio_que_falla": "verificacion_en_dispositivo",
+      "motivo": "Sin Then en Jira; lectura de configuración (reportar historia incompleta)",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC",
+        "na_ambiente"
+      ]
+    },
+    {
+      "historia": "WINCL-728",
+      "escenario": "Máximo de líneas a mostrar de Sinopsis",
+      "epc": "WINCL-636",
+      "criterio_que_falla": "verificacion_en_dispositivo",
+      "motivo": "Requiere cambiar la configuración a valores > 3; regla interna",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC",
+        "na_ambiente"
+      ]
+    },
+    {
+      "historia": "WINCL-615",
+      "escenario": "Implementación inicial del setup de métricas",
+      "epc": "WINCL-609",
+      "criterio_que_falla": "actor",
+      "motivo": "Proceso de métricas DAT / documentación; no es comportamiento de la app",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC",
+        "na_ambiente"
+      ]
+    },
+    {
+      "historia": "WINCL-615",
+      "escenario": "Mantenimiento del setup de métricas",
+      "epc": "WINCL-609",
+      "criterio_que_falla": "actor",
+      "motivo": "Proceso de métricas DAT / documentación; no es comportamiento de la app",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC",
+        "na_ambiente"
+      ]
+    },
+    {
+      "historia": "WINCL-615",
+      "escenario": "Validación del cumplimiento del setup de métricas",
+      "epc": "WINCL-609",
+      "criterio_que_falla": "actor",
+      "motivo": "Proceso de métricas DAT / documentación; no es comportamiento de la app",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC",
+        "na_ambiente"
+      ]
+    },
+    {
+      "historia": "WINCL-628",
+      "escenario": "Implementación inicial del setup de métricas",
+      "epc": "WINCL-619",
+      "criterio_que_falla": "actor",
+      "motivo": "Proceso de métricas DAT / documentación; no es comportamiento de la app",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC",
+        "na_ambiente"
+      ]
+    },
+    {
+      "historia": "WINCL-628",
+      "escenario": "Mantenimiento del setup de métricas",
+      "epc": "WINCL-619",
+      "criterio_que_falla": "actor",
+      "motivo": "Proceso de métricas DAT / documentación; no es comportamiento de la app",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC",
+        "na_ambiente"
+      ]
+    },
+    {
+      "historia": "WINCL-628",
+      "escenario": "Validación del cumplimiento del setup de métricas",
+      "epc": "WINCL-619",
+      "criterio_que_falla": "actor",
+      "motivo": "Proceso de métricas DAT / documentación; no es comportamiento de la app",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC",
+        "na_ambiente"
+      ]
+    },
+    {
+      "historia": "WINCL-639",
+      "escenario": "Implementación inicial del setup de métricas",
+      "epc": "WINCL-636",
+      "criterio_que_falla": "actor",
+      "motivo": "Proceso de métricas DAT / documentación; no es comportamiento de la app",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC",
+        "na_ambiente"
+      ]
+    },
+    {
+      "historia": "WINCL-639",
+      "escenario": "Mantenimiento del setup de métricas",
+      "epc": "WINCL-636",
+      "criterio_que_falla": "actor",
+      "motivo": "Proceso de métricas DAT / documentación; no es comportamiento de la app",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC",
+        "na_ambiente"
+      ]
+    },
+    {
+      "historia": "WINCL-639",
+      "escenario": "Validación del cumplimiento del setup de métricas",
+      "epc": "WINCL-636",
+      "criterio_que_falla": "actor",
+      "motivo": "Proceso de métricas DAT / documentación; no es comportamiento de la app",
+      "estados_aceptados": [
+        "verificación técnica",
+        "pendiente de revisión QC",
+        "na_ambiente"
+      ]
+    }
+  ]
+}

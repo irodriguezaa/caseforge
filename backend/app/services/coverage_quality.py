@@ -143,6 +143,8 @@ def quality_gate(candidates: list[GeneratedCaseCandidate]) -> list[GeneratedCase
                 if suffix:
                     candidate.name = f"{candidate.name[:70]} {suffix}".strip()[:120]
             key = _norm(candidate.name)
+            if key in used and scenario_rows:
+                continue
             n = 2
             while key in used:
                 candidate.name = f"{candidate.name[:110]} ({n})".strip()[:120]

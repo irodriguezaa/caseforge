@@ -283,7 +283,7 @@ export function QcDefectsView({ view }: { view: QcTicketView }): React.ReactElem
                 <div className="panel-body">
                   <p className="panel-subtitle">
                     Campo Cluster de Jira (población completa)
-                    <InfoTooltip text="Andina/Dominicana se separa según el país mencionado en el resumen del ticket." />
+                    <InfoTooltip text="Andina y Dominicana se agrupan en Andina/Dominicana." />
                   </p>
                   <BarList items={sortedEntries(stats.by_cluster)} color="var(--kpi-teal)" />
                 </div>

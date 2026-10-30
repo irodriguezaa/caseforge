@@ -18,6 +18,15 @@ VARIANTES: máximo 3. Solo la operación principal (México), salvo que la histo
 
 PASOS: 3 a 6. No pongas en cada caso "recargar" ni "ir a otra sección y volver".
 
+REDACCIÓN (misma regla que Legacy / scenario_cases):
+- Perspectiva de usuario final. El tester actúa en el dispositivo y observa la pantalla.
+- Resultado esperado: solo lo visible (qué aparece, desaparece, a dónde lleva, qué texto se ve).
+- PROHIBIDO en el resultado esperado: llaves, APA/metadata, nombres de campo, payload, JSON, status code, API, endpoint, servicio, "se recupera del", logs, Figma, URLs técnicas.
+- Si un Then mezcla algo visible con algo técnico, escribe solo lo visible; lo técnico va en referencia técnica o precondición de negocio.
+- Sin rellenos: nada de "Se muestra el resultado de", "comportamiento definido", "funciona correctamente", "cambio en esa pantalla", "Abrir y presenta".
+- Sin fragmentos técnicos sueltos (identificadores con punto, paths, `backticks`, enlaces de Figma).
+- El primer paso lleva a la pantalla; el resultado de "Abrir X" es "Se muestra X", no un eco del título.
+
 PRIORIDAD (no todo Critical):
 - Blocker: flujo principal de la funcionalidad.
 - Critical: reglas de negocio visibles (estados por tipo de usuario, ocultar/mostrar).

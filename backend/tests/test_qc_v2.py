@@ -170,7 +170,7 @@ def test_split_gherkin_keeps_quotes_and_comments():
     assert '"data.pin_channel.info[]"' in blocks[0][1]
 
 
-def test_tech_story_drops_metrics_and_key_scenarios():
+def test_tech_story_keeps_gherkin_before_eligibility():
     issue = {
         "key": "WEBCL-4541",
         "fields": {
@@ -189,7 +189,33 @@ def test_tech_story_drops_metrics_and_key_scenarios():
         },
     }
     story = collect._tech_story(issue, collect._counter("COV"))
-    assert [item.title for item in story.scenarios] == ["El usuario ve el home"]
+    assert [item.title for item in story.scenarios] == [
+        "Carga el esquema de métricas",
+        "El usuario ve el home",
+        "No se logra obtener una llave",
+    ]
+
+
+def test_v2_positive_filter_drops_metrics_keeps_visible_home():
+    issue = {
+        "key": "WEBCL-4541",
+        "fields": {
+            "summary": "Setup de métricas WEB",
+            "issuetype": {"name": "Technical Story"},
+            "description": (
+                "Feature: WEB\n"
+                "  Scenario: Carga el esquema de métricas\n"
+                "    Then el esquema de métricas cumple el pipeline\n"
+                "  Scenario: El usuario ve el home\n"
+                "    When el usuario abre la aplicación\n"
+                "    Then se muestra el home\n"
+            ),
+        },
+    }
+    story = collect._tech_story(issue, collect._counter("COV"))
+    bundle = EpicBundle(key="WEBCL-1", summary="x", technical_stories=[story])
+    engine.apply_positive_filter(bundle)
+    assert [item.title for item in bundle.covs] == ["El usuario ve el home"]
 
 
 def test_title_match_technical_brief_vs_product_epic():
@@ -302,12 +328,12 @@ def _bundle() -> EpicBundle:
         summary="Espaciado vertical",
         technical_stories=[
             TechStory("WEBCL-2061", "Ajuste", "Background ...", [
-                Item("COV-001", "Distancia menú", "Scenario: Distancia menú ...", "WEBCL-2061"),
-                Item("COV-002", "Por resolución", "Scenario: Por resolución ...", "WEBCL-2061"),
-                Item("COV-003", "Telemetría", "Scenario: se envía evento", "WEBCL-2061"),
+                Item("COV-001", "Distancia menú", "When el usuario abre la Home\nThen se muestra el menú separado del contenido", "WEBCL-2061"),
+                Item("COV-002", "Por resolución", "When el usuario cambia el tamaño de la ventana\nThen se muestra el mismo espaciado", "WEBCL-2061"),
+                Item("COV-003", "Telemetría", "When se reproduce el contenido\nThen se envía el evento a datadog", "WEBCL-2061"),
             ])
         ],
-        user_stories=[UserStory("BRFRE-1", "Espaciado", criteria=[Item("CRN-001", "Espaciado", "1. Espaciado", "BRFRE-1")])],
+        user_stories=[UserStory("BRFRE-1", "Espaciado", criteria=[Item("CRN-001", "Espaciado", "When el usuario abre la Home\nThen se muestra el espaciado del menú", "BRFRE-1")])],
     )
 
 
@@ -383,7 +409,10 @@ def test_engine_end_to_end_with_fake_llm():
     assert first.review_required is False
     estados = {row["scenario"].split()[0]: row["estado"] for row in run.ledger}
     assert estados["CRN-001"] == "cruce"
-    assert estados["COV-003"] == "excluido: telemetria"
+    assert any(
+        row.get("scenario") == "Telemetría" and row.get("estado") == "verificación técnica"
+        for row in run.ledger
+    )
     assert any(row["estado"] == "no afectación" for row in run.ledger)
     assert run.llm_calls == 3
 
@@ -418,7 +447,7 @@ def test_quota_stops_the_run():
         raise QuotaExhausted("sin créditos")
 
     runs = engine.run_epics(["WEBCL-1586"], "WEB", reader=collect.JiraReader(_FakeJira()), chat=chat)
-    assert runs[0].error and runs[0].error.startswith("corrida detenida")
+    assert any(row.get("estado") == "no evaluado por error de IA" for row in runs[0].ledger)
 
 
 def test_device_context_groups():

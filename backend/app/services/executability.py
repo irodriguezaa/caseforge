@@ -44,7 +44,7 @@ _SMUGGLED_WHEN = re.compile(r"\bcuando\b", re.IGNORECASE)
 _VALIDAR_PREFIX = re.compile(r"^\s*(validar( el comportamiento de la experiencia cuando)?)\s+", re.I)
 _CUANDO_PREFIX = re.compile(r"^\s*cuando\s+", re.I)
 _USER_ACTION = re.compile(
-    r"^\s*(el )?usuario\b|"
+    r"^\s*((el|la|los|las|un|una) )?usuari[oa]s?\b|"
     r"^\s*(el usuario\s+)?"
     r"(?!validar|verificar|observar|comprobar|asegurar|revisar|crear|est[aá]|tener)"
     r"[a-záéíóúñ]+(ar|er|ir)\b|"

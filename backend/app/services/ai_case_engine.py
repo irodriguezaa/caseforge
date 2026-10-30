@@ -237,7 +237,7 @@ Reglas HANDOFF (obligatorias):
 23. Títulos funcionales, no "Validar invocación/API/status 503".
     Título, condición, step y resultado deben ser el mismo flujo.
 24. Prioridad: BLOCKER (acceso, playback, bookmark, lineal, transacción, parental,
-    compras, cancelación, NPVR, TimeShift, perfiles) o CRITICAL (navegación, search,
+    compras, cancelación, grabación, TimeShift, perfiles) o CRITICAL (navegación, search,
     vcard, resto). Nunca dejar vacía si el caso es clasificable.
 25. Confianza high solo si el UX está claro en RN/Jira sin asumir implementación.
     Configuración no comprobable → medium/low.
@@ -327,7 +327,9 @@ _ISSUE_KEY_ONLY = re.compile(r"^[A-Z][A-Z0-9]+-\d+$")
 
 _LAST_RESORT_EXCLUDE = re.compile(
     r"setup de m[eé]tricas|\b(m[eé]tric|analytics|telemetr)|"
-    r"alta de llaves|llaves de configuraci[oó]n en el dispositivo|"
+    r"alta de llaves|baja de (una |las )?llaves?|limpieza de llaves|"
+    r"llaves de configuraci[oó]n en el dispositivo|"
+    r"inventario de (pantallas y )?llaves|cat[aá]logo de pantallas|"
     r"metadata:\s*alta|module_version|"
     r"\bsmartlib\b|\bnanocdn\b|"
     r"inicializa(r)? (el )?(player|engine|m[oó]dulo)|"
@@ -339,7 +341,7 @@ _LAST_RESORT_ALLOW = re.compile(
     r"grabar|grabaci[oó]n|perfil|bot[oó]n|control player|"
     r"usuario|experiencia|migraci[oó]n|marca|m[oó]dulo|"
     r"canal|gu[ií]a|ticket|modal|carrusel|player|epg|"
-    r"timeshift|npvr|login|registro|paypal|pago|checkout|"
+    r"timeshift|login|registro|paypal|pago|checkout|"
     r"banner|home|men[uú]|activaci[oó]n|\bactivar\b|\bhbo\b|"
     r"visible para el usuario",
     re.IGNORECASE,
@@ -1751,23 +1753,16 @@ def generate_release_app_candidates(
 
         if composition_mode() == "scenario" and candidates is not jira_candidates:
             candidates = align_llm_to_deterministic(jira_candidates, candidates)
-    candidates = _merge_last_resort(
-        pdf_bytes,
-        rn_filename or "",
-        existing_cases,
-        candidates,
-        inventory=inventory,
-        tickets=parsed_tickets,
-    )
-    if not candidates and pdf_bytes:
-        candidates = _from_evidence(pdf_bytes, rn_filename or "", existing_cases)
-        engine = "evidence"
+    if not inventory:
+        analysis_details.append(
+            "RN sin Gherkin observable: no se inventa caso genérico de respaldo."
+        )
 
     candidates = _keep_scoped_candidates(candidates, allowed or None)
     candidates = apply_qc_rules(candidates, release_context=release_context, stats=stats)
     candidates = apply_executability_gate(candidates, inventory)
     candidates = quality_gate(candidates)
-    from app.services.scenario_cases import contextualize_duplicate_titles, fill_scenario_ledger
+    from app.services.scenario_cases import contextualize_duplicate_titles, fill_scenario_ledger, redactar_caso
     from app.services.scenario_llm import polish_llm_candidates, rewrite_scenario_candidates
 
     candidates = contextualize_duplicate_titles(candidates)
@@ -1802,6 +1797,7 @@ def generate_release_app_candidates(
             analysis_details.append(f"LLM rechazos primer intento: {first}")
         if final:
             analysis_details.append(f"LLM rechazos finales: {final}")
+    candidates = [redactar_caso(row) for row in candidates]
     from app.llm.client import provider_name, resolved_model
 
     if _is_legacy_qc_engine():
@@ -1830,6 +1826,11 @@ def generate_release_app_candidates(
         f"Se propusieron {len(candidates)} caso(s) candidato(s). La IA propone; QC decide. "
         "No se crearon Test Cases en la base de datos."
     )
+    if any(row.get("estado") == "no evaluado por error de IA" for row in stats.scenario_ledger):
+        message = (
+            "Algunos escenarios no se evaluaron por error de IA; se conservó el motor determinista. "
+            "En Excel aparecen como «no evaluado por error de IA»."
+        )
     if not analysis_present:
         message = "No hay análisis de RN asociado; no hay evidencia para proponer casos."
     elif not pdf_bytes and not candidates:

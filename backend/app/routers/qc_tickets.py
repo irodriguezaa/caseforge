@@ -5,6 +5,7 @@ kept as a fully separate pipeline since QcTicket has no relationship to Release/
 """
 
 import logging
+import re
 from datetime import datetime, timezone
 from collections import Counter
 
@@ -262,7 +263,19 @@ def get_qc_ticket_stats(
             1 for t in tickets if t.source == QcTicketSource.LEAKED and t.is_attributed is not True
         )
 
-    by_cluster = Counter(t.cluster or "Sin cluster" for t in volume if t.cluster is not None)
+    def _display_cluster(raw: str) -> str:
+        # Operativas chart: Jira often has Andina, Dominicana and Andina/Dominicana as
+        # separate values; they are one cluster on this KPI.
+        if view != QcTicketView.OPERATIVAS:
+            return raw
+        key = re.sub(r"\s+", "", (raw or "").strip().upper())
+        if key in {"ANDINA", "DOMINICANA", "ANDINA/DOMINICANA"}:
+            return "Andina/Dominicana"
+        return raw
+
+    by_cluster = Counter(
+        _display_cluster(t.cluster) for t in volume if t.cluster is not None
+    )
     by_swf = Counter(t.swf or "Sin SWF" for t in volume)
     by_month = Counter(f"{t.created_date.year:04d}-{t.created_date.month:02d}" for t in volume)
 

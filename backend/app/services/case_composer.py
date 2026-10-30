@@ -12,6 +12,7 @@ from typing import Any
 from app.schemas.case_generation import CandidateStep, CoverageUnit, GeneratedCaseCandidate
 from app.services.coverage_quality import normalize_precondition, rewrite_expected
 from app.services.executability import STABLE_GENERIC_STEP, is_stable_generic_step, parse_scenario_clauses
+from app.services.qc_eligibility import split_visible_technical
 
 _GENERIC = re.compile(
     r"^\s*(el usuario\s+)?ingres(a|ar)( al)? flujo correspondiente\.?\s*$",
@@ -24,7 +25,7 @@ _TITLE_PREFIX = re.compile(
 )
 _FEATURE = re.compile(r"\bfeature\s*:?\s*", re.IGNORECASE)
 _FLOW_MARK = re.compile(r"\s*(\(flujo\s+\d+\)|\[[A-Z][A-Z0-9]+-\d+\])\s*", re.I)
-_USER = re.compile(r"^\s*(el )?usuario\s+", re.IGNORECASE)
+_USER = re.compile(r"^\s*((el|la|los|las|un|una) )?usuari[oa]s?\s+", re.IGNORECASE)
 _USER_INFINITIVE = re.compile(
     r"^\s*(el usuario\s+)?[a-záéíóúñ]+(ar|er|ir)\b",
     re.IGNORECASE,
@@ -35,7 +36,8 @@ _STATE_LEAD = re.compile(
 )
 _NOT_A_STEP = re.compile(
     r"^\s*(asegurar que|validaci[oó]n de|crear pantalla|rule\s*:|el espacio donde|"
-    r"no se logra|la llave se encuentra|pantalla de)\b",
+    r"no se logra|la llave se encuentra|pantalla de|implementar |se muestra el resultado de:|"
+    r"abrir y presenta)\b",
     re.IGNORECASE,
 )
 _3SG = (
@@ -58,6 +60,13 @@ _3SG = (
     (re.compile(r"\btransacciona\b", re.I), "Transaccionar"),
     (re.compile(r"\brealiza\b", re.I), "Realizar"),
     (re.compile(r"\bentra\b", re.I), "Entrar"),
+    (re.compile(r"\brecorre\b", re.I), "Recorrer"),
+    (re.compile(r"\barranca\b", re.I), "Abrir"),
+    (re.compile(r"\bve\b", re.I), "Ver"),
+    (re.compile(r"\bvuelve a abrir\b", re.I), "Abrir"),
+    (re.compile(r"\bpausa\b", re.I), "Pausar"),
+    (re.compile(r"\barrastra\b", re.I), "Arrastrar"),
+    (re.compile(r"\bsolicita\b", re.I), "Solicitar"),
 )
 _NEGATIVE = re.compile(r"inv[aá]lid|error|mensaje|rechaz|no se (muestra|permite)|incorrect|no es v[aá]lido", re.I)
 _SUCCESS = re.compile(r"\b(éxito|exito|correctamente|permite|se muestra el (comprobante|resultado)|confirma)\b", re.I)
@@ -142,8 +151,11 @@ def to_infinitive(action: str | None) -> str:
     if not raw:
         return ""
     for pattern, replacement in _3SG:
-        if pattern.search(raw):
-            raw = pattern.sub(replacement, raw, count=1)
+        match = pattern.search(raw)
+        if match:
+            after = raw[match.end() :].strip()
+            after = re.sub(r"^(de cada una|la|lo|le|el|los|las)\s+", "", after, flags=re.I)
+            raw = f"{replacement} {after}".strip()
             break
     else:
         raw = raw[0].upper() + raw[1:] if raw else raw
@@ -224,6 +236,8 @@ def polish_expected(text: str | None, *, title: str | None = None) -> str:
         ):
             chunks.append(part)
     visible = "; ".join(dict.fromkeys(chunks))
+    if title and visible and _norm(visible)[:40] == _norm(title)[:40]:
+        visible = f"En el dispositivo se observa: {visible}"
     quotes = _QUOTED.findall(text or "")
     for quote in quotes:
         if _TEMPLATE_MARK.search(quote.strip()):
@@ -236,7 +250,11 @@ def polish_expected(text: str | None, *, title: str | None = None) -> str:
 def _unit_expected(unit: CoverageUnit) -> str:
     parsed = _clauses(unit)
     parts = [item for item in (parsed.get("expected") or []) if item.strip()]
-    return polish_expected("; ".join(dict.fromkeys(parts)) or unit.scenario)
+    visible, _technical = split_visible_technical(unit.body or "", "")
+    chosen = [item for item in visible if item.strip()] or [
+        item for item in parts if item.strip()
+    ]
+    return polish_expected("; ".join(dict.fromkeys(chosen)))
 
 
 def _unit_given(unit: CoverageUnit) -> str:
@@ -786,16 +804,27 @@ def _title_distinguisher(candidate: GeneratedCaseCandidate) -> str:
 def ensure_distinct_titles(candidates: list[GeneratedCaseCandidate]) -> list[GeneratedCaseCandidate]:
     from app.services.scenario_cases import composition_mode, contextualize_duplicate_titles
 
-    if composition_mode() == "scenario":
-        return contextualize_duplicate_titles(candidates)
+    executable_covers = {
+        tuple(sorted(row.covers or []))
+        for row in candidates
+        if (row.applicability or "ejecutable") != "na_ambiente"
+    }
     executable_names = {
         _norm(row.name)
         for row in candidates
         if (row.applicability or "ejecutable") != "na_ambiente"
     }
+    kept: list[GeneratedCaseCandidate] = []
     for candidate in candidates:
-        if (candidate.applicability or "ejecutable") == "na_ambiente" and _norm(candidate.name) in executable_names:
-            candidate.name = f"No aplicable: {candidate.name}".strip()[:120]
+        if (candidate.applicability or "ejecutable") == "na_ambiente":
+            if tuple(sorted(candidate.covers or [])) in executable_covers:
+                continue
+            if _norm(candidate.name) in executable_names:
+                candidate.name = f"No aplicable: {candidate.name}".strip()[:120]
+        kept.append(candidate)
+    candidates = kept
+    if composition_mode() == "scenario":
+        return contextualize_duplicate_titles(candidates)
     grouped: dict[str, list[GeneratedCaseCandidate]] = {}
     for candidate in candidates:
         grouped.setdefault(_norm(candidate.name), []).append(candidate)
@@ -1030,6 +1059,8 @@ def validate_composed_candidates(
             if units and (not is_tester_action(action)) and not is_stable_generic_step(action):
                 action = _unit_action(units[0]) or action
             expected = polish_expected(step.expected_result, title=candidate.name)
+            if expected and _norm(expected)[:40] == _norm(candidate.name)[:40]:
+                expected = f"En el dispositivo se observa: {expected}"
             if units and (candidate.generation_origin or "") != "scenario-case":
                 source = _unit_expected(units[0])
                 if expected and source and not phrases_similar(expected, source) and not _QUOTED.search(expected):

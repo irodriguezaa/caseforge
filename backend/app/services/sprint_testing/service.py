@@ -200,6 +200,12 @@ def _principal_key(issue: dict[str, Any]) -> str | None:
     return key or None
 
 
+def _principal_summary(issue: dict[str, Any]) -> str:
+    parent = (issue.get("fields") or {}).get("parent") or {}
+    summary = str((parent.get("fields") or {}).get("summary") or "").strip()
+    return summary
+
+
 def _last_status_change(issue: dict[str, Any]) -> tuple[str | None, str | None, str | None]:
     histories = (issue.get("changelog") or {}).get("histories") or []
     best_dt: datetime | None = None
@@ -557,6 +563,7 @@ def aggregate_execution_issues(
                     priority=_priority_name(issue),
                     created=_created_at(issue),
                     principal=_principal_key(issue),
+                    principal_summary=_principal_summary(issue),
                     status_changed_at=status_changed_at,
                     status_changed_from=status_from,
                     status_changed_to=status_to,

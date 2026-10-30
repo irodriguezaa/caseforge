@@ -248,7 +248,80 @@ def test_metrics_story_with_visible_then_is_not_coverage() -> None:
         ],
         "web.pdf",
     )
+    assert len(units) == 1
+    blob = f"{units[0].scenario} {units[0].body}".lower()
+    assert "checkout" in blob or "plan" in blob
+
+
+def test_aaf_key_retirement_is_not_coverage() -> None:
+    units = build_coverage_inventory(
+        [
+            {
+                "key": "AAFCL-1919",
+                "children": [
+                    {
+                        "key": "AAFCL-1921",
+                        "summary": "Baja y normalización de llaves sin uso",
+                        "description": (
+                            "Scenario: Baja de una llave sin uso\n"
+                            "  When se ejecuta la baja de la llave\n"
+                            "  Then la llave es eliminada del administrador de la región\n"
+                            "  And se muestra el valor efectivo de la llave\n"
+                        ),
+                    }
+                ],
+            }
+        ],
+        "aaf.pdf",
+    )
     assert units == []
+
+
+def test_aaf_appkey_inventory_is_not_coverage() -> None:
+    units = build_coverage_inventory(
+        [
+            {
+                "key": "AAFCL-1987",
+                "children": [
+                    {
+                        "key": "AAFCL-1993",
+                        "summary": "Creación de appKey de segunda interacción",
+                        "description": (
+                            "Scenario: Existe una sola appKey para el dispositivo\n"
+                            "  When se crea la appKey de segunda interacción\n"
+                            "  Then es una por dispositivo y no se crean variantes por país\n"
+                        ),
+                    }
+                ],
+            }
+        ],
+        "aaf.pdf",
+    )
+    assert units == []
+
+
+def test_logo_visible_stays_coverage() -> None:
+    units = build_coverage_inventory(
+        [
+            {
+                "key": "AAFCL-1940",
+                "children": [
+                    {
+                        "key": "AAFCL-1941",
+                        "summary": "El logotipo configurado se muestra en cada ubicación",
+                        "description": (
+                            "Scenario: El logotipo configurado se muestra en cada ubicación\n"
+                            "  When el usuario abre la pantalla de inicio\n"
+                            "  Then se muestra el logotipo de Claro tv+\n"
+                        ),
+                    }
+                ],
+            }
+        ],
+        "aaf.pdf",
+    )
+    assert len(units) == 1
+    assert "logotipo" in units[0].scenario.lower()
 
 
 def test_key_setup_story_is_not_coverage() -> None:
@@ -271,7 +344,8 @@ def test_key_setup_story_is_not_coverage() -> None:
         ],
         "web.pdf",
     )
-    assert units == []
+    assert len(units) == 1
+    assert "ficha" in (units[0].scenario + units[0].body).lower()
 
 
 def test_last_resort_gate_reference_cells() -> None:
