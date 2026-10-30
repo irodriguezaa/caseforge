@@ -41,6 +41,7 @@ _SOURCE_LABEL = {
     "qa_bug": "QA Bug",
     "qc_bug": "QC Bug",
     "qa_qc": "QA/QC Bug",
+    "fallback": "fallback",
 }
 
 
@@ -137,7 +138,17 @@ def primary_epic_key(case: TestCase) -> str:
     return (raw.split("|")[0] or "").strip() or "Sin EPC"
 
 
+def _is_fallback_case(case: object) -> bool:
+    source = str(getattr(case, "source_type", "") or "")
+    origin = str(getattr(case, "generation_origin", "") or "")
+    reason = str(getattr(case, "applicability_reason", "") or "")
+    just = str(getattr(case, "justification", "") or "")
+    return source == "fallback" or origin == "fallback" or "qc-v2b:fallback" in reason or just.lower().startswith("fallback")
+
+
 def _case_hours(case: TestCase) -> float:
+    if _is_fallback_case(case):
+        return 0.0
     return estimate_case_hours(getattr(case, "priority", None), getattr(case, "complexity", None))
 
 
@@ -154,6 +165,7 @@ def parcial_estado(epic: str, ledger: list[dict] | None) -> str:
     key = epic.strip().upper()
     pending = 0
     errors = 0
+    fallbacks = 0
     for row in ledger or []:
         if not isinstance(row, dict):
             continue
@@ -165,11 +177,15 @@ def parcial_estado(epic: str, ledger: list[dict] | None) -> str:
             pending += 1
         elif estado.lower().startswith("error"):
             errors += 1
+        elif estado.lower() == "fallback":
+            fallbacks += 1
     parts: list[str] = []
     if pending:
         parts.append(f"{pending} pendiente de revisión QC")
     if errors:
         parts.append(f"{errors} error")
+    if fallbacks:
+        parts.append(f"{fallbacks} fallback")
     if not parts:
         return ""
     return "parcial (" + ", ".join(parts) + ")"

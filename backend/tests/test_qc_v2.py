@@ -69,6 +69,54 @@ Feature: Actualizar los assets de eventos bloqueados - WEB
 # ------------------------------------------------------------------ collect
 
 
+def test_gherkin_only_drops_foreign_keys_and_prose():
+    raw = (
+        "Ver también BRFRE-9999 y el diseño en Confluence.\n"
+        "Scenario: Se muestra el centro\n"
+        "  Then se muestra desplegado\n"
+    )
+    cleaned = collect.gherkin_only(raw, "WEBCL")
+    assert "BRFRE-9999" not in cleaned
+    assert "Scenario: Se muestra el centro" in cleaned
+
+
+def test_stage_a_by_stories_calls_once_per_technical_story():
+    bundle = EpicBundle(
+        key="WEBCL-1",
+        summary="s",
+        technical_stories=[
+            TechStory("WEBCL-2", "A", "", [Item("COV-001", "Uno", "Then se muestra", "WEBCL-2")]),
+            TechStory("WEBCL-3", "B", "", [Item("COV-002", "Dos", "Then se oculta", "WEBCL-3")]),
+        ],
+    )
+    calls = []
+
+    def chat(messages, **kwargs):
+        calls.append(messages[1]["content"])
+        return {
+            "resumen_funcionalidad": "ok",
+            "escenarios": [
+                {
+                    "id": "ESC-01",
+                    "titulo": "X",
+                    "descripcion": "d",
+                    "condiciones": [],
+                    "cubre_negocio": [],
+                    "cubre_tecnico": ["COV-001"] if "WEBCL-2" in messages[1]["content"] else ["COV-002"],
+                    "brecha": "ninguna",
+                }
+            ],
+            "excluidos": [],
+        }, LlmMeta(model="m")
+
+    result = stages.run_stage_a_by_stories(bundle, device_context("WEB"), chat=chat)
+    assert len(calls) == 2
+    assert all("WEBCL-2" in calls[0] and "WEBCL-3" not in calls[0] for _ in [0])
+    assert "WEBCL-3" in calls[1] and "COV-002" in calls[1]
+    assert {s.cubre_tecnico[0] for s in result.scenarios} == {"COV-001", "COV-002"}
+    assert [s.id for s in result.scenarios] == ["ESC-01", "ESC-02"]
+
+
 def test_split_criteria_keeps_subitems_inside_top_level():
     criteria = collect.split_criteria(BRFRE_3529_AC)
     assert len(criteria) == 7
@@ -212,6 +260,17 @@ class _FakeJira:
     def post(self, url, json=None):
         key = json["jql"].split('"')[1]
         return _Resp(200, {"issues": self.children_map.get(key, [])})
+
+
+def test_collect_skips_technical_stories_from_other_projects():
+    fake = _FakeJira()
+    fake.issues["BRFRE-9999"] = _issue("BRFRE-9999", "Technical Story", "ajena")
+    fake.children_map["WEBCL-1586"] = list(fake.children_map["WEBCL-1586"]) + [
+        _issue("BRFRE-9999", "Technical Story", "ajena", description="Scenario: X\n  Then se muestra")
+    ]
+    bundle = collect.collect_epic(collect.JiraReader(fake), "WEBCL-1586")
+    assert "BRFRE-9999" not in [s.key for s in bundle.technical_stories]
+    assert any("otro proyecto" in w for w in bundle.warnings)
 
 
 def test_collect_epic_follows_business_branch_and_filters_by_title():

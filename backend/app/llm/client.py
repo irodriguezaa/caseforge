@@ -29,6 +29,8 @@ _JSON_ONLY = "Responde únicamente un objeto JSON válido, sin markdown ni texto
 _FENCE = re.compile(r"```(?:json)?\s*([\s\S]*?)```", re.IGNORECASE)
 _QUOTA_MARKERS = ("insufficient_quota", "no credits", "credit balance", "exceeded your current quota")
 _JSON_REJECT = ("response_format", "json_object", "unknown parameter", "unsupported")
+_SIZE_RETRY = ("too large", "request too large", "tpm")
+_VALIDATE_RETRY = ("json_validate_failed", "max completion", "max_tokens", "max completion tokens")
 
 def open_client(**kwargs):
     """Hook for tests. Production uses httpx.Client."""
@@ -186,6 +188,7 @@ def generate(
     transport: httpx.BaseTransport | None = None,
     api_key: str | None = None,
     base_url: str | None = None,
+    max_tokens: int | None = None,
 ) -> str:
     """Una completions call. Devuelve el texto del asistente. No loguea prompts ni keys."""
     return complete(
@@ -200,6 +203,7 @@ def generate(
         repair=json_mode,
         api_key=api_key,
         base_url=base_url,
+        max_tokens=max_tokens,
     ).text
 
 
@@ -216,6 +220,7 @@ def complete(
     repair: bool | None = None,
     api_key: str | None = None,
     base_url: str | None = None,
+    max_tokens: int | None = None,
 ) -> LlmResult:
     return _complete(
         messages,
@@ -229,6 +234,7 @@ def complete(
         repair=json_mode if repair is None else repair,
         api_key=api_key,
         base_url=base_url,
+        max_tokens=max_tokens,
     )
 
 
@@ -245,6 +251,7 @@ def _complete(
     repair: bool,
     api_key: str | None = None,
     base_url: str | None = None,
+    max_tokens: int | None = None,
 ) -> LlmResult:
     key = (api_key or resolved_api_key()).strip()
     provider = provider_name()
@@ -285,6 +292,11 @@ def _complete(
                     payload["response_format"] = {"type": "json_object"}
                 if use_reasoning:
                     payload["reasoning_effort"] = use_reasoning
+                tokens = max_tokens
+                if tokens is None:
+                    tokens = int(getattr(settings, "qc_v2_max_completion_tokens", 0) or 0) or None
+                if tokens:
+                    payload["max_tokens"] = int(tokens)
                 try:
                     response = client.post(url, json=payload, headers=headers)
                 except (httpx.TimeoutException, httpx.TransportError) as exc:
@@ -309,10 +321,19 @@ def _complete(
                     use_json_format = False
                     attempt -= 1
                     continue
-                if response.status_code == 429:
-                    if _is_quota(text):
+                lowered = text.lower()
+                if response.status_code in (413, 429) or (
+                    response.status_code == 400 and any(token in lowered for token in _SIZE_RETRY)
+                ):
+                    if response.status_code == 429 and _is_quota(text):
                         raise QuotaExhausted("proveedor sin créditos (insufficient_quota)")
-                    last_error = "rate limit"
+                    last_error = f"HTTP {response.status_code}"
+                    time.sleep(_backoff(attempt, response.headers.get("Retry-After")))
+                    continue
+                if response.status_code == 400 and any(token in lowered for token in _VALIDATE_RETRY):
+                    last_error = "json_validate_failed"
+                    current = int(tokens or getattr(settings, "qc_v2_max_completion_tokens", 4096) or 4096)
+                    max_tokens = min(max(current * 2, 4096), 8192)
                     time.sleep(_backoff(attempt, response.headers.get("Retry-After")))
                     continue
                 if response.status_code in (401, 403):

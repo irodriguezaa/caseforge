@@ -19,12 +19,17 @@ from app.services.qc_v2.llm import QuotaExhausted, chat_json
 from app.services.qc_v2.stages import (
     ChatFn,
     StageAResult,
-    run_stage_a,
+    run_stage_a_by_stories,
     run_stage_b,
     run_stage_c,
 )
 from app.services.qc_v2b import ENGINE_TAG
-from app.services.qc_v2b.eligibility import classify_scenario, filter_bundle
+from app.services.qc_v2b.eligibility import (
+    classify_scenario,
+    classify_text,
+    expected_has_technical_leak,
+    filter_bundle,
+)
 from app.services.qc_v2b.pack import consolidate
 
 logger = logging.getLogger(__name__)
@@ -78,6 +83,65 @@ def _hours_skip_optional(candidate: GeneratedCaseCandidate) -> bool:
     return "qc-v2b:fuera" in (candidate.applied_rules or [])
 
 
+def _is_fallback(candidate: GeneratedCaseCandidate) -> bool:
+    return candidate.generation_origin == "fallback" or "qc-v2b:fallback" in (candidate.applied_rules or [])
+
+
+def _sanitize_candidate(candidate: GeneratedCaseCandidate) -> GeneratedCaseCandidate | None:
+    leaks = [step for step in candidate.steps if expected_has_technical_leak(step.expected_result or "")]
+    if leaks:
+        tech = "; ".join((step.expected_result or "").strip() for step in leaks)
+        candidate.technical_reference = "; ".join(
+            part for part in (candidate.technical_reference or "", tech) if part
+        )
+        return None
+    blob = f"{candidate.name}\n{candidate.description or ''}"
+    decision = classify_text(candidate.name, blob)
+    if not decision.eligible:
+        return None
+    return candidate
+
+
+def _fallback_story_candidates(bundle: EpicBundle, story, ctx: DeviceContext) -> list[GeneratedCaseCandidate]:
+    from app.schemas.case_generation import GenerationStats
+    from app.services.gherkin_coverage import candidates_from_jira_artifacts
+
+    body = (story.context or "") + "\n" + "\n\n".join(
+        f"Scenario: {item.title}\n{item.text}" for item in story.scenarios
+    )
+    artifacts = [
+        {
+            "key": bundle.key,
+            "summary": bundle.summary,
+            "children": [
+                {
+                    "key": story.key,
+                    "summary": story.summary,
+                    "description": body,
+                    "acceptance_criteria": "",
+                }
+            ],
+        }
+    ]
+    stats = GenerationStats()
+    raw = candidates_from_jira_artifacts(artifacts, "", [], lambda *_a: None, stats=stats)
+    kept: list[GeneratedCaseCandidate] = []
+    for candidate in raw:
+        candidate.related_functionality = bundle.key
+        candidate.generation_origin = "fallback"
+        candidate.source_type = "fallback"
+        candidate.applied_rules = list(candidate.applied_rules or []) + ["qc-v2b:fallback"]
+        if candidate.justification and not candidate.justification.lower().startswith("fallback"):
+            candidate.justification = f"fallback · {candidate.justification}"
+        else:
+            candidate.justification = candidate.justification or "fallback"
+        cleaned = _sanitize_candidate(candidate)
+        if cleaned is None:
+            continue
+        kept.append(cleaned)
+    return kept
+
+
 def run_epic(bundle: EpicBundle, ctx: DeviceContext, chat: ChatFn = chat_json) -> EpicRun:
     started = time.monotonic()
     run = EpicRun(bundle=bundle)
@@ -96,10 +160,31 @@ def run_epic(bundle: EpicBundle, ctx: DeviceContext, chat: ChatFn = chat_json) -
         return run
 
     chat_b = _with_overlay(chat)
-    run.stage_a = run_stage_a(filtered, ctx, chat=chat)
-    if run.stage_a.error:
-        run.error = f"Etapa A: {run.stage_a.error}"
-    else:
+    run.stage_a = run_stage_a_by_stories(filtered, ctx, chat=chat)
+    failed_keys = {
+        row.split(":", 1)[0].strip()
+        for row in (run.stage_a.story_errors if run.stage_a else [])
+        if ":" in row
+    }
+    if run.stage_a and run.stage_a.error and not run.stage_a.scenarios:
+        failed_keys = {story.key for story in filtered.technical_stories}
+        run.error = None
+    for story in filtered.technical_stories:
+        if story.key not in failed_keys:
+            continue
+        for candidate in _fallback_story_candidates(filtered, story, ctx):
+            run.candidates.append(candidate)
+        extra_ledger.append(
+            {
+                "story": story.key,
+                "epic": bundle.key,
+                "scenario": "Fallback",
+                "estado": "fallback",
+                "case_id": "",
+                "motivo": "; ".join(run.stage_a.story_errors or [run.stage_a.error or "etapa A"]),
+            }
+        )
+    if run.stage_a and run.stage_a.scenarios:
         kept_scenarios = []
         for scenario in run.stage_a.scenarios:
             decision = classify_scenario(scenario)
@@ -122,7 +207,8 @@ def run_epic(bundle: EpicBundle, ctx: DeviceContext, chat: ChatFn = chat_json) -
             excluded=run.stage_a.excluded,
             missing=run.stage_a.missing,
             metas=run.stage_a.metas,
-            error=run.stage_a.error,
+            error=None,
+            story_errors=run.stage_a.story_errors,
         )
         if kept_scenarios:
             run.stage_b = run_stage_b(filtered, ctx, run.stage_a, chat=chat_b)
@@ -142,7 +228,9 @@ def run_epic(bundle: EpicBundle, ctx: DeviceContext, chat: ChatFn = chat_json) -
                     continue
                 display = "MAJOR" if case.tipo == "ERG" or (case.riesgo or "").startswith("Major") else None
                 candidate = _to_candidate(case, scenario, bundle, ctx)
-                run.candidates.append(_stamp_v2b(candidate, display))
+                stamped = _sanitize_candidate(_stamp_v2b(candidate, display))
+                if stamped is not None:
+                    run.candidates.append(stamped)
             run.candidates = [c for c in run.candidates if not _hours_skip_optional(c)]
 
     metas = list((run.stage_a.metas if run.stage_a else [])) + [m for r in run.stage_b for m in r.metas]

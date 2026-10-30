@@ -22,7 +22,7 @@ class Settings:
     llm_provider: str = (os.getenv("LLM_PROVIDER") or "").strip().lower()
     llm_base_url: str = (os.getenv("LLM_BASE_URL") or "").strip()
     llm_api_key: str = os.getenv("LLM_API_KEY", "")
-    llm_model: str = os.getenv("LLM_MODEL", "")
+    llm_model: str = (os.getenv("LLM_MODEL") or os.getenv("QC_LLM_MODEL") or "").strip()
     llm_timeout_seconds: float = float(os.getenv("LLM_TIMEOUT_SECONDS", "60") or 60)
     llm_max_retries: int = int(os.getenv("LLM_MAX_RETRIES", "3") or 3)
     llm_temperature: float | None = (
@@ -39,16 +39,19 @@ class Settings:
     qc_engine: str = (os.getenv("QC_ENGINE", "legacy") or "legacy").strip().lower()
     qc_v2_model_a: str = (
         os.getenv("OPENAI_QC_MODEL_A")
+        or os.getenv("QC_LLM_MODEL")
         or os.getenv("OPENAI_QC_MODEL")
         or os.getenv("LLM_MODEL")
         or os.getenv("OPENAI_MODEL", "gpt-4o-mini")
     )
     qc_v2_model_b: str = (
         os.getenv("OPENAI_QC_MODEL_B")
+        or os.getenv("QC_LLM_MODEL")
         or os.getenv("OPENAI_QC_MODEL")
         or os.getenv("LLM_MODEL")
         or os.getenv("OPENAI_MODEL", "gpt-4o-mini")
     )
+    qc_v2_max_completion_tokens: int = int(os.getenv("QC_V2_MAX_COMPLETION_TOKENS", "4096") or 4096)
     qc_v2_temperature: float | None = (
         float(os.getenv("OPENAI_QC_TEMPERATURE", "0.25")) if os.getenv("OPENAI_QC_TEMPERATURE", "0.25") else None
     )

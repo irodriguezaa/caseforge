@@ -36,9 +36,12 @@ def chat_json(
     timeout: float | None = None,
     max_retries: int = 3,
     transport: httpx.BaseTransport | None = None,
+    max_tokens: int | None = None,
 ) -> tuple[dict[str, Any], LlmMeta]:
     if not is_configured():
         raise LlmError("LLM no configurado")
+    from app.config import settings as _settings
+
     result = complete(
         messages,
         json_mode=True,
@@ -48,6 +51,9 @@ def chat_json(
         reasoning_effort=reasoning_effort,
         max_retries=max_retries,
         transport=transport,
+        max_tokens=max_tokens
+        if max_tokens is not None
+        else int(getattr(_settings, "qc_v2_max_completion_tokens", 4096) or 4096),
     )
     parsed = extract_json_object(result.text)
     meta = LlmMeta(

@@ -173,7 +173,11 @@ def persist_candidates(
             related_rn=_clip(candidate.related_rn, 250),
             confidence=_clip(candidate.confidence, 16),
             complexity=_clip(complexity, 16),
-            estimation_hours=estimate_case_hours(priority, complexity),
+            estimation_hours=(
+                0.0
+                if (candidate.generation_origin == "fallback" or candidate.source_type == "fallback")
+                else estimate_case_hours(priority, complexity)
+            ),
             generated_by_engine=True,
             ecosystem=_clip(candidate.ecosystem, 16),
             device=_clip(candidate.device, 80),

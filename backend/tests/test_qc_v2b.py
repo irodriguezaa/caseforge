@@ -10,6 +10,7 @@ from app.services.qc_v2b.eligibility import (
     ESTADO_REGRESSION,
     ESTADO_TECH,
     classify_text,
+    expected_has_technical_leak,
     filter_bundle,
 )
 from app.services.qc_v2b.pack import consolidate, rewrite_title, user_label
@@ -68,6 +69,26 @@ def test_eligibility_keys_and_api_and_hpa():
     assert classify_text("La Home no se rompe", "conservación de la navegación").estado == ESTADO_REGRESSION
     ok = classify_text("Usuario externo ve el Centro desplegado", "Then se muestra en pantalla")
     assert ok.eligible
+
+
+def test_eligibility_entry_and_technical_then_match_legacy():
+    login = classify_text(
+        "Inicio de sesión",
+        "When el usuario ingresa credenciales\nThen se obtiene el parámetro source de la respuesta\nAnd es dirigido al nodo Home",
+    )
+    register = classify_text(
+        "Registro de una nueva cuenta",
+        "Then se obtiene el parámetro source de la respuesta",
+    )
+    session = classify_text("Sesión previa activa", "Then se obtiene el parámetro source")
+    assert login.eligible is False and login.estado == ESTADO_TECH
+    assert register.eligible is False and register.estado == ESTADO_TECH
+    assert session.eligible is False and session.estado == ESTADO_TECH
+    visible = classify_text(
+        "Usuario externo registra y ve el Centro desplegado",
+        "Then se muestra el Centro de Notificaciones desplegado",
+    )
+    assert visible.eligible
 
 
 def test_filter_bundle_keeps_visible_drops_keys():
@@ -245,6 +266,49 @@ def test_v2b_engine_filters_before_stage_b_and_v2_keeps_hpa():
     assert "HPA" not in v2b_tipos
     assert all(c.generation_origin == "qc-v2b" for c in v2b_runs[0].candidates)
     assert any("fuera de paquete" in (row.get("estado") or "") or "variable" in (row.get("estado") or "") for row in v2b_runs[0].ledger)
+
+
+def test_v2b_fallback_filters_entry_and_marks_ledger():
+    from app.services.qc_v2.context import device_context
+    from app.services.qc_v2.llm import LlmError
+    from app.services.qc_v2b.engine import run_epic
+
+    bundle = EpicBundle(
+        key="WEBCL-1",
+        summary="s",
+        technical_stories=[
+            TechStory(
+                "WEBCL-2",
+                "s",
+                "",
+                [
+                    Item("COV-001", "Inicio de sesión", "Then se obtiene el parámetro source", "WEBCL-2"),
+                    Item("COV-002", "Registro de una nueva cuenta", "Then se obtiene el parámetro source", "WEBCL-2"),
+                    Item("COV-003", "Sesión previa activa", "Then se obtiene el parámetro source", "WEBCL-2"),
+                    Item("COV-004", "Usuario ve el Centro desplegado", "Then se muestra el Centro desplegado", "WEBCL-2"),
+                ],
+            )
+        ],
+    )
+
+    def chat(*_a, **_k):
+        raise LlmError("HTTP 413")
+
+    run = run_epic(bundle, device_context("WEB"), chat=chat)
+    titles = " ".join(row["scenario"] for row in run.ledger)
+    assert "Inicio de sesión" in titles
+    assert "Registro de una nueva cuenta" in titles
+    assert "Sesión previa activa" in titles
+    assert all(
+        row["estado"] == ESTADO_TECH
+        for row in run.ledger
+        if any(name in row["scenario"] for name in ("Inicio de sesión", "Registro de una nueva cuenta", "Sesión previa activa"))
+    )
+    assert all(c.generation_origin == "fallback" for c in run.candidates)
+    assert all(c.source_type == "fallback" for c in run.candidates)
+    assert all("qc-v2b:fallback" in (c.applied_rules or []) for c in run.candidates)
+    assert not any(expected_has_technical_leak(step.expected_result or "") for c in run.candidates for step in c.steps)
+    assert any(row.get("estado") == "fallback" for row in run.ledger)
 
 
 def test_dispatch_v2b_name():

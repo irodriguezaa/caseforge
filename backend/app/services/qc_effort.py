@@ -123,12 +123,16 @@ def estimate_release_from_cases(cases: list[Any]) -> tuple[float, float]:
         return 0.0, 0.0
     minutes = 0.0
     for row in cases:
-        priority = getattr(row, "priority", None)
         if isinstance(row, dict):
+            origin = str(row.get("generation_origin") or row.get("source_type") or "")
             priority = row.get("priority")
             complexity = row.get("complexity")
         else:
+            origin = str(getattr(row, "generation_origin", "") or getattr(row, "source_type", "") or "")
+            priority = getattr(row, "priority", None)
             complexity = getattr(row, "complexity", None)
+        if origin == "fallback" or "fallback" in origin:
+            continue
         minutes += estimate_case_minutes(priority, complexity)
     hours = minutes / 60.0
     days = hours / hours_per_day()

@@ -6,7 +6,7 @@ import json
 import logging
 import re
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Callable
 
@@ -21,6 +21,7 @@ _PROMPTS = Path(__file__).parent / "prompts"
 EXCLUSION_REASONS = {"telemetria", "tecnico_interno", "accion_desarrollo", "medicion_tecnica", "no_reproducible"}
 BRECHAS = {"ninguna", "sin_tecnico", "sin_negocio", "implicito"}
 TIPOS = {"HPP", "HPA", "TTF", "ERG", "E2E"}
+MAX_CASES_PER_CALL = 4
 
 ChatFn = Callable[..., tuple[dict[str, Any], LlmMeta]]
 
@@ -62,6 +63,7 @@ class StageAResult:
     missing: list[str] = field(default_factory=list)
     metas: list[LlmMeta] = field(default_factory=list)
     error: str | None = None
+    story_errors: list[str] = field(default_factory=list)
 
 
 def stage_a_user_prompt(bundle: EpicBundle, ctx: DeviceContext) -> str:
@@ -187,6 +189,39 @@ def run_stage_a(bundle: EpicBundle, ctx: DeviceContext, chat: ChatFn = chat_json
     return result
 
 
+def run_stage_a_by_stories(bundle: EpicBundle, ctx: DeviceContext, chat: ChatFn = chat_json) -> StageAResult:
+    """Etapa A una Technical Story a la vez para no rebasar el límite de tokens."""
+    stories = list(bundle.technical_stories)
+    if len(stories) <= 1:
+        return run_stage_a(bundle, ctx, chat=chat)
+    merged = StageAResult()
+    errors: list[str] = []
+    esc_n = 0
+    for story in stories:
+        sliced = replace(bundle, technical_stories=[story])
+        result = run_stage_a(sliced, ctx, chat=chat)
+        merged.metas.extend(result.metas)
+        if result.error:
+            errors.append(f"{story.key}: {result.error}")
+            continue
+        if result.resumen and not merged.resumen:
+            merged.resumen = result.resumen
+        for scenario in result.scenarios:
+            esc_n += 1
+            scenario.id = f"ESC-{esc_n:02d}"
+            merged.scenarios.append(scenario)
+        merged.excluded.update(result.excluded)
+    valid_ids = {item.id for item in bundle.crns + bundle.covs}
+    covered = {i for s in merged.scenarios for i in s.cubre_negocio + s.cubre_tecnico}
+    merged.missing = sorted(valid_ids - covered - set(merged.excluded))
+    merged.story_errors = errors
+    if not merged.scenarios and errors:
+        merged.error = "; ".join(errors)
+    elif errors:
+        logger.warning("qc_v2 etapa A parcial: %s", "; ".join(errors))
+    return merged
+
+
 # ================================================================ Etapa B
 
 
@@ -273,6 +308,8 @@ def parse_stage_b(payload: dict[str, Any], scenario_id: str) -> list[DesignedCas
         pasos = [step for step in pasos if step["accion"] or step["resultado_esperado"]]
         if not titulo or not pasos:
             continue
+        if len(cases) >= MAX_CASES_PER_CALL:
+            break
         tipo = str(raw.get("tipo") or "").strip().upper()
         prioridad = str(raw.get("prioridad") or "").strip().lower()
         variantes = [
@@ -314,7 +351,7 @@ def _design_one(
         {"role": "user", "content": stage_b_user_prompt(bundle, ctx, scenario, all_scenarios, resumen)},
     ]
     result = StageBResult(scenario_id=scenario.id)
-    for attempt in range(2):
+    for attempt in range(3):
         try:
             payload, meta = chat(messages, model=settings.qc_v2_model_b, temperature=_temperature(), **_reasoning("b"))
         except LlmError as exc:

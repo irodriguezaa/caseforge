@@ -65,14 +65,91 @@ _ALREADY_IN_ENV = re.compile(
     r"ya (se encuentra|est[aá]|existe) (habilitad|deshabilitad|en el ambiente|en la operaci[oó]n)",
     re.IGNORECASE,
 )
+_THEN_LINE = re.compile(r"(?im)^\s*(?:Then|Entonces|And|Y)\s+(.+)$")
+_TECH_RESULT = re.compile(
+    r"par[aá]metro|payload|response body|status codes?|\bAPI\b|\bendpoint\b|"
+    r"respuesta (del |de la )?(servicio|api|backend)|"
+    r"nombres? de campo|campo t[eé]cnico|\bJSON\b|\bheader\b|"
+    r"se obtiene el par[aá]metro",
+    re.IGNORECASE,
+)
+_ENTRY_VISIBLE = re.compile(
+    r"\b(home|nodo inicio|landing|perfiles?|selector de perfil)\b",
+    re.IGNORECASE,
+)
+_ENTRY_ONLY = re.compile(
+    r"\b(registro( de una nueva cuenta)?|inicio de sesi[oó]n|cierre de sesi[oó]n|"
+    r"log\s?in|sesi[oó]n previa activa|sesi[oó]n activa|"
+    r"autenticaci[oó]n( por tipo de usuario)?)\b",
+    re.IGNORECASE,
+)
+_BEHAVIOR = re.compile(
+    r"centro|notificacion|banner|modal|checkout|player|carrusel|men[uú]|"
+    r"despleg|repleg|ocult|espaciado|dise[nñ]o",
+    re.IGNORECASE,
+)
 
 
 def _blob(title: str, body: str = "") -> str:
     return f"{title}\n{body}"
 
 
+def _then_clauses(body: str) -> list[str]:
+    found = [m.group(1).strip() for m in _THEN_LINE.finditer(body or "")]
+    return found or ([body] if body else [])
+
+
+def _legacy_discards(title: str, body: str) -> Decision | None:
+    from app.services.gherkin_coverage import _non_qc_inventory_reason
+
+    reason = _non_qc_inventory_reason(title, body, None)
+    if not reason:
+        return None
+    estado = ESTADO_QA if any(token in reason.lower() for token in ("llave", "flag", "config")) else ESTADO_TECH
+    return Decision(False, estado, reason)
+
+
+def _entry_only_title(title: str) -> bool:
+    text = (title or "").strip()
+    if not text or not _ENTRY_ONLY.search(text):
+        return False
+    return not _BEHAVIOR.search(text)
+
+
+def _mixed_then_is_entry(body: str) -> bool:
+    clauses = _then_clauses(body)
+    if not clauses:
+        return False
+    tech = [c for c in clauses if _TECH_RESULT.search(c)]
+    visible = [c for c in clauses if _VISIBLE.search(c) or _ENTRY_VISIBLE.search(c)]
+    if not tech:
+        return False
+    if not visible:
+        return True
+    return all(_ENTRY_VISIBLE.search(c) and not _BEHAVIOR.search(c) for c in visible)
+
+
+def expected_has_technical_leak(text: str) -> bool:
+    return bool(_TECH_RESULT.search(text or ""))
+
+
 def classify_text(title: str, body: str = "") -> Decision:
     text = _blob(title, body)
+    legacy = _legacy_discards(title, body)
+    if legacy:
+        return legacy
+    if _entry_only_title(title):
+        return Decision(
+            False,
+            ESTADO_TECH,
+            "forma de entrar (registro/login/sesión); se usa como precondición, no como caso",
+        )
+    if _mixed_then_is_entry(body) or (_TECH_RESULT.search(text) and not _BEHAVIOR.search(text)):
+        return Decision(
+            False,
+            ESTADO_TECH,
+            "Then técnico (parámetro/API/servicio); lo visible es solo llegar a Home o perfiles",
+        )
     if is_out_of_qc_inventory(title, body) or is_key_config_scenario(title, body) or _TTF_KEY.search(text):
         return Decision(False, ESTADO_QA, "requiere modificar llaves/metadata/flags o la llave está ausente/vacía")
     if _NEEDS_CONFIG_CHANGE.search(text) or (_FLAG_OR_KEY.search(text) and not _VISIBLE.search(text)):

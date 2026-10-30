@@ -72,6 +72,61 @@ def test_generate_json_and_retry_after(monkeypatch):
     assert seen[0].get("response_format") == {"type": "json_object"}
 
 
+def test_413_retries_then_ok(monkeypatch):
+    from app.llm import client as llm
+
+    monkeypatch.setattr(llm, "is_configured", lambda: True)
+    monkeypatch.setattr(llm, "provider_name", lambda: "groq")
+    monkeypatch.setattr(llm, "resolved_api_key", lambda: "g")
+    monkeypatch.setattr(llm.time, "sleep", lambda _s: None)
+    ok = {"choices": [{"message": {"content": json.dumps({"ok": True})}}]}
+    seen: list[dict] = []
+    transport = _transport(
+        [
+            (413, {"error": {"message": "Request too large"}}),
+            (200, ok),
+        ],
+        seen,
+    )
+    text = generate(
+        [{"role": "user", "content": "json"}],
+        json_mode=True,
+        transport=transport,
+        api_key="g",
+        max_retries=3,
+    )
+    assert json.loads(text) == {"ok": True}
+    assert len(seen) == 2
+
+
+def test_json_validate_failed_retries(monkeypatch):
+    from app.llm import client as llm
+
+    monkeypatch.setattr(llm, "is_configured", lambda: True)
+    monkeypatch.setattr(llm, "provider_name", lambda: "groq")
+    monkeypatch.setattr(llm.time, "sleep", lambda _s: None)
+    ok = {"choices": [{"message": {"content": json.dumps({"ok": True})}}]}
+    seen: list[dict] = []
+    transport = _transport(
+        [
+            (400, {"error": {"message": "json_validate_failed / max completion tokens"}}),
+            (200, ok),
+        ],
+        seen,
+    )
+    text = generate(
+        [{"role": "user", "content": "json"}],
+        json_mode=True,
+        transport=transport,
+        api_key="g",
+        max_retries=3,
+        max_tokens=2048,
+    )
+    assert json.loads(text) == {"ok": True}
+    assert len(seen) == 2
+    assert seen[1]["max_tokens"] >= seen[0]["max_tokens"]
+
+
 def test_quota_raises(monkeypatch):
     from app.llm import client as llm
 

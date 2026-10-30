@@ -116,6 +116,43 @@ _SCENARIO_LINE = re.compile(
     r"^[ \t]*(Scenario Outline|Scenario|Esquema del escenario|Escenario)\s*:[ \t]*(.*)$",
     re.IGNORECASE | re.MULTILINE,
 )
+_GHERKIN_KEEP = re.compile(
+    r"^\s*(Feature|Background|Scenario Outline|Scenario|Esquema del escenario|Escenario|"
+    r"Given|When|Then|And|But|Dado|Cuando|Entonces|Y|Ejemplos|Examples)\b|"
+    r"^\s*\|",
+    re.IGNORECASE,
+)
+_ISSUE_KEY = re.compile(r"\b([A-Z][A-Z0-9]+-\d+)\b")
+
+
+def project_of(key: str) -> str:
+    return (key or "").split("-", 1)[0].strip().upper()
+
+
+def gherkin_only(text: str, home_project: str = "") -> str:
+    """Criterio/Gherkin; descarta prosa y claves de otros proyectos."""
+    home = (home_project or "").strip().upper()
+
+    def _strip_foreign(line: str) -> str:
+        if not home:
+            return line
+        return _ISSUE_KEY.sub(
+            lambda match: match.group(0) if project_of(match.group(1)) == home else "",
+            line,
+        )
+
+    kept: list[str] = []
+    for line in (text or "").splitlines():
+        keys = _ISSUE_KEY.findall(line)
+        foreign_only = bool(home and keys and all(project_of(k) != home for k in keys))
+        if foreign_only and not _GHERKIN_KEEP.search(line):
+            continue
+        if _GHERKIN_KEEP.search(line) or (kept and line.strip().startswith("|")):
+            kept.append(_strip_foreign(line))
+    if kept:
+        return "\n".join(kept).strip()
+    blob = (text or "").strip()
+    return _strip_foreign(blob) if home else blob
 
 
 def split_gherkin(description: str) -> tuple[str, list[tuple[str, str]]]:
@@ -267,11 +304,11 @@ def _parent_key(issue: dict[str, Any]) -> str | None:
     return (_fields(issue).get("parent") or {}).get("key")
 
 
-def _tech_story(issue: dict[str, Any], counter: Callable[[], str]) -> TechStory:
+def _tech_story(issue: dict[str, Any], counter: Callable[[], str], home_project: str = "") -> TechStory:
     fields = _fields(issue)
     key = issue.get("key") or ""
     summary = fields.get("summary") or ""
-    description = adf_to_text(fields.get("description"))
+    description = gherkin_only(adf_to_text(fields.get("description")), home_project)
     context, blocks = split_gherkin(description)
     scenarios = [
         Item(counter(), title, block, key)
@@ -283,10 +320,11 @@ def _tech_story(issue: dict[str, Any], counter: Callable[[], str]) -> TechStory:
     return TechStory(key=key, summary=summary, context=context, scenarios=scenarios)
 
 
-def _user_story(issue: dict[str, Any], counter: Callable[[], str]) -> UserStory:
+def _user_story(issue: dict[str, Any], counter: Callable[[], str], home_project: str = "") -> UserStory:
     fields = _fields(issue)
     key = issue.get("key") or ""
     criteria = split_criteria(fields.get(F_AC))
+    home = home_project or project_of(key)
     return UserStory(
         key=key,
         summary=fields.get("summary") or "",
@@ -295,7 +333,10 @@ def _user_story(issue: dict[str, Any], counter: Callable[[], str]) -> UserStory:
         para=field_text(fields.get(F_PARA)),
         tipo_usuario=field_text(fields.get(F_TIPO_USUARIO)),
         exito=field_text(fields.get(F_EXITO)),
-        criteria=[Item(counter(), text.splitlines()[0][:160], text, key) for text in criteria],
+        criteria=[
+            Item(counter(), text.splitlines()[0][:160], gherkin_only(text, home), key)
+            for text in criteria
+        ],
     )
 
 
@@ -363,7 +404,7 @@ def collect_user_stories(reader: JiraReader, epic: dict[str, Any], bundle: EpicB
         for child in reader.children(product_epic.get("key") or ""):
             if "user story" not in _type(child).lower():
                 continue
-            story = _user_story(child, counter)
+            story = _user_story(child, counter, project_of(bundle.key))
             if story.criteria:
                 bundle.user_stories.append(story)
             else:
@@ -381,13 +422,17 @@ def collect_epic(reader: JiraReader, epic_key: str) -> EpicBundle:
     bundle = EpicBundle(key=epic.get("key") or epic_key, summary=_fields(epic).get("summary") or "")
     counter = _counter("COV")
     skipped: dict[str, int] = {}
+    home = project_of(bundle.key)
     for child in reader.children(bundle.key):
         issuetype = _type(child)
         if not is_story_type(issuetype):
             # Bugs (QA/QC), NCO, tareas: no son Technical Stories y no definen comportamiento a probar.
             skipped[issuetype or "sin tipo"] = skipped.get(issuetype or "sin tipo", 0) + 1
             continue
-        story = _tech_story(child, counter)
+        if home and project_of(child.get("key") or "") not in {"", home}:
+            skipped["otro proyecto"] = skipped.get("otro proyecto", 0) + 1
+            continue
+        story = _tech_story(child, counter, home)
         if story.scenarios:
             bundle.technical_stories.append(story)
     if skipped:

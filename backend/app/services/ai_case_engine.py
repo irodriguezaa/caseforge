@@ -82,6 +82,8 @@ def _llm_ready() -> bool:
 
 
 def _v2_llm_failed(result: GenerateCasesResponse) -> bool:
+    if result.candidates:
+        return False
     msg = (result.message or "").lower()
     if any(token in msg for token in ("crédito", "corrida detenida", "llm no configurado", "sin respuesta")):
         return True
@@ -1591,8 +1593,14 @@ def generate_release_app_candidates(
                 functionality_keys=functionality_keys,
                 stats=stats,
             )
-        if not _v2_llm_failed(proposed):
-            return _stamp_llm_meta(proposed, "llm")
+        if engine_name == "v2b" or not _v2_llm_failed(proposed):
+            path = "llm"
+            if engine_name == "v2b" and any(
+                (c.generation_origin or "") == "fallback" or "qc-v2b:fallback" in (c.applied_rules or [])
+                for c in proposed.candidates
+            ):
+                path = "fallback"
+            return _stamp_llm_meta(proposed, path)
         logger.warning("v2 llm failed; deterministic fallback")
         stats.llm_path = "determinista"
     jira_artifacts = fetch_artifacts_for_keys(functionality_keys) if functionality_keys else []
