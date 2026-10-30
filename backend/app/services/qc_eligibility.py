@@ -208,8 +208,7 @@ _NON_OBSERVABLE = re.compile(
     r"m[eé]trica|\bdat\b|datadog|\blogs?\b|build|pipeline|c[oó]digo|"
     r"inventario|hash|formaliz|consultar la llave|valor (efectivo|por defecto)|"
     r"evento[s]? (de telemetr|\w+\.\w+)|se recupera del|consulta de pa[ií]s|"
-    r"gco|backend|embebido|remot[oa]s?|documentaci[oó]n|"
-    r"par[aá]metro|payload|response body|status codes?|\bJSON\b)\b",
+    r"gco|backend|embebido|remot[oa]s?|documentaci[oó]n)\b",
     re.IGNORECASE,
 )
 _ROBUST_CONSUMPTION = re.compile(
@@ -320,7 +319,7 @@ def process_gate(title: str, body: str, summary: str = "") -> str | None:
         return "actor"
     if _PROCESS_DEVICE.search(when or title or "") and not visible_ux:
         return "device"
-    if visible_ux:
+    if visible_ux and not _PROCESS_ACTOR.search(blob):
         return None
     if _PROCESS_ACTOR.search(blob):
         return "actor"
@@ -910,50 +909,50 @@ def synthesize_impact_units(
             blob,
             re.I,
         ):
-            want_named.setdefault(f"{epic_key}|impacto-app|default", []).append((story, block))
             continue
     if not consumed:
         return []
     units: list[CoverageUnit] = []
     for group, rows in want_named.items():
-        for story, block in rows:
-            title = str(block.get("title") or "")
-            body = str(block.get("body") or "")
-            summary = str(story.get("summary") or "")
-            elig = evaluate_scenario(title, body, summary)
-            action, then = impact_user_view(elig.surface or "", title)
-            if "impacto-app" in group:
-                action, then = (
-                    "el usuario recorre las pantallas de la aplicación",
-                    "los textos de la aplicación se ven igual que antes",
-                )
-            seq_holder[0] += 1
-            story_key = str(story.get("key") or epic_key)
-            units.append(
-                CoverageUnit(
-                    coverage_id=f"COV-{seq_holder[0]:03d}",
-                    role="G",
-                    behavior=then,
-                    scenario=title,
-                    evidence=f"{story_key}: {title}",
-                    jira_key=story_key,
-                    rn_key=epic_key,
-                    feature_story=story_key,
-                    body=f"When {action}\nThen {then}",
-                    description=then,
-                    rn_filename=rn_filename,
-                    artifact_key=epic_key,
-                    story_key=story_key,
-                    observable_then=[then],
-                    test_intent=then,
-                    qc_relevance="QC_REGRESSION",
-                    user_action=action,
-                    source_origin="gherkin",
-                    applied_rules=["impacto-superficie"],
-                    scenario_group=group,
-                    story_summary=summary,
-                    traceability=f"RN={epic_key}; impacto={elig.surface}",
-                )
+        story, block = rows[0]
+        title = str(block.get("title") or "")
+        body = str(block.get("body") or "")
+        summary = str(story.get("summary") or "")
+        elig = evaluate_scenario(title, body, summary)
+        action, then = impact_user_view(elig.surface or "", title)
+        seq_holder[0] += 1
+        story_key = str(story.get("key") or epic_key)
+        for extra_story, extra_block in rows[1:]:
+            _annotate_covered_surface(
+                stats,
+                str(extra_story.get("key") or epic_key),
+                str(extra_block.get("title") or ""),
             )
+        units.append(
+            CoverageUnit(
+                coverage_id=f"COV-{seq_holder[0]:03d}",
+                role="G",
+                behavior=then,
+                scenario=title,
+                evidence=f"{story_key}: {title}",
+                jira_key=story_key,
+                rn_key=epic_key,
+                feature_story=story_key,
+                body=f"When {action}\nThen {then}",
+                description=then,
+                rn_filename=rn_filename,
+                artifact_key=epic_key,
+                story_key=story_key,
+                observable_then=[then],
+                test_intent=then,
+                qc_relevance="QC_REGRESSION",
+                user_action=action,
+                source_origin="gherkin",
+                applied_rules=["impacto-superficie"],
+                scenario_group=group,
+                story_summary=summary,
+                traceability=f"RN={epic_key}; impacto={elig.surface}",
+            )
+        )
         existing_groups.add(group)
     return units

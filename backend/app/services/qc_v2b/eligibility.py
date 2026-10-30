@@ -101,6 +101,12 @@ def classify_text(title: str, body: str = "") -> Decision:
             ESTADO_QA if _TTF_KEY.search(text) else ESTADO_TECH,
             "TTF sin resultado visible en el dispositivo",
         )
+    if expected_has_technical_leak(text):
+        return Decision(
+            False,
+            ESTADO_TECH,
+            "el resultado no se verifica mirando el dispositivo",
+        )
     return Decision(True, ESTADO_PACK, "QC lo reproduce desde el dispositivo con cuentas reales")
 
 

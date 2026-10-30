@@ -1670,6 +1670,81 @@ def _units_from_story_blocks(
     return units
 
 
+def _impacto_app_units_from_generic(
+    *,
+    epic_key: str,
+    blocks: list[tuple[dict, dict]],
+    rn_filename: str,
+    seq_holder: list[int],
+    existing_units: list[CoverageUnit],
+) -> list[CoverageUnit]:
+    """Legacy: un caso de impacto cuando el Then es 'sin regresiones' y hay llaves consumidas.
+
+    qc_eligibility.synthesize_impact_units (8dfcf03) descarta esas filas; el set dorado
+    AAF R47 las cubre como impacto de aplicación, no como escenario técnico.
+    """
+    consumed = False
+    generic_rows: list[tuple[dict, dict]] = []
+    existing_ids = {unit.coverage_id for unit in existing_units}
+    covered_titles = {(unit.story_key or "", unit.scenario or "") for unit in existing_units}
+    for story, block in blocks:
+        title = str(block.get("title") or "")
+        body = str(block.get("body") or "")
+        summary = str(story.get("summary") or "")
+        story_key = str(story.get("key") or epic_key)
+        elig = evaluate_scenario(title, body, summary)
+        blob = f"{summary}\n{title}\n{body}"
+        if elig.consumed:
+            consumed = True
+        if elig.ok or (story_key, title) in covered_titles:
+            continue
+        if elig.generic_regression or re.search(
+            r"comportamiento de la aplicaci[oó]n|sin regresiones", blob, re.I
+        ):
+            generic_rows.append((story, block))
+    if not consumed or not generic_rows:
+        return []
+    group = f"{epic_key}|impacto-app|default"
+    action = "el usuario recorre las pantallas de la aplicación"
+    then = "los textos de la aplicación se ven igual que antes"
+    units: list[CoverageUnit] = []
+    for story, block in generic_rows:
+        title = str(block.get("title") or "")
+        summary = str(story.get("summary") or "")
+        story_key = str(story.get("key") or epic_key)
+        seq_holder[0] += 1
+        coverage_id = f"COV-{seq_holder[0]:03d}"
+        if coverage_id in existing_ids:
+            continue
+        units.append(
+            CoverageUnit(
+                coverage_id=coverage_id,
+                role="G",
+                behavior=then,
+                scenario=title,
+                evidence=f"{story_key}: {title}",
+                jira_key=story_key,
+                rn_key=epic_key,
+                feature_story=story_key,
+                body=f"When {action}\nThen {then}",
+                description=then,
+                rn_filename=rn_filename,
+                artifact_key=epic_key,
+                story_key=story_key,
+                observable_then=[then],
+                test_intent=then,
+                qc_relevance="QC_REGRESSION",
+                user_action=action,
+                source_origin="gherkin",
+                applied_rules=["impacto-superficie"],
+                scenario_group=group,
+                story_summary=summary,
+                traceability=f"RN={epic_key}; impacto=impacto-app",
+            )
+        )
+    return units
+
+
 def build_coverage_inventory(
     artifacts: list[dict[str, Any]],
     rn_filename: str,
@@ -1778,6 +1853,15 @@ def build_coverage_inventory(
                 rn_filename=rn_filename,
                 seq_holder=seq_holder,
                 stats=stats,
+                existing_units=units[start:],
+            )
+        )
+        units.extend(
+            _impacto_app_units_from_generic(
+                epic_key=epic_key,
+                blocks=epic_blocks,
+                rn_filename=rn_filename,
+                seq_holder=seq_holder,
                 existing_units=units[start:],
             )
         )
