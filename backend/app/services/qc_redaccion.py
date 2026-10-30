@@ -133,6 +133,26 @@ SURFACES: tuple[Surface, ...] = (
         r"(el )?modal .?canal bloqueado",
     ),
     Surface(
+        "modal-grabacion",
+        "el modal de grabación",
+        "Modal de grabación",
+        r"modal de grabaci[oó]n",
+        "El usuario está en el Player de TV con un evento que permite grabación",
+        ('Seleccionar la opción "Grabar"', "Se muestra el modal de grabación"),
+        r"grabar",
+        r"(el )?modal de grabaci[oó]n",
+    ),
+    Surface(
+        "modal-eliminar-grabacion",
+        "el modal de eliminación de grabación",
+        "Modal de eliminación de grabación",
+        r"modal de eliminaci[oó]n|eliminar esta grabaci[oó]n",
+        "El usuario tiene al menos una grabación en Mis grabaciones",
+        ('Seleccionar la opción "Eliminar grabación"', "Se muestra el modal de eliminación de grabación"),
+        r"eliminar grabaci[oó]n",
+        r"(el )?modal de eliminaci[oó]n",
+    ),
+    Surface(
         "player",
         "el Player de TV",
         "Player de TV",
@@ -255,7 +275,8 @@ _JUNK_ACTION = re.compile(
     r"^\s*(abrir|ingresar( a)?)\s+(la\s+)?aplicaci[oó]n\s*$|"
     r"^\s*(abrir|ingresar( a)?)\s+(el|la)\s+(se |implementaci|implementar|construcci|nuevo |nueva )|"
     r"^\s*abrir el se muestra|^\s*implementar\b|^\s*construcci[oó]n\b|^\s*implementaci[oó]n\b|"
-    r"^\s*mostrar la progress bar\s*$|^\s*se muestra el resultado de",
+    r"^\s*mostrar la progress bar\s*$|^\s*se muestra el resultado de|"
+    r"^\s*(abrir|ingresar( a)?)\s+(el|la)\s+usuario\b|^\s*(abrir|ingresar( a)?)\b.*\b(est[aá] visible|se encuentra)\b",
     re.I,
 )
 _NAV_VERB = re.compile(r"^\s*(abrir|ingresar|acceder|navegar|entrar)\b(\s+(a|al|a la|en))?\s*", re.I)
@@ -537,9 +558,10 @@ def unique_names(cases: list[GeneratedCaseCandidate]) -> list[GeneratedCaseCandi
         if counts[key] < 2:
             continue
         seen[key] = seen.get(key, 0) + 1
-        story = (case.related_jira or "").split(" | ")[0].strip()
-        if story and story not in case.name:
-            case.name = f"{case.name} [{story}]"
+        story = _NAME_LEAD.sub("", (case.use_case_title or "").strip()).strip(" .:-\"")
+        story = " ".join(story.split()[:7])
+        if story and _fold(story) not in _fold(case.name):
+            case.name = f"{case.name} ({_grammar(_close_quotes(story))})"
         elif seen[key] > 1:
             case.name = f"{case.name} ({seen[key]})"
     return cases
