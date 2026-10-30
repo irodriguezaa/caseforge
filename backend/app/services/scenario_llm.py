@@ -9,8 +9,6 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
-import httpx
-
 from app.config import settings
 from app.schemas.case_generation import CandidateStep, CoverageUnit, GeneratedCaseCandidate
 from app.services.case_composer import _QUOTED
@@ -497,7 +495,8 @@ def _parse_rewrite(raw: str, base: GeneratedCaseCandidate) -> GeneratedCaseCandi
 
 
 def _call_llm(user_payload: dict[str, Any], timeout: float, feedback: str | None = None) -> str:
-    url = settings.openai_base_url.rstrip("/") + "/chat/completions"
+    from app.llm.client import generate
+
     user_content = json.dumps(user_payload, ensure_ascii=False)
     messages = [
         {"role": "system", "content": _REWRITE_SYSTEM},
@@ -510,24 +509,14 @@ def _call_llm(user_payload: dict[str, Any], timeout: float, feedback: str | None
                 "content": "El caso anterior fue rechazado. Corrige exactamente esto: " + feedback,
             }
         )
-    body = {
-        "model": settings.openai_model,
-        "temperature": 0.1,
-        "response_format": {"type": "json_object"},
-        "messages": messages,
-    }
-    with httpx.Client(timeout=timeout) as client:
-        response = client.post(
-            url,
-            headers={
-                "Authorization": f"Bearer {settings.openai_api_key}",
-                "Content-Type": "application/json",
-            },
-            json=body,
-        )
-    if response.status_code != 200:
-        raise RuntimeError(f"LLM HTTP {response.status_code}: {response.text[:400]}")
-    return response.json()["choices"][0]["message"]["content"]
+    return generate(
+        messages,
+        json_mode=True,
+        temperature=0.1,
+        model=settings.openai_model,
+        timeout=timeout,
+        api_key=str(getattr(settings, "llm_api_key", "") or settings.openai_api_key or ""),
+    )
 
 
 def _llm_eligible(unit: CoverageUnit) -> bool:
@@ -690,7 +679,9 @@ def rewrite_scenario_candidates(
     candidates: list[GeneratedCaseCandidate],
     inventory: list[CoverageUnit],
 ) -> tuple[list[GeneratedCaseCandidate], list[dict[str, Any]]]:
-    if not (settings.openai_api_key or "").strip() or not inventory:
+    provider = str(getattr(settings, "llm_provider", "") or "").strip().lower()
+    key = str(getattr(settings, "llm_api_key", "") or getattr(settings, "openai_api_key", "") or "").strip()
+    if provider == "none" or (provider != "ollama" and not key) or not inventory:
         return candidates, []
     by_cover: dict[str, GeneratedCaseCandidate] = {}
     for candidate in candidates:
@@ -714,7 +705,13 @@ def rewrite_scenario_candidates(
         jobs.append((unit, base))
     if not jobs:
         return candidates, []
-    concurrency = max(1, int(getattr(settings, "llm_scenario_concurrency", 8) or 8))
+    concurrency = max(
+        1,
+        min(
+            int(getattr(settings, "llm_scenario_concurrency", 8) or 8),
+            int(getattr(settings, "llm_max_concurrency", 2) or 2),
+        ),
+    )
     timeout = float(getattr(settings, "llm_scenario_timeout", 45) or 45)
     rows: list[dict[str, Any]] = []
     rewritten_by_cover: dict[str, GeneratedCaseCandidate] = {}

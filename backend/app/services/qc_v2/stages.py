@@ -339,7 +339,10 @@ def run_stage_b(
     scenarios = stage_a.scenarios
     if not scenarios:
         return []
-    workers = max(1, min(settings.qc_v2_concurrency, len(scenarios)))
+    workers = max(
+        1,
+        min(settings.qc_v2_concurrency, getattr(settings, "llm_max_concurrency", 2) or 2, len(scenarios)),
+    )
     with ThreadPoolExecutor(max_workers=workers) as pool:
         futures = [
             pool.submit(_design_one, bundle, ctx, s, scenarios, stage_a.resumen, chat) for s in scenarios

@@ -65,6 +65,7 @@ def test_llm_second_batch_only_missing_units(client, monkeypatch, tmp_path) -> N
     from tests.test_case_generation import WEB_RN, _gherkin_artifacts, _store_dir
 
     _store_dir(monkeypatch, tmp_path)
+    monkeypatch.setattr("app.services.scenario_cases.composition_mode", lambda: "flow")
     monkeypatch.setattr(
         "app.services.ai_case_engine.settings",
         replace(settings, openai_api_key="sk-test", openai_model="gpt-4o-mini"),
@@ -133,7 +134,7 @@ def test_llm_second_batch_only_missing_units(client, monkeypatch, tmp_path) -> N
             "analysis_data": analyzed,
         },
     ).json()["id"]
-    with patch("app.services.ai_case_engine.httpx.Client") as client_cls:
+    with patch("app.llm.client.open_client") as client_cls:
         client_cls.return_value.__enter__.return_value = fake_client
         response = client.post(f"/api/v1/releases/{release_id}/generate-cases")
     assert response.status_code == 200
@@ -174,6 +175,7 @@ def test_llm_http_payload_excludes_nco_tri_qa_qc(client, monkeypatch, tmp_path) 
     from tests.test_case_generation import WEB_RN, _gherkin_artifacts, _store_dir
 
     _store_dir(monkeypatch, tmp_path)
+    monkeypatch.setattr("app.services.scenario_cases.composition_mode", lambda: "flow")
     monkeypatch.setattr(
         "app.services.ai_case_engine.settings",
         replace(settings, openai_api_key="sk-test", openai_model="gpt-4o-mini"),
@@ -228,7 +230,7 @@ def test_llm_http_payload_excludes_nco_tri_qa_qc(client, monkeypatch, tmp_path) 
             "analysis_data": analyzed,
         },
     ).json()["id"]
-    with patch("app.services.ai_case_engine.httpx.Client") as client_cls:
+    with patch("app.llm.client.open_client") as client_cls:
         client_cls.return_value.__enter__.return_value = fake_client
         response = client.post(f"/api/v1/releases/{release_id}/generate-cases")
     assert response.status_code == 200
@@ -249,6 +251,7 @@ def test_llm_candidates_keep_only_functionality_jira_and_covers(
     from tests.test_case_generation import WEB_RN, _gherkin_artifacts, _store_dir
 
     _store_dir(monkeypatch, tmp_path)
+    monkeypatch.setattr("app.services.scenario_cases.composition_mode", lambda: "flow")
     monkeypatch.setattr(
         "app.services.ai_case_engine.settings",
         replace(settings, openai_api_key="sk-test", openai_model="gpt-4o-mini"),
@@ -316,7 +319,7 @@ def test_llm_candidates_keep_only_functionality_jira_and_covers(
             "analysis_data": analyzed,
         },
     ).json()["id"]
-    with patch("app.services.ai_case_engine.httpx.Client") as client_cls:
+    with patch("app.llm.client.open_client") as client_cls:
         client_cls.return_value.__enter__.return_value = fake_client
         response = client.post(f"/api/v1/releases/{release_id}/generate-cases")
     assert response.status_code == 200

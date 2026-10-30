@@ -515,12 +515,12 @@ def _transport(responses, seen):
 
 @pytest.fixture()
 def fake_key():
-    from app.services.qc_v2 import llm
+    from app.config import settings
 
-    previous = llm.settings.openai_api_key
-    object.__setattr__(llm.settings, "openai_api_key", "k")
+    previous = settings.openai_api_key
+    object.__setattr__(settings, "openai_api_key", "k")
     yield
-    object.__setattr__(llm.settings, "openai_api_key", previous)
+    object.__setattr__(settings, "openai_api_key", previous)
 
 
 def test_llm_drops_unsupported_params_and_parses(fake_key):

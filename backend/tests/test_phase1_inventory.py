@@ -478,7 +478,7 @@ def test_llm_path_still_adds_gated_last_resort(monkeypatch) -> None:
         ("WINCL-219", "WINCL-219: reglas de navegación secundaria"),
         ("WINCL-823", "WINCL-823: setup de métricas"),
     ]
-    with patch("app.services.ai_case_engine.httpx.Client") as client_cls:
+    with patch("app.llm.client.open_client") as client_cls:
         client_cls.return_value.__enter__.return_value = fake_client
         response = generate_release_app_candidates(
             release_id=1,

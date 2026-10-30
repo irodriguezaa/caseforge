@@ -218,7 +218,7 @@ def test_incremental_qa_nco_is_deterministic_and_does_not_call_llm(
     )
     assert second.status_code == 201, second.text
     fake_client = MagicMock()
-    with patch("app.services.ai_case_engine.httpx.Client") as client_cls:
+    with patch("app.llm.client.open_client") as client_cls:
         client_cls.return_value.__enter__.return_value = fake_client
         generated = client.post(f"/api/v1/releases/{second.json()['id']}/generate-cases").json()
     assert fake_client.post.call_count == 0

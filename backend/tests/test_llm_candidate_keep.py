@@ -189,7 +189,8 @@ def _llm_item(name: str, covers: list[str], **extra: object) -> dict:
 
 def _generate(fake_client: MagicMock):
     with patch("app.services.ai_case_engine.fetch_artifacts_for_keys", lambda _keys: _two_story_artifacts()):
-        with patch("app.services.ai_case_engine.httpx.Client") as client_cls:
+        with patch("app.services.scenario_cases.composition_mode", lambda: "flow"):
+          with patch("app.llm.client.open_client") as client_cls:
             client_cls.return_value.__enter__.return_value = fake_client
             with patch("app.services.ai_case_engine.settings") as settings:
                 settings.openai_api_key = "sk-test"

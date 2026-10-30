@@ -431,7 +431,7 @@ def test_revalidation_keeps_revalidation_delta_engine_without_llm(
     monkeypatch.setattr("app.services.revalidation_engine._tickets_by_section", boom)
     monkeypatch.setattr("app.routers.releases.read_release_note_pdf", boom)
     fake_client = MagicMock()
-    with patch("app.services.ai_case_engine.httpx.Client") as client_cls:
+    with patch("app.llm.client.open_client") as client_cls:
         client_cls.return_value.__enter__.return_value = fake_client
         generated = client.post(f"/api/v1/releases/{reval['id']}/generate-cases")
     assert generated.status_code == 200, generated.text

@@ -64,6 +64,10 @@ def _disable_llm(monkeypatch) -> None:
     monkeypatch.setattr("app.services.ai_case_engine.fetch_artifacts_for_keys", lambda _keys: [])
 
 
+def _flow_composition(monkeypatch) -> None:
+    monkeypatch.setattr("app.services.scenario_cases.composition_mode", lambda: "flow")
+
+
 def _store_dir(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(
         "app.services.rn_storage.settings",
@@ -246,6 +250,7 @@ def test_generate_without_stored_pdf_does_not_invent_cases(client, monkeypatch) 
 
 
 def test_llm_structured_payload_is_returned(client, monkeypatch, tmp_path) -> None:
+    _flow_composition(monkeypatch)
     _store_dir(monkeypatch, tmp_path)
     monkeypatch.setattr(
         "app.services.ai_case_engine.settings",
@@ -301,7 +306,7 @@ def test_llm_structured_payload_is_returned(client, monkeypatch, tmp_path) -> No
             "analysis_data": analyzed,
         },
     ).json()["id"]
-    with patch("app.services.ai_case_engine.httpx.Client") as client_cls:
+    with patch("app.llm.client.open_client") as client_cls:
         client_cls.return_value.__enter__.return_value = fake_client
         response = client.post(f"/api/v1/releases/{release_id}/generate-cases")
     assert response.status_code == 200
@@ -332,6 +337,7 @@ def test_llm_logs_attempt_and_success_without_leaking_api_key(
 
     caplog.set_level(logging.INFO, logger="app.services.ai_case_engine")
     secret = "sk-secret-must-not-appear-xyz"
+    _flow_composition(monkeypatch)
     _store_dir(monkeypatch, tmp_path)
     monkeypatch.setattr(
         "app.services.ai_case_engine.settings",
@@ -388,7 +394,7 @@ def test_llm_logs_attempt_and_success_without_leaking_api_key(
             "analysis_data": analyzed,
         },
     ).json()["id"]
-    with patch("app.services.ai_case_engine.httpx.Client") as client_cls:
+    with patch("app.llm.client.open_client") as client_cls:
         client_cls.return_value.__enter__.return_value = fake_client
         response = client.post(f"/api/v1/releases/{release_id}/generate-cases")
     assert response.status_code == 200
@@ -408,6 +414,7 @@ def test_llm_error_logs_fallback_without_leaking_api_key(
 
     caplog.set_level(logging.INFO, logger="app.services.ai_case_engine")
     secret = "sk-secret-must-not-appear-xyz"
+    _flow_composition(monkeypatch)
     _store_dir(monkeypatch, tmp_path)
     monkeypatch.setattr(
         "app.services.ai_case_engine.settings",
@@ -435,7 +442,7 @@ def test_llm_error_logs_fallback_without_leaking_api_key(
             "analysis_data": analyzed,
         },
     ).json()["id"]
-    with patch("app.services.ai_case_engine.httpx.Client") as client_cls:
+    with patch("app.llm.client.open_client") as client_cls:
         client_cls.return_value.__enter__.return_value = fake_client
         response = client.post(f"/api/v1/releases/{release_id}/generate-cases")
     assert response.status_code == 200
@@ -446,7 +453,7 @@ def test_llm_error_logs_fallback_without_leaking_api_key(
     blob = "\n".join(messages)
     assert any("LLM attempt" in msg for msg in messages)
     assert any("LLM HTTP error" in msg and "401" in msg for msg in messages)
-    assert any("LLM call failed" in msg and "RuntimeError" in msg for msg in messages)
+    assert any("LLM call failed" in msg and "LlmError" in msg for msg in messages)
     assert any("LLM fallback activated" in msg for msg in messages)
     assert secret not in blob
     assert "Bearer sk-" not in blob

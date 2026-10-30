@@ -156,6 +156,9 @@ class GenerationStats(BaseModel):
     llm_batches: list[dict[str, Any]] = Field(default_factory=list)
     coverage_unit_status: dict[str, str] = Field(default_factory=dict)
     scenario_ledger: list[dict[str, Any]] = Field(default_factory=list)
+    llm_path: str | None = None
+    llm_provider: str | None = None
+    llm_model: str | None = None
 
 
 class GenerateCasesResponse(BaseModel):

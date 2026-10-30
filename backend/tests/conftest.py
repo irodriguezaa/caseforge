@@ -28,6 +28,22 @@ TEST_SESSION_SECRET = "test-qc-session-secret"
 def qc_auth_env(monkeypatch):
     monkeypatch.setenv("QC_USERS", TEST_QC_USERS)
     monkeypatch.setenv("QC_SESSION_SECRET", TEST_SESSION_SECRET)
+    from app.config import settings
+
+    object.__setattr__(settings, "qc_engine", "legacy")
+    object.__setattr__(settings, "llm_provider", "")
+    monkeypatch.setattr(
+        "app.services.ai_case_engine.fetch_issuetypes_for_keys",
+        lambda keys: {},
+    )
+    monkeypatch.setattr(
+        "app.routers.releases.fetch_issuetypes_for_keys",
+        lambda keys: {},
+    )
+    monkeypatch.setattr(
+        "app.services.jira_generation.fetch_artifacts_for_keys",
+        lambda keys: [],
+    )
 
 
 def login_as(client: TestClient, email: str, password: str) -> None:

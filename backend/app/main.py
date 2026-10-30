@@ -11,6 +11,7 @@ from app.routers.dashboard import router as dashboard_router
 from app.routers.defects import router as defects_router
 from app.routers.deliverables import router as deliverables_router
 from app.routers.health import router as health_router
+from app.routers.llm import router as llm_router
 from app.routers.imports import router as imports_router
 from app.routers.operational_windows import router as operational_windows_router
 from app.routers.be_release import router as be_release_router
@@ -71,6 +72,7 @@ async def session_middleware(request: Request, call_next) -> Response:
 
 # Sprint 1 (unchanged): GET /health, GET /health/db
 app.include_router(health_router)
+app.include_router(llm_router)
 app.include_router(auth_router)
 
 # Sprint 2: Releases + Test Cases, versioned under /api/v1

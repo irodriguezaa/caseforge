@@ -17,8 +17,6 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
-import httpx
-
 from app.config import settings
 from app.schemas.case_generation import (
     CandidateStep,
@@ -65,12 +63,52 @@ logger = logging.getLogger(__name__)
 _last_llm_meta: dict[str, int] = {}
 
 
+def _setting_str(*names: str) -> str:
+    for name in names:
+        value = getattr(settings, name, None)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ""
+
+
+def _llm_ready() -> bool:
+    provider = _setting_str("llm_provider").lower()
+    if provider == "none":
+        return False
+    key = _setting_str("llm_api_key", "openai_api_key")
+    if provider == "ollama":
+        return True
+    return bool(key)
+
+
+def _v2_llm_failed(result: GenerateCasesResponse) -> bool:
+    msg = (result.message or "").lower()
+    if any(token in msg for token in ("crédito", "corrida detenida", "llm no configurado", "sin respuesta")):
+        return True
+    blob = " ".join(result.analysis_details or []).lower()
+    return "etapa a:" in blob or "error=" in blob
+
+
+def _stamp_llm_meta(result: GenerateCasesResponse, path: str, reason: str = "") -> GenerateCasesResponse:
+    from app.llm.client import provider_name, resolved_model
+
+    stats = result.generation_stats or GenerationStats()
+    stats.llm_path = path
+    stats.llm_provider = provider_name()
+    stats.llm_model = resolved_model()
+    result.generation_stats = stats
+    note = f"Ruta IA: {path}" + (f" ({reason})" if reason else "")
+    result.analysis_details = [note, *(result.analysis_details or [])]
+    logger.info("generation path=%s provider=%s model=%s", path, stats.llm_provider, stats.llm_model)
+    return result
+
+
 def _llm_safe_text(value: object) -> str:
     """Strip API key material from log text. Never log Authorization."""
     text = str(value) if value is not None else ""
-    key = (settings.openai_api_key or "").strip()
-    if key:
-        text = text.replace(key, "[redacted]")
+    for key in (_setting_str("openai_api_key"), _setting_str("llm_api_key")):
+        if key:
+            text = text.replace(key, "[redacted]")
     text = re.sub(r"(?i)(authorization\s*[:=]\s*)(\S+)", r"\1[redacted]", text)
     text = re.sub(r"(?i)bearer\s+\S+", "Bearer [redacted]", text)
     return text[:300]
@@ -1340,29 +1378,25 @@ def _from_llm(
     jira_artifacts: list[dict[str, Any]],
     inventory: list[CoverageUnit],
 ) -> list[GeneratedCaseCandidate]:
+    from app.llm.client import extract_json_object, generate
+
     logger.info("LLM attempt: using model %s", settings.openai_model)
     allowed_ids = {unit.coverage_id for unit in inventory}
     allowed_keys = _llm_functionality_keys(tickets, inventory, jira_artifacts)
     body = _llm_chat_body(context, existing, tickets, jira_artifacts, inventory)
-    url = settings.openai_base_url.rstrip("/") + "/chat/completions"
-    with httpx.Client(timeout=90.0) as client:
-        response = client.post(
-            url,
-            headers={
-                "Authorization": f"Bearer {settings.openai_api_key}",
-                "Content-Type": "application/json",
-            },
-            json=body,
+    try:
+        content = generate(
+            body["messages"],
+            json_mode=True,
+            temperature=body.get("temperature"),
+            model=str(body.get("model") or settings.openai_model),
+            timeout=90.0,
+            api_key=_setting_str("llm_api_key", "openai_api_key"),
         )
-    if response.status_code != 200:
-        logger.warning(
-            "LLM HTTP error: type=RuntimeError status=%s message=%s",
-            response.status_code,
-            _llm_safe_text(response.text),
-        )
-        raise RuntimeError(f"LLM HTTP {response.status_code}: {response.text[:400]}")
-    content = response.json()["choices"][0]["message"]["content"]
-    parsed = json.loads(content)
+    except Exception as exc:
+        logger.error("LLM HTTP error: %s", _llm_safe_text(exc))
+        raise
+    parsed = extract_json_object(content)
     parsed_candidates = _parse_llm_candidates(parsed, existing)
     candidates = _keep_llm_functionality_candidates(
         parsed_candidates,
@@ -1532,30 +1566,35 @@ def generate_release_app_candidates(
                 ],
             }
     engine_name = (settings.qc_engine or "").strip().lower()
-    if engine_name == "v2":
-        from app.services.qc_v2.engine import generate_release_v2
+    if engine_name in {"v2", "v2b"} and _llm_ready():
+        if engine_name == "v2":
+            from app.services.qc_v2.engine import generate_release_v2
 
-        return generate_release_v2(
-            release_id=release_id,
-            release_name=release_name,
-            validation_type=validation_type,
-            analysis_present=analysis_present,
-            release_context=release_context,
-            functionality_keys=functionality_keys,
-            stats=stats,
-        )
-    if engine_name == "v2b":
-        from app.services.qc_v2b.engine import generate_release_v2b
+            proposed = generate_release_v2(
+                release_id=release_id,
+                release_name=release_name,
+                validation_type=validation_type,
+                analysis_present=analysis_present,
+                release_context=release_context,
+                functionality_keys=functionality_keys,
+                stats=stats,
+            )
+        else:
+            from app.services.qc_v2b.engine import generate_release_v2b
 
-        return generate_release_v2b(
-            release_id=release_id,
-            release_name=release_name,
-            validation_type=validation_type,
-            analysis_present=analysis_present,
-            release_context=release_context,
-            functionality_keys=functionality_keys,
-            stats=stats,
-        )
+            proposed = generate_release_v2b(
+                release_id=release_id,
+                release_name=release_name,
+                validation_type=validation_type,
+                analysis_present=analysis_present,
+                release_context=release_context,
+                functionality_keys=functionality_keys,
+                stats=stats,
+            )
+        if not _v2_llm_failed(proposed):
+            return _stamp_llm_meta(proposed, "llm")
+        logger.warning("v2 llm failed; deterministic fallback")
+        stats.llm_path = "determinista"
     jira_artifacts = fetch_artifacts_for_keys(functionality_keys) if functionality_keys else []
     inventory = build_coverage_inventory(jira_artifacts, rn_filename or "", stats=stats)
     if allowed:
@@ -1572,7 +1611,7 @@ def generate_release_app_candidates(
     from app.services.scenario_cases import composition_mode as _composition_mode
 
     scenario_llm = _composition_mode() == "scenario"
-    if settings.openai_api_key and inventory and not scenario_llm:
+    if _llm_ready() and inventory and not scenario_llm:
         llm_tickets = {"functionality": list(parsed_tickets.get("functionality", []))}
         first_batches = partition_coverage_for_llm(
             inventory,
@@ -1715,7 +1754,7 @@ def generate_release_app_candidates(
     from app.services.scenario_llm import polish_llm_candidates, rewrite_scenario_candidates
 
     candidates = contextualize_duplicate_titles(candidates)
-    if scenario_llm and (settings.openai_api_key or "").strip() and inventory:
+    if scenario_llm and _llm_ready() and inventory:
         rewritten, rows = rewrite_scenario_candidates(candidates, inventory)
         candidates = polish_llm_candidates(quality_gate(contextualize_duplicate_titles(rewritten)))
         candidates = apply_qc_rules(candidates, release_context=release_context, stats=stats)
@@ -1746,6 +1785,12 @@ def generate_release_app_candidates(
             analysis_details.append(f"LLM rechazos primer intento: {first}")
         if final:
             analysis_details.append(f"LLM rechazos finales: {final}")
+    from app.llm.client import provider_name, resolved_model
+
+    stats.llm_path = stats.llm_path or ("llm" if str(engine).startswith("llm") else "determinista")
+    stats.llm_provider = provider_name()
+    stats.llm_model = resolved_model()
+    analysis_details.insert(0, f"Ruta IA: {stats.llm_path} proveedor={stats.llm_provider} modelo={stats.llm_model}")
     fill_scenario_ledger(stats, inventory, candidates)
     candidates = [row for row in candidates if row.steps]
     stamp_source_types(candidates)
