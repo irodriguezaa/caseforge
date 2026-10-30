@@ -124,6 +124,9 @@ def _generate_stories(fake: MagicMock, artifacts: list[dict], tickets=None):
                 settings.openai_api_key = "sk-test"
                 settings.openai_model = "gpt-4o-mini"
                 settings.openai_base_url = "https://api.openai.com/v1"
+                settings.qc_engine = "overlay"
+                settings.llm_provider = ""
+                settings.llm_api_key = ""
                 return generate_release_app_candidates(
                     release_id=1,
                     release_name="batch",

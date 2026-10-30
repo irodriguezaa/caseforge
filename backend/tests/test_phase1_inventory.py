@@ -417,7 +417,7 @@ def test_llm_path_still_adds_gated_last_resort(monkeypatch) -> None:
 
     monkeypatch.setattr(
         "app.services.ai_case_engine.settings",
-        replace(settings, openai_api_key="sk-test", openai_model="gpt-4o-mini"),
+        replace(settings, openai_api_key="sk-test", openai_model="gpt-4o-mini", qc_engine="overlay"),
     )
     artifacts = [
         {

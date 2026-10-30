@@ -71,6 +71,15 @@ def _setting_str(*names: str) -> str:
     return ""
 
 
+def _qc_engine_name() -> str:
+    return (_setting_str("qc_engine") or "legacy").strip().lower()
+
+
+def _is_legacy_qc_engine() -> bool:
+    """Legacy es 100% determinista: comparte reglas, no llamadas al LLM."""
+    return _qc_engine_name() not in {"v2", "v2b", "overlay"}
+
+
 def _llm_ready() -> bool:
     provider = _setting_str("llm_provider").lower()
     if provider == "none":
@@ -1567,7 +1576,7 @@ def generate_release_app_candidates(
                     if tid.upper() not in {item.upper() for item in dropped_nco}
                 ],
             }
-    engine_name = (settings.qc_engine or "").strip().lower()
+    engine_name = _qc_engine_name()
     if engine_name in {"v2", "v2b"} and _llm_ready():
         if engine_name == "v2":
             from app.services.qc_v2.engine import generate_release_v2
@@ -1618,8 +1627,8 @@ def generate_release_app_candidates(
     analysis_details: list[str] = []
     from app.services.scenario_cases import composition_mode as _composition_mode
 
-    scenario_llm = _composition_mode() == "scenario"
-    if _llm_ready() and inventory and not scenario_llm:
+    scenario_llm = (not _is_legacy_qc_engine()) and _composition_mode() == "scenario"
+    if (not _is_legacy_qc_engine()) and _llm_ready() and inventory and not scenario_llm:
         llm_tickets = {"functionality": list(parsed_tickets.get("functionality", []))}
         first_batches = partition_coverage_for_llm(
             inventory,
@@ -1795,7 +1804,10 @@ def generate_release_app_candidates(
             analysis_details.append(f"LLM rechazos finales: {final}")
     from app.llm.client import provider_name, resolved_model
 
-    stats.llm_path = stats.llm_path or ("llm" if str(engine).startswith("llm") else "determinista")
+    if _is_legacy_qc_engine():
+        stats.llm_path = "determinista"
+    else:
+        stats.llm_path = stats.llm_path or ("llm" if str(engine).startswith("llm") else "determinista")
     stats.llm_provider = provider_name()
     stats.llm_model = resolved_model()
     analysis_details.insert(0, f"Ruta IA: {stats.llm_path} proveedor={stats.llm_provider} modelo={stats.llm_model}")

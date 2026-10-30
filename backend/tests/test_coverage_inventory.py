@@ -68,7 +68,7 @@ def test_llm_second_batch_only_missing_units(client, monkeypatch, tmp_path) -> N
     monkeypatch.setattr("app.services.scenario_cases.composition_mode", lambda: "flow")
     monkeypatch.setattr(
         "app.services.ai_case_engine.settings",
-        replace(settings, openai_api_key="sk-test", openai_model="gpt-4o-mini"),
+        replace(settings, openai_api_key="sk-test", openai_model="gpt-4o-mini", qc_engine="overlay"),
     )
     monkeypatch.setattr(
         "app.services.ai_case_engine.fetch_artifacts_for_keys",
@@ -178,7 +178,7 @@ def test_llm_http_payload_excludes_nco_tri_qa_qc(client, monkeypatch, tmp_path) 
     monkeypatch.setattr("app.services.scenario_cases.composition_mode", lambda: "flow")
     monkeypatch.setattr(
         "app.services.ai_case_engine.settings",
-        replace(settings, openai_api_key="sk-test", openai_model="gpt-4o-mini"),
+        replace(settings, openai_api_key="sk-test", openai_model="gpt-4o-mini", qc_engine="overlay"),
     )
     monkeypatch.setattr(
         "app.services.ai_case_engine.fetch_artifacts_for_keys",
@@ -254,7 +254,7 @@ def test_llm_candidates_keep_only_functionality_jira_and_covers(
     monkeypatch.setattr("app.services.scenario_cases.composition_mode", lambda: "flow")
     monkeypatch.setattr(
         "app.services.ai_case_engine.settings",
-        replace(settings, openai_api_key="sk-test", openai_model="gpt-4o-mini"),
+        replace(settings, openai_api_key="sk-test", openai_model="gpt-4o-mini", qc_engine="overlay"),
     )
     monkeypatch.setattr(
         "app.services.ai_case_engine.fetch_artifacts_for_keys",

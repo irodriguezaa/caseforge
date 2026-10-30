@@ -249,12 +249,49 @@ def test_generate_without_stored_pdf_does_not_invent_cases(client, monkeypatch) 
     assert body["status"] == "EMPTY"
 
 
+def test_legacy_engine_does_not_call_llm_even_with_api_key(client, monkeypatch, tmp_path) -> None:
+    _store_dir(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        "app.services.ai_case_engine.settings",
+        replace(settings, openai_api_key="sk-test", openai_model="gpt-4o-mini", qc_engine="legacy"),
+    )
+    monkeypatch.setattr(
+        "app.services.ai_case_engine.fetch_artifacts_for_keys",
+        lambda _keys: _gherkin_artifacts(["WEBCL-3767"]),
+    )
+    analyzed = client.post(
+        "/api/v1/releases/analyze-rn",
+        files={"file": (WEB_RN.name, WEB_RN.read_bytes(), "application/pdf")},
+    ).json()["analysis"]
+    release_id = client.post(
+        "/api/v1/releases",
+        json={
+            "name": "WEB LEGACY NO LLM",
+            "version": "16.9.0",
+            "platform": "WEB",
+            "analysis_data": analyzed,
+        },
+    ).json()["id"]
+    fake_client = MagicMock()
+    with patch("app.llm.client.open_client") as client_cls:
+        client_cls.return_value.__enter__.return_value = fake_client
+        response = client.post(f"/api/v1/releases/{release_id}/generate-cases")
+    assert response.status_code == 200
+    body = response.json()
+    assert fake_client.post.call_count == 0
+    assert client_cls.call_count == 0
+    assert body["engine"] != "llm"
+    ledger = ((body.get("generation_stats") or {}).get("scenario_ledger") or [])
+    assert not any("fallo" in str(row.get("motivo") or "").lower() or "llm" in str(row.get("motivo") or "").lower() for row in ledger)
+    assert not any((row.get("estado") == "pendiente de revisión QC" and "ia" in str(row.get("motivo") or "").lower()) for row in ledger)
+
+
 def test_llm_structured_payload_is_returned(client, monkeypatch, tmp_path) -> None:
     _flow_composition(monkeypatch)
     _store_dir(monkeypatch, tmp_path)
     monkeypatch.setattr(
         "app.services.ai_case_engine.settings",
-        replace(settings, openai_api_key="sk-test", openai_model="gpt-4o-mini"),
+        replace(settings, openai_api_key="sk-test", openai_model="gpt-4o-mini", qc_engine="overlay"),
     )
     monkeypatch.setattr(
         "app.services.ai_case_engine.fetch_artifacts_for_keys",
@@ -341,7 +378,7 @@ def test_llm_logs_attempt_and_success_without_leaking_api_key(
     _store_dir(monkeypatch, tmp_path)
     monkeypatch.setattr(
         "app.services.ai_case_engine.settings",
-        replace(settings, openai_api_key=secret, openai_model="gpt-4o-mini"),
+        replace(settings, openai_api_key=secret, openai_model="gpt-4o-mini", qc_engine="overlay"),
     )
     monkeypatch.setattr(
         "app.services.ai_case_engine.fetch_artifacts_for_keys",
@@ -418,7 +455,7 @@ def test_llm_error_logs_fallback_without_leaking_api_key(
     _store_dir(monkeypatch, tmp_path)
     monkeypatch.setattr(
         "app.services.ai_case_engine.settings",
-        replace(settings, openai_api_key=secret, openai_model="gpt-4o-mini"),
+        replace(settings, openai_api_key=secret, openai_model="gpt-4o-mini", qc_engine="overlay"),
     )
     monkeypatch.setattr(
         "app.services.ai_case_engine.fetch_artifacts_for_keys",

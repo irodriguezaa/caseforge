@@ -679,6 +679,9 @@ def rewrite_scenario_candidates(
     candidates: list[GeneratedCaseCandidate],
     inventory: list[CoverageUnit],
 ) -> tuple[list[GeneratedCaseCandidate], list[dict[str, Any]]]:
+    engine = str(getattr(settings, "qc_engine", "") or "legacy").strip().lower()
+    if engine not in {"v2", "v2b", "overlay"}:
+        return candidates, []
     provider = str(getattr(settings, "llm_provider", "") or "").strip().lower()
     key = str(getattr(settings, "llm_api_key", "") or getattr(settings, "openai_api_key", "") or "").strip()
     if provider == "none" or (provider != "ollama" and not key) or not inventory:
