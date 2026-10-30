@@ -241,7 +241,8 @@ Scenario: Ver panel
     )
     case = next(row for row in cases if row.steps)
     pre = case.precondition or ""
-    assert "Panel Más información abierto" in pre
+    # La precondición deja al tester en el punto de partida; la entrada al panel es un paso.
+    assert "Player de TV" in pre or "Panel Más información abierto" in pre
     assert "Estar en" not in pre
     actions = [step.action.lower() for step in case.steps]
     assert all("verificar" not in action for action in actions)

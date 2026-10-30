@@ -1797,7 +1797,9 @@ def generate_release_app_candidates(
             analysis_details.append(f"LLM rechazos primer intento: {first}")
         if final:
             analysis_details.append(f"LLM rechazos finales: {final}")
-    candidates = [redactar_caso(row) for row in candidates]
+    from app.services.scenario_cases import redactar_casos
+
+    candidates = redactar_casos(candidates, inventory)
     from app.llm.client import provider_name, resolved_model
 
     if _is_legacy_qc_engine():

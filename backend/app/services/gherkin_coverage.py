@@ -1951,6 +1951,7 @@ def candidates_from_jira_artifacts(
         distinguish_duplicate_content,
         drop_generic_steps,
         fill_scenario_ledger,
+        redactar_casos,
         uniquify_titles_globally,
     )
 
@@ -1959,5 +1960,6 @@ def candidates_from_jira_artifacts(
             drop_generic_steps(contextualize_duplicate_titles(out))
         )
     )
+    out = redactar_casos(out, units)
     fill_scenario_ledger(stats, units, out)
     return [row for row in out if row.steps or (row.applicability or "") == "na_ambiente"]

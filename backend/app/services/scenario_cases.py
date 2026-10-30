@@ -1101,16 +1101,37 @@ def compose_scenario_inventory(
                     f"{row.steps[-1].expected_result}; {label}"
                 )
     assembled = uniquify_titles_globally(contextualize_duplicate_titles(filtered))
-    return [redactar_caso(row) for row in assembled]
+    return assembled
 
 
-def redactar_caso(caso: GeneratedCaseCandidate) -> GeneratedCaseCandidate:
-    """Punto único después de agrupar. Hoy: el caso determinista sin cambios.
+def redactar_casos(
+    candidates: list[GeneratedCaseCandidate], inventory: list[CoverageUnit] | None = None
+) -> list[GeneratedCaseCandidate]:
+    """Última etapa antes del ledger: forma QC a cada caso y nombres únicos."""
+    from app.services.qc_redaccion import unique_names
 
-    Mañana puede llamar a la IA solo para reescribir precondición, pasos y resultados
-    del caso ya armado. No decide elegibilidad, agrupación ni conteo.
+    by_id = {unit.coverage_id: unit for unit in (inventory or [])}
+    out = []
+    for row in candidates:
+        units = [by_id[cid] for cid in (row.covers or row.covered_unit_ids or []) if cid in by_id]
+        out.append(redactar_caso(row, units))
+    return unique_names(out)
+
+
+def redactar_caso(caso: GeneratedCaseCandidate, units: list[CoverageUnit] | None = None) -> GeneratedCaseCandidate:
+    """Punto único después de agrupar: da forma QC al caso ya armado (qc_redaccion).
+
+    No decide elegibilidad, agrupación ni conteo. Idempotente.
     """
-    return caso
+    from app.services.qc_redaccion import redactar
+
+    context = " ".join(
+        part
+        for unit in (units or [])
+        for part in (unit.scenario, unit.story_summary)
+        if part
+    )
+    return redactar(caso, context)
 
 
 def drop_generic_steps(candidates: list[GeneratedCaseCandidate]) -> list[GeneratedCaseCandidate]:
