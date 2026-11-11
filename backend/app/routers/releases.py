@@ -28,6 +28,7 @@ from app.routers.common import get_release_or_404
 from app.schemas.case_generation import GenerateCasesResponse
 from app.schemas.coverage_matrix import CoverageMatrixResponse
 from app.schemas.matrix_preview import MatrixPreviewResponse
+from app.schemas.jira_epic import JiraEpicCreate, JiraEpicResult
 from app.schemas.publication import PublicationRecordRead, PublishCasesResponse
 from app.schemas.release import (
     AnalyzeEpcsRequest,
@@ -68,6 +69,8 @@ from app.services.rn_epc_scope import (
     replace_scenario_ledger,
     rn_keys_from_normalized,
 )
+from app.services.jira_client import JiraApiError, JiraNotConfiguredError
+from app.services.jira_epic import JiraEpicError, draft_for_release, publish_epic
 from app.services.jira_generation import fetch_issuetypes_for_keys, keep_technical_epic_keys
 from app.services.operativa_engine import ENGINE_VERSION as OPERATIVA_ENGINE, generate_operativa_from_matrix
 from app.services.operativa_engine.coverage_matrix import build_coverage_matrix
@@ -1307,6 +1310,35 @@ def export_release_test_cases(release_id: int, db: Session = Depends(get_db)) ->
             "Content-Disposition": disposition,
             "Content-Length": str(len(payload)),
         },
+    )
+
+
+@router.post("/{release_id}/jira-epic", response_model=JiraEpicResult)
+def create_jira_epic(
+    release_id: int,
+    payload: JiraEpicCreate,
+    db: Session = Depends(get_db),
+) -> JiraEpicResult:
+    """Create the QCO Epic for this release. Tasks and subtasks are a later step."""
+    release = get_release_or_404(release_id, db)
+    try:
+        draft = draft_for_release(db, release, payload.activity_type, payload.environment)
+        db.commit()
+        result = publish_epic(draft)
+    except JiraEpicError as exc:
+        db.rollback()
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except JiraNotConfiguredError as exc:
+        db.rollback()
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except JiraApiError as exc:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail=exc.detail) from exc
+    return JiraEpicResult(
+        already_existed=result.already_existed,
+        key=result.key,
+        summary=result.summary,
+        activity_type=result.activity_type,
+        environment=result.environment,
     )
 
 

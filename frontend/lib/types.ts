@@ -272,6 +272,8 @@ export interface Release {
   execution_days?: number | null;
   validation_type?: string | null;
   jira_issue_filter?: string | null;
+  activity_type?: "HotFix" | "Exc" | "Mantenimiento" | "Release" | null;
+  environment?: "BERC" | "FEHF" | "OPER" | "PROD" | null;
   qc_matrix_version_id?: number | null;
   qc_matrix_touched_modules?: string[] | null;
   qc_matrix_template_values?: Record<string, string> | null;

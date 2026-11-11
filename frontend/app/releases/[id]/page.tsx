@@ -8,6 +8,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { EditTestCaseModal } from "@/app/components/EditTestCaseModal";
 import { TestCaseBulkBar } from "@/app/components/TestCaseBulkBar";
 import { EpicHoursPanel } from "@/app/components/EpicHoursPanel";
+import { JiraEpicButton } from "@/app/components/JiraEpicButton";
 import { EpicProgressPanel } from "@/app/components/EpicProgressPanel";
 import { ImportTestCasesPanel } from "@/app/components/ImportTestCasesPanel";
 import { InfoTooltip } from "@/app/components/InfoTooltip";
@@ -583,6 +584,8 @@ export default function ReleaseDetailPage(): React.ReactElement {
         ) : (
           <>
             {release.platform}
+            {release.activity_type ? ` · ${release.activity_type}` : ""}
+            {release.environment ? ` · ${release.environment}` : ""}
             {release.cluster ? ` · ${release.cluster}` : ""} · <StatusBadge status={release.status} />
           </>
         )}
@@ -663,6 +666,18 @@ export default function ReleaseDetailPage(): React.ReactElement {
                     <span className="muted" style={{ display: "block", fontSize: "11px", textTransform: "uppercase" }}>Release origen</span>
                     <span style={{ fontWeight: 600 }}>{release.parent_release_name ?? "—"}</span>
                   </div>
+                  {isApp ? (
+                    <>
+                      <div>
+                        <span className="muted" style={{ display: "block", fontSize: "11px", textTransform: "uppercase" }}>Tipo</span>
+                        <span style={{ fontWeight: 600 }}>{release.activity_type ?? "—"}</span>
+                      </div>
+                      <div>
+                        <span className="muted" style={{ display: "block", fontSize: "11px", textTransform: "uppercase" }}>Ambiente</span>
+                        <span style={{ fontWeight: 600 }}>{release.environment ?? "—"}</span>
+                      </div>
+                    </>
+                  ) : null}
                 </>
               )}
               {editingPlanning && canEditAppsPlanning ? (
@@ -932,6 +947,14 @@ export default function ReleaseDetailPage(): React.ReactElement {
       </div>
       )}
 
+      {isApp && canLoadRn && testCases.length > 0 ? (
+        <JiraEpicButton
+          releaseId={release.id}
+          activityType={release.activity_type}
+          environment={release.environment}
+          onSaved={(activityType, environment) => setRelease({ ...release, activity_type: activityType, environment })}
+        />
+      ) : null}
       {isApp ? <CaseProgressSummary title="Total de la Release" rows={testCases} /> : null}
       {matrixTabLabel ? (
         <div className="tabnav" role="tablist">

@@ -23,6 +23,9 @@ export const MONTHS = [
 // SANDBOX-ONLY STUB: not part of this deliverable. Your real constants.ts already has these
 // (referenced by releases/page.tsx) -- this exists purely so `tsc`/`build` can validate the
 // NEW code in this round without your actual values, which I was not given.
+export const ACTIVITY_TYPE_OPTIONS = ["HotFix", "Exc", "Mantenimiento", "Release"] as const;
+export const ENVIRONMENT_OPTIONS = ["BERC", "FEHF", "OPER", "PROD"] as const;
+
 export const DEVICE_OPTIONS = [
   "WEB", "ADR", "ADT", "FireTV", "Roku", "AAF Evolutivo", "AAF Legacy", "STB IPTV",
   "STV Tata Samsung", "STV Tata Hisense", "STV Tata LG", "STV Tata ADT",

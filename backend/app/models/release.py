@@ -71,6 +71,10 @@ class Release(Base):
     execution_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
     validation_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
     jira_issue_filter: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # QC activity written to the Jira Epic title: HotFix, Exc, Mantenimiento, Release.
+    activity_type: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    # Target environment of that Epic: BERC, FEHF, OPER, PROD.
+    environment: Mapped[str | None] = mapped_column(String(10), nullable=True)
 
     # --- Deliverable / lineage (Entregable, Tipo de Release, Release origen) ---
     deliverable_id: Mapped[int | None] = mapped_column(

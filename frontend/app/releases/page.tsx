@@ -11,7 +11,7 @@ import { api, ApiRequestError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { MatrixScopeEditor } from "@/app/components/MatrixScopeEditor";
 import { ValidationScopeSelect, ValidationScopeSummary } from "@/app/components/ValidationScopeField";
-import { DEVICE_OPTIONS, RELEASE_CLUSTER_OPTIONS } from "@/lib/constants";
+import { ACTIVITY_TYPE_OPTIONS, DEVICE_OPTIONS, ENVIRONMENT_OPTIONS, RELEASE_CLUSTER_OPTIONS } from "@/lib/constants";
 import { calculateBusinessDays } from "@/lib/dateUtils";
 import {
   matchesReleaseListStatus,
@@ -25,6 +25,8 @@ const emptyForm = {
   name: "",
   version: "",
   platform: "WIN/XBOX",
+  activityType: "",
+  environment: "",
   cluster: "Todos",
   description: "",
   startDate: "",
@@ -222,6 +224,8 @@ export default function ReleasesPage(): React.ReactElement {
         name: form.name,
         version: form.version,
         platform: form.platform,
+        activity_type: form.activityType as "HotFix" | "Exc" | "Mantenimiento" | "Release",
+        environment: form.environment as "BERC" | "FEHF" | "OPER" | "PROD",
         cluster: form.cluster || null,
         description: form.description || null,
         start_date: form.startDate || null,
@@ -452,6 +456,38 @@ export default function ReleasesPage(): React.ReactElement {
                 {DEVICE_OPTIONS.map((dev) => (
                   <option key={dev} value={dev}>
                     {dev}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="form-field">
+              <label htmlFor="activityType">Tipo</label>
+              <select
+                id="activityType"
+                required
+                value={form.activityType}
+                onChange={(e) => setForm({ ...form, activityType: e.target.value })}
+              >
+                <option value="" disabled>Selecciona un tipo</option>
+                {ACTIVITY_TYPE_OPTIONS.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="form-field">
+              <label htmlFor="environment">Ambiente</label>
+              <select
+                id="environment"
+                required
+                value={form.environment}
+                onChange={(e) => setForm({ ...form, environment: e.target.value })}
+              >
+                <option value="" disabled>Selecciona un ambiente</option>
+                {ENVIRONMENT_OPTIONS.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
                   </option>
                 ))}
               </select>

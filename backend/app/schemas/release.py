@@ -1,9 +1,12 @@
 from datetime import date, datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.release import ReleaseStatus, ReleaseType
+
+ActivityType = Literal["HotFix", "Exc", "Mantenimiento", "Release"]
+EnvironmentName = Literal["BERC", "FEHF", "OPER", "PROD"]
 
 
 class ReleaseAnalysisBase(BaseModel):
@@ -55,6 +58,8 @@ class ReleaseBase(BaseModel):
     execution_days: int | None = None
     validation_type: str | None = None
     jira_issue_filter: str | None = None
+    activity_type: ActivityType | None = None
+    environment: EnvironmentName | None = None
     qc_matrix_touched_modules: list[str] | None = None
     qc_matrix_template_values: dict[str, str] | None = None
 
@@ -82,6 +87,8 @@ class ReleaseUpdate(BaseModel):
     execution_days: int | None = None
     validation_type: str | None = None
     jira_issue_filter: str | None = None
+    activity_type: ActivityType | None = None
+    environment: EnvironmentName | None = None
     qc_matrix_touched_modules: list[str] | None = None
     qc_matrix_template_values: dict[str, str] | None = None
     # DRAFT-only per product decision -- enforced in the router, not here.

@@ -154,6 +154,8 @@ export interface ReleaseInput {
   execution_days?: number | null;
   validation_type?: string | null;
   jira_issue_filter?: string | null;
+  activity_type?: "HotFix" | "Exc" | "Mantenimiento" | "Release" | null;
+  environment?: "BERC" | "FEHF" | "OPER" | "PROD" | null;
   qc_matrix_touched_modules?: string[] | null;
   qc_matrix_template_values?: Record<string, string> | null;
   analysis_data?: ReleaseAnalysis | null;
@@ -339,6 +341,23 @@ export const api = {
   // QCO_ZEPHYR_PUBLISH — kept; UI hidden via SHOW_QCO_ZEPHYR_PUBLISH.
   publishOperativaToQco: (releaseId: number) =>
     request<PublishCasesResponse>(`/api/releases/${releaseId}/publish-qco`, { method: "POST" }),
+  createJiraEpic: (
+    releaseId: number,
+    payload: {
+      activity_type: "HotFix" | "Exc" | "Mantenimiento" | "Release";
+      environment: "BERC" | "FEHF" | "OPER" | "PROD";
+    },
+  ) =>
+    request<{
+      already_existed: boolean;
+      key: string;
+      summary: string;
+      activity_type: string;
+      environment: string;
+    }>(`/api/releases/${releaseId}/jira-epic`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   exportRnScope: async (options: {
     releaseId?: number;
     pdfFilePath?: string | null;
