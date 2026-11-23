@@ -1180,7 +1180,9 @@ def _fill_entry_results(segments: list[dict[str, object]]) -> None:
 
 
 def _order_cancel_before_removal(steps: list) -> list:
-    """Las dos ramas quedan: cancelar regresa; eliminar quita el método."""
+    """Tras cancelar se reabre el modal y después se confirma la eliminación."""
+    from app.schemas.case_generation import CandidateStep
+
     removal = next(
         (
             index
@@ -1191,11 +1193,57 @@ def _order_cancel_before_removal(steps: list) -> list:
     )
     if removal is None:
         return steps
-    cancel = [step for step in steps[removal + 1 :] if re.search(r"\bcancelar\b", step.action or "", re.I)]
-    if not cancel:
+    later = [step for step in steps[removal + 1 :] if re.search(r"\bcancelar\b", step.action or "", re.I)]
+    if later:
+        rest = [step for step in steps[removal + 1 :] if step not in later]
+        steps = [*steps[:removal], *later, steps[removal], *rest]
+        removal = next(
+            index
+            for index, step in enumerate(steps)
+            if re.search(r"ya no aparece|proceder con la eliminaci", step.expected_result or "", re.I)
+        )
+    cancel_at = max(
+        (
+            index
+            for index, step in enumerate(steps[:removal])
+            if re.search(r"\bcancelar\b", step.action or "", re.I)
+        ),
+        default=None,
+    )
+    if cancel_at is None:
         return steps
-    rest = [step for step in steps[removal + 1 :] if step not in cancel]
-    return [*steps[:removal], *cancel, steps[removal], *rest]
+    opener = next(
+        (
+            step
+            for step in steps[:cancel_at]
+            if re.search(r"eliminar", step.action or "", re.I)
+            and re.search(r"modal|se muestran|seguro de eliminar", step.expected_result or "", re.I)
+        ),
+        None,
+    )
+    if opener is None:
+        return steps
+    following = steps[cancel_at + 1] if cancel_at + 1 < len(steps) else None
+    if (
+        following
+        and re.search(r"eliminar", following.action or "", re.I)
+        and re.search(r"modal|se muestran|seguro de eliminar", following.expected_result or "", re.I)
+        and not re.search(r"ya no aparece", following.expected_result or "", re.I)
+    ):
+        return steps
+    parts = [part.strip() for part in re.split(r"\s+y\s+", opener.action or "") if part.strip()]
+    action = next((part for part in reversed(parts) if re.search(r"eliminar", part, re.I)), "")
+    if not action:
+        action = "Seleccionar el botón «Eliminar»"
+    elif action[0].islower():
+        action = action[0].upper() + action[1:]
+    clone = CandidateStep(
+        step_number=0,
+        action=action,
+        expected_result=opener.expected_result,
+        covered_unit_ids=list(opener.covered_unit_ids or []),
+    )
+    return [*steps[: cancel_at + 1], clone, *steps[cancel_at + 1 :]]
 
 
 def _ensure_pin(steps: list) -> list:

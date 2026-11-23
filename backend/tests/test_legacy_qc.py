@@ -253,6 +253,57 @@ def test_redirect_and_visible_state_stay_executable():
     assert all(row["estado"] == "caso ejecutable" for row in stats.scenario_ledger)
 
 
+def test_button_and_visual_state_stay_beside_the_element_screen():
+    screen = _unit(
+        "s1",
+        "HN-1",
+        "Pantalla con el centro desplegado",
+        "\n".join(
+            [
+                "When el usuario ingresa a la aplicación",
+                'Then se muestran los siguientes elementos: botón "Ver planes"',
+                "And el Centro de notificaciones se visualiza desplegado",
+            ]
+        ),
+    )
+    plans = _unit(
+        "p1",
+        "HN-1",
+        'Navegación al Selector de Planes desde el botón "Ver planes"',
+        "\n".join(
+            [
+                "Given el Centro de notificaciones se encuentra desplegado",
+                'When el usuario selecciona el botón "Ver planes"',
+                "Then se redirige al usuario a la pantalla del Selector de Planes",
+            ]
+        ),
+    )
+    view = _unit(
+        "v1",
+        "HN-1",
+        "Visualización de centro de notificaciones",
+        "Given el usuario ingresa a la aplicación\nThen el Centro de Notificaciones se visualiza desplegado",
+    )
+    mail = _unit(
+        "m1",
+        "HN-1",
+        'Navegación en el botón "Vincular correo"',
+        "\n".join(
+            [
+                "Given el Centro de notificaciones se encuentra desplegado",
+                'When el usuario acciona el botón "Vincular correo"',
+                "Then se redirige al usuario a la pantalla de vinculación de correo",
+            ]
+        ),
+    )
+    cases = compose_scenario_inventory([screen, plans, view, mail], [], lambda *_args: None)
+    names = " ".join(case.name.lower() for case in cases)
+    assert "ver planes" in names
+    assert "visualizaci" in names
+    assert "vincular correo" in names
+    assert "pantalla" in names
+
+
 def test_entry_flow_stays_in_separate_steps():
     unit = _unit(
         "e1",
@@ -306,6 +357,13 @@ def test_delete_keeps_cancel_and_removal_branches():
     removal_at = next(index for index, result in enumerate(results) if "ya no aparece" in result)
     assert cancel_at < removal_at
     assert "dirigir" in results[cancel_at]
+    reopened = [
+        index
+        for index in range(cancel_at + 1, removal_at)
+        if "eliminar" in actions[index] and "modal" in results[index]
+    ]
+    assert reopened
+    assert removal_at == reopened[-1] + 1
     assert stats.scenario_ledger[0]["estado"] == "caso ejecutable"
 
 
