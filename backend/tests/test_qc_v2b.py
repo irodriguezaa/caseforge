@@ -9,6 +9,7 @@ from app.services.qc_v2b.eligibility import (
     ESTADO_QA,
     ESTADO_REGRESSION,
     ESTADO_TECH,
+    classify_scenario,
     classify_text,
     expected_has_technical_leak,
     filter_bundle,
@@ -60,6 +61,38 @@ def _bundle() -> EpicBundle:
             UserStory("US-1", "Externos", criteria=[Item("CRN-001", "Desplegado", "se muestra desplegado", "US-1")])
         ],
     )
+
+
+def test_stage_a_prose_is_not_rejected_for_missing_then():
+    scenario = Scenario(
+        id="ESC-01",
+        titulo="Espaciado vertical entre el menú y la Home",
+        descripcion="El usuario ve más espacio entre el menú de navegación y los elementos de la Home.",
+        condiciones=["usuario registrado", "resolución de escritorio"],
+        cubre_negocio=["CRN-001"],
+        cubre_tecnico=["COV-001"],
+        brecha="ninguna",
+    )
+    decision = classify_scenario(scenario)
+    assert decision.motivo != "Then vacío, ilegible o contradictorio"
+    assert decision.eligible
+
+
+def test_sanitize_keeps_visible_steps_and_drops_technical_results():
+    from app.schemas.case_generation import CandidateStep, GeneratedCaseCandidate
+    from app.services.qc_v2b.engine import _sanitize_candidate
+
+    def case(expected: str) -> GeneratedCaseCandidate:
+        return GeneratedCaseCandidate(
+            name="Espaciado entre el menú y la Home",
+            description="El escenario describe el espacio. No trae una línea Then.",
+            steps=[CandidateStep(step_number=1, action="Abrir la Home", expected_result=expected)],
+            evidence="ESC-01",
+            justification="test",
+        )
+
+    assert _sanitize_candidate(case("Se muestra más espacio entre el menú y el primer componente")) is not None
+    assert _sanitize_candidate(case("Se obtiene el parámetro source del JSON")) is None
 
 
 def test_eligibility_keys_and_api_and_hpa():

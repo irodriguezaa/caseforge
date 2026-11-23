@@ -115,8 +115,17 @@ def classify_item(item: Item) -> Decision:
 
 
 def classify_scenario(scenario: Scenario) -> Decision:
+    """El escenario de la etapa A es prosa, no Gherkin.
+
+    Sin una línea Then, evaluate_scenario lo marca "Then vacío" y el caso
+    nunca se diseña. Se le pone el resultado en forma de Then para que el
+    filtro juzgue actor, superficie y dispositivo, no el formato.
+    """
     conditions = "; ".join(scenario.condiciones)
-    return classify_text(scenario.titulo, f"{scenario.descripcion}\n{conditions}")
+    body = f"{scenario.descripcion}\n{conditions}".strip()
+    if body and not re.search(r"^\s*(Then|Entonces)\b", body, re.IGNORECASE | re.MULTILINE):
+        body = f"Then {body}"
+    return classify_text(scenario.titulo, body)
 
 
 def ledger_row(bundle: EpicBundle, item: Item, decision: Decision) -> dict[str, str]:

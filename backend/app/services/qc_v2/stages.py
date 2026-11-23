@@ -40,6 +40,11 @@ def _reasoning(stage: str) -> dict[str, str]:
     return {"reasoning_effort": value} if value else {}
 
 
+def _llm_call(stage: str) -> dict:
+    """Timeout de la etapa (QC_V2_TIMEOUT). Sin esto la llamada usa LLM_TIMEOUT_SECONDS."""
+    return {"timeout": settings.qc_v2_timeout, "temperature": _temperature(), **_reasoning(stage)}
+
+
 # ================================================================ Etapa A
 
 
@@ -159,7 +164,7 @@ def run_stage_a(bundle: EpicBundle, ctx: DeviceContext, chat: ChatFn = chat_json
     ]
     model = settings.qc_v2_model_a
     try:
-        payload, meta = chat(messages, model=model, temperature=_temperature(), **_reasoning("a"))
+        payload, meta = chat(messages, model=model, **_llm_call("a"))
     except QuotaExhausted:
         return StageAResult(error="no evaluado por error de IA")
     except LlmError as exc:
@@ -179,7 +184,7 @@ def run_stage_a(bundle: EpicBundle, ctx: DeviceContext, chat: ChatFn = chat_json
             },
         ]
         try:
-            payload2, meta2 = chat(retry, model=model, temperature=_temperature(), **_reasoning("a"))
+            payload2, meta2 = chat(retry, model=model, **_llm_call("a"))
             second = parse_stage_a(payload2, bundle)
             second.metas = result.metas + [meta2]
             if len(second.missing) <= len(result.missing) and second.scenarios:
@@ -355,7 +360,7 @@ def _design_one(
     result = StageBResult(scenario_id=scenario.id)
     for attempt in range(3):
         try:
-            payload, meta = chat(messages, model=settings.qc_v2_model_b, temperature=_temperature(), **_reasoning("b"))
+            payload, meta = chat(messages, model=settings.qc_v2_model_b, **_llm_call("b"))
         except LlmError as exc:
             result.error = str(exc)
             continue

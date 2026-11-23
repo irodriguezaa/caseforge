@@ -87,6 +87,18 @@ def _is_fallback(candidate: GeneratedCaseCandidate) -> bool:
     return candidate.generation_origin == "fallback" or "qc-v2b:fallback" in (candidate.applied_rules or [])
 
 
+def _visible_body(candidate: GeneratedCaseCandidate) -> str:
+    """El filtro lee Then. Los pasos ya son el resultado; la descripción de la etapa A es prosa."""
+    results = [(step.expected_result or "").strip() for step in candidate.steps]
+    results = [item for item in results if item]
+    if results:
+        return "\n".join(f"Then {item}" for item in results)
+    prose = (candidate.description or "").strip()
+    if not prose:
+        return ""
+    return prose if prose.lower().startswith(("then ", "entonces ")) else f"Then {prose}"
+
+
 def _sanitize_candidate(candidate: GeneratedCaseCandidate) -> GeneratedCaseCandidate | None:
     leaks = [step for step in candidate.steps if expected_has_technical_leak(step.expected_result or "")]
     if leaks:
@@ -95,8 +107,7 @@ def _sanitize_candidate(candidate: GeneratedCaseCandidate) -> GeneratedCaseCandi
             part for part in (candidate.technical_reference or "", tech) if part
         )
         return None
-    blob = f"{candidate.name}\n{candidate.description or ''}"
-    decision = classify_text(candidate.name, blob)
+    decision = classify_text(candidate.name, _visible_body(candidate))
     if not decision.eligible:
         return None
     return candidate
