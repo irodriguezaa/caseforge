@@ -43,7 +43,8 @@ _KEY_TITLE = re.compile(
     re.IGNORECASE,
 )
 _VISIBLE_THEN = re.compile(
-    r"se muestra|se visualiza|pantalla|modal|elementos|bot[oó]n|mensaje",
+    r"se muestra|se visualiza|pantalla|modal|elementos|bot[oó]n|mensaje|"
+    r"redirig|dirige|desplegad|replegad|ocult|ya no aparece|ya no es visible",
     re.IGNORECASE,
 )
 _THEN_TECH = re.compile(
@@ -506,7 +507,15 @@ _ERROR_CODE = re.compile(
 )
 _VISIBLE_ASSERT = re.compile(
     r"distancia|componente|se muestra|pantalla|modal|bot[oó]n|elemento|"
-    r"overlay|[ií]cono|alerta|redirig|dirige|mensaje|texto|espaciado",
+    r"overlay|[ií]cono|alerta|redirig|dirige|mensaje|texto|espaciado|"
+    r"desplegad|replegad|ocult|ya no aparece",
+    re.IGNORECASE,
+)
+_OBSERVABLE = re.compile(
+    r"se muestra|se visualiza|muestra la pantalla|pantalla de|"
+    r"se redirige|es dirigido|se dirige|dirige al|"
+    r"desplegad|replegad|debe ocultarse|se oculta|oculto|"
+    r"ya no aparece|ya no es visible|modal",
     re.IGNORECASE,
 )
 _TEMPORAL = re.compile(r"^al (finalizar|terminar|concluir|cerrar el tiempo)\b", re.IGNORECASE)
@@ -635,10 +644,6 @@ def echo_pair(action: str, expected: str) -> bool:
     return False
 
 
-_RETURN_ONLY = re.compile(
-    r"pantalla que deton|al ser accionado se debe dirigir",
-    re.IGNORECASE,
-)
 _FILLER_EXPECTED = re.compile(
     r"la pantalla queda en el estado siguiente|queda seleccionado|queda realizada la selecci",
     re.IGNORECASE,
@@ -653,11 +658,48 @@ _GHERKIN_LEAD = re.compile(
 )
 
 
+def then_has_visible_outcome(body: str) -> bool:
+    """El Then se ve en pantalla: navegación, estado o elemento. Si no, no es caso."""
+    then = " ".join(match.group(2) or "" for match in _THEN_LINE.finditer(body or ""))
+    return bool(_VISIBLE_THEN.search(then))
+
+
+def _observable_clause(text: str) -> bool:
+    return bool(_OBSERVABLE.search(text or ""))
+
+
+def is_entry_flow(action: str) -> bool:
+    """Abrir la app, autenticarse o elegir perfil: cada uno es un paso."""
+    low = fold(action)
+    if re.search(r"^(ingresar|abrir|acceder|entrar)\b", low) and re.search(
+        r"aplicaci|claro video|home\b|nodo", low
+    ):
+        return True
+    if re.search(r"^autentic", low):
+        return True
+    if re.search(r"seleccionar (un )?perfil", low):
+        return True
+    return False
+
+
+_KEEP_RESULT = re.compile(
+    r"redirig|dirige|desplegad|replegad|ocult|ya no aparece|ya no es visible|"
+    r"pantalla de perfiles|pantalla de ingreso|pantalla de checkout|modal",
+    re.IGNORECASE,
+)
+
+
 def is_filler_expected(action: str, expected: str) -> bool:
     """Resultado inventado: no está en el Gherkin."""
     folded = fold(expected)
     if not folded:
         return True
+    if _KEEP_RESULT.search(expected) and not echo_pair(action, expected):
+        return False
+    if re.search(r"^(ingresar|acceder|abrir|entrar)\b", fold(action)) and re.search(
+        r"\bpantalla\b|\bhome\b|\bnodo\b", fold(expected)
+    ):
+        return False
     if _FILLER_EXPECTED.search(folded):
         return True
     if echo_pair(action, expected):
@@ -677,19 +719,6 @@ def is_filler_expected(action: str, expected: str) -> bool:
     return False
 
 
-def _setup_state(text: str, action: str) -> str:
-    quoted = re.search(r"[\"“]([^\"”]+)[\"”]", text or "")
-    if re.search(r"pantalla", text or "", re.I) and re.search(r"acced|ingres", text or "", re.I):
-        if quoted:
-            return f"El usuario está en la pantalla de {quoted.group(1)}."
-        return "El usuario está en la pantalla del flujo."
-    if quoted and re.search(r"seleccion|m[eé]todo de pago", text or "", re.I):
-        return f"El método de pago «{quoted.group(1)}» está seleccionado."
-    if re.search(r"aplicaci", action or "", re.I):
-        return "El usuario está en la aplicación."
-    return third_person(text or action)
-
-
 def _account_lines(title: str, body: str) -> list[str]:
     blob = f"{title}\n{body}"
     lines: list[str] = []
@@ -703,6 +732,13 @@ def _account_lines(title: str, body: str) -> list[str]:
         lines.append("El usuario tiene un método de pago registrado.")
     if re.search(r"sesi[oó]n iniciada|tiene sesi[oó]n", blob, re.I):
         lines.append("El usuario tiene la sesión iniciada.")
+    if re.search(r"gesti[oó]n de m[eé]todos de pago|consulta de n[uú]mero|eliminar el m[eé]todo", blob, re.I):
+        if not re.search(
+            r"no cuenta con un n[uú]mero|sin (un )?m[eé]todo de pago registrado|no tiene un m[eé]todo",
+            blob,
+            re.I,
+        ):
+            lines.append("El usuario tiene un método de pago registrado.")
     return lines
 
 
@@ -715,7 +751,7 @@ def _visible_removal(text: str) -> str:
     name = match.group(1).strip() if match else ""
     if not name:
         return text
-    return f"El método de pago «{name}» ya no aparece."
+    return f"Se procede con la eliminación del método de pago «{name}» y ya no aparece."
 
 
 def _fallback_result(action: str) -> str:
@@ -973,7 +1009,6 @@ def _flow(units: list) -> tuple[list[dict[str, object]], list[str], list[str], b
     segments: list[dict[str, object]] = []
     current: dict[str, object] | None = None
     history: list[str] = []
-    background_actions: list[str] = []
 
     def close() -> None:
         nonlocal current
@@ -990,7 +1025,8 @@ def _flow(units: list) -> tuple[list[dict[str, object]], list[str], list[str], b
             sources.append((unit.body or "", False))
     for source, from_background in sources:
         for kind, text in _walk(source):
-            if from_background and kind == "then":
+            if from_background and kind == "then" and not _observable_clause(text):
+                history.append(text)
                 continue
             if story and fold(text) == story:
                 continue
@@ -1009,11 +1045,10 @@ def _flow(units: list) -> tuple[list[dict[str, object]], list[str], list[str], b
                 embedded, embedded_result = _embedded_press(text)
             listed = readable_elements(text)
             action = "" if listed or re.match(r"^se muestra\b", text, re.I) else embedded or _user_action(text, history)
-            if from_background and action:
-                background_actions.append(action)
-                states.append(_setup_state(text, action))
-                history.append(text)
-                continue
+            if action and re.search(r"\b(es dirigido|se redirige|se dirige)\b", fold(text)) and not re.search(
+                r"bot[oó]n|clic|presion", text or "", re.I
+            ):
+                action = ""
             if _DEV_OR_CODE.search(text) or re.search(r"c[oó]digo\s*200", text, re.I):
                 history.append(text)
                 continue
@@ -1029,10 +1064,14 @@ def _flow(units: list) -> tuple[list[dict[str, object]], list[str], list[str], b
                     current["results"].append(embedded_result)
                 history.append(text)
                 continue
-            visible = kind == "then" or bool(_OUTCOME.search(text)) or (
-                current is not None
-                and current.get("action")
-                and bool(re.match(r"^se muestra\b", text, re.I))
+            visible = (
+                kind == "then"
+                or bool(_OUTCOME.search(text))
+                or (
+                    current is not None
+                    and current.get("action")
+                    and (bool(re.match(r"^se muestra\b", text, re.I)) or _observable_clause(text))
+                )
             )
             if visible:
                 piece = readable_elements(text) or visible_remainder(text)
@@ -1048,14 +1087,7 @@ def _flow(units: list) -> tuple[list[dict[str, object]], list[str], list[str], b
                 states.append(text)
             history.append(text)
     close()
-    if background_actions and not any(segment.get("action") for segment in segments):
-        results: list[str] = []
-        for segment in segments:
-            results.extend(segment.get("results") or [])
-        entry = background_actions[0]
-        for extra in background_actions[1:]:
-            entry = f"{entry} y {extra[0].lower()}{extra[1:]}"
-        segments = [{"action": entry, "results": results}]
+    _fill_entry_results(segments)
     return segments, states, warnings, repeated
 
 
@@ -1068,16 +1100,102 @@ def _leading_action(units: list) -> str:
     return ""
 
 
+def _action_count(action: str) -> int:
+    return len([part for part in re.split(r"\s+y\s+", action or "") if part.strip()])
+
+
+def _changes_screen(action: str) -> bool:
+    if is_entry_flow(action):
+        return True
+    return bool(re.search(r"\b(reproduc|checkout|nodo|home|alta|validaci|vincular)\b", fold(action)))
+
+
+def _same_screen(left: str, right: str) -> bool:
+    """Solo se encadenan acciones que ocurren en la misma pantalla."""
+    if _changes_screen(left) or _changes_screen(right):
+        return False
+    return True
+
+
 def _merge_filler_steps(steps: list) -> list:
+    """Una acción sin resultado se une a la siguiente, como máximo dos, y en la misma pantalla."""
     merged: list = []
     for step in steps:
-        if merged and is_filler_expected(merged[-1].action, merged[-1].expected_result):
-            nxt = step.action or ""
-            merged[-1].action = f"{merged[-1].action} y {nxt[0].lower()}{nxt[1:]}" if nxt else merged[-1].action
+        nxt = step.action or ""
+        if (
+            merged
+            and is_filler_expected(merged[-1].action, merged[-1].expected_result)
+            and nxt
+            and (step.expected_result or "").strip()
+            and not is_filler_expected(nxt, step.expected_result)
+            and _action_count(merged[-1].action) < 2
+            and _action_count(nxt) == 1
+            and _same_screen(merged[-1].action, nxt)
+        ):
+            merged[-1].action = f"{merged[-1].action} y {nxt[0].lower()}{nxt[1:]}"
             merged[-1].expected_result = step.expected_result
             continue
         merged.append(step)
     return merged
+
+
+def _fill_entry_results(segments: list[dict[str, object]]) -> None:
+    """El ingreso usa el estado del Given o la pantalla destino, sin encadenar acciones."""
+    for index, segment in enumerate(segments):
+        if segment.get("results") or not segment.get("action"):
+            continue
+        action = str(segment.get("action") or "")
+        if not is_entry_flow(action):
+            continue
+        nxt = ""
+        if index + 1 < len(segments):
+            nxt = str(segments[index + 1].get("action") or "")
+        if re.search(r"perfil", fold(nxt)):
+            segment["results"] = ["Se muestra la pantalla de perfiles"]
+            continue
+        if re.search(r"perfil", fold(action)):
+            segment["results"] = ["Se muestra el perfil elegido"]
+            continue
+        if re.search(r"^(ingresar|acceder|abrir|entrar)\b", fold(action)) and re.search(
+            r"pantalla|home|nodo|principal", fold(action)
+        ):
+            dest = re.sub(
+                r"^(Ingresar|Acceder|Abrir|Entrar)(?: a| al)?\s+",
+                "",
+                action,
+                count=1,
+                flags=re.IGNORECASE,
+            ).strip(" .")
+            if dest:
+                segment["results"] = [f"Se muestra {dest}"]
+                continue
+        if re.search(r"^autentic", fold(action)):
+            segment["results"] = ["El usuario queda autenticado"]
+            continue
+        named = re.search(r"pantalla principal|pantalla de|nodo|home|checkout|gesti", fold(action))
+        if named:
+            continue
+        if re.search(r"aplicaci|claro video", fold(action)):
+            segment["results"] = ["Se muestra la pantalla de ingreso"]
+
+
+def _order_cancel_before_removal(steps: list) -> list:
+    """Las dos ramas quedan: cancelar regresa; eliminar quita el método."""
+    removal = next(
+        (
+            index
+            for index, step in enumerate(steps)
+            if re.search(r"ya no aparece|proceder con la eliminaci", step.expected_result or "", re.I)
+        ),
+        None,
+    )
+    if removal is None:
+        return steps
+    cancel = [step for step in steps[removal + 1 :] if re.search(r"\bcancelar\b", step.action or "", re.I)]
+    if not cancel:
+        return steps
+    rest = [step for step in steps[removal + 1 :] if step not in cancel]
+    return [*steps[:removal], *cancel, steps[removal], *rest]
 
 
 def _ensure_pin(steps: list) -> list:
@@ -1119,12 +1237,6 @@ def _ensure_pin(steps: list) -> list:
     return out
 
 
-def _drop_return_after_removal(steps: list) -> list:
-    if not any("ya no aparece" in (step.expected_result or "") for step in steps):
-        return steps
-    return [step for step in steps if not _RETURN_ONLY.search(step.expected_result or "")]
-
-
 def finish_case(case, units: list) -> None:
     """Reconstruye el caso desde el escenario: no pierde el Then ni inventa pasos."""
     from app.schemas.case_generation import CandidateStep
@@ -1139,12 +1251,23 @@ def finish_case(case, units: list) -> None:
         action = str(segment.get("action") or "")
         results = segment.get("results") or []
         expected = _join_results([str(part) for part in results])
+        if not action and expected and steps and is_entry_flow(steps[-1].action):
+            steps[-1].expected_result = f"{steps[-1].expected_result} {expected}".strip()
+            continue
         if not action and expected:
-            action = _leading_action(units) or "Verificar lo indicado en pantalla"
+            source = "\n".join(f"{unit.body or ''}\n{unit.feature_background or ''}" for unit in units)
+            if re.search(r"\bhome\b|pantalla principal", f"{expected}\n{source}", re.I) and re.search(
+                r"renderiza|ingresa|abre|accede", source, re.I
+            ):
+                action = "Ingresar a la Home"
+            else:
+                action = _leading_action(units) or "Verificar lo indicado en pantalla"
         if not action:
             continue
         if is_filler_expected(action, expected):
             expected = ""
+        if not expected and re.search(r"^buscar\b", action, re.I):
+            expected = "Se muestra el resultado de la búsqueda."
         steps.append(
             CandidateStep(
                 step_number=len(steps) + 1,
@@ -1164,7 +1287,7 @@ def finish_case(case, units: list) -> None:
             folded[-1].expected_result = f"{folded[-1].expected_result} {step.expected_result}".strip()
             continue
         folded.append(step)
-    steps = _merge_filler_steps(_drop_return_after_removal(_ensure_pin(folded)))
+    steps = _merge_filler_steps(_order_cancel_before_removal(_ensure_pin(folded)))
     if len(steps) == 1 and fold(steps[0].action).startswith("verificar"):
         leading = _leading_action(units)
         if leading:
@@ -1180,6 +1303,18 @@ def finish_case(case, units: list) -> None:
     kept = [step for step in steps if (step.expected_result or "").strip()]
     if kept:
         steps = kept
+    if not steps and any(then_has_visible_outcome(unit.body or "") for unit in units):
+        visible = _join_results(visible_then_clauses(*(unit.body or "" for unit in units)))
+        action = _leading_action(units) or "Verificar lo indicado en pantalla"
+        if visible and action:
+            steps = [
+                CandidateStep(
+                    step_number=1,
+                    action=action,
+                    expected_result=visible,
+                    covered_unit_ids=[primary.coverage_id],
+                )
+            ]
     for index, step in enumerate(steps, start=1):
         step.step_number = index
     bodies = [primary.body or ""] if repeated else [unit.body or "" for unit in units]
@@ -1196,7 +1331,13 @@ def finish_case(case, units: list) -> None:
                 enabled = True
     pre_lines: list[str] = []
     pre_lines.extend(
-        _account_lines(primary.scenario or "", "\n".join((unit.body or "") + "\n" + (unit.scenario or "") for unit in units))
+        _account_lines(
+            primary.scenario or "",
+            "\n".join(
+                (unit.feature_background or "") + "\n" + (unit.body or "") + "\n" + (unit.scenario or "")
+                for unit in units
+            ),
+        )
     )
     if not repeated:
         pre_lines.extend(user_type_lines(primary.scenario or "", "\n".join(unit.body or "" for unit in units)))
@@ -1249,3 +1390,61 @@ def finish_case(case, units: list) -> None:
             if note not in notes:
                 notes.append(note)
         primary.technical_notes = notes
+
+
+def prepend_sister_paths(cases: list, inventory: list) -> None:
+    """Si el caso empieza en el PIN, antepone el camino de la historia hermana."""
+    from app.schemas.case_generation import CandidateStep
+
+    by_id = {unit.coverage_id: unit for unit in inventory}
+
+    def units_of(case):
+        return [by_id[cid] for cid in (case.covers or case.covered_unit_ids or []) if cid in by_id]
+
+    def epic_of(case) -> str:
+        rows = units_of(case)
+        if not rows:
+            return ""
+        return rows[0].artifact_key or rows[0].story_key or ""
+
+    grouped: dict[str, list] = {}
+    for case in cases:
+        grouped.setdefault(epic_of(case), []).append(case)
+    for bucket in grouped.values():
+        for case in bucket:
+            if not case.steps or not re.search(r"\bpin\b", case.steps[0].action or "", re.I):
+                continue
+            sister = None
+            best = 0
+            for other in bucket:
+                if other is case or not other.steps:
+                    continue
+                pin_at = next(
+                    (index for index, step in enumerate(other.steps) if re.search(r"\bpin\b", step.action or "", re.I)),
+                    None,
+                )
+                if pin_at is None or pin_at < 1 or pin_at <= best:
+                    continue
+                best = pin_at
+                sister = other
+            if sister is None:
+                continue
+            prefix = [step.model_copy(deep=True) for step in sister.steps[:best]]
+            blob = "\n".join(
+                f"{unit.feature_background or ''}\n{unit.body or ''}" for unit in units_of(sister)
+            )
+            if re.search(r"pantalla de checkout", blob, re.I) and not any(
+                "checkout" in fold(step.action) for step in prefix
+            ):
+                prefix.insert(
+                    0,
+                    CandidateStep(
+                        step_number=1,
+                        action="Ingresar a la pantalla de Checkout",
+                        expected_result="Se muestra la pantalla de Checkout.",
+                        covered_unit_ids=[],
+                    ),
+                )
+            case.steps = prefix + list(case.steps)
+            for index, step in enumerate(case.steps, start=1):
+                step.step_number = index

@@ -7,6 +7,7 @@ from app.services.legacy_qc import (
     given_goes_to_step,
     gloss_precondition,
     legacy_disposition,
+    prepend_sister_paths,
 )
 from app.services.scenario_cases import compose_scenario_inventory, fill_scenario_ledger
 
@@ -225,6 +226,128 @@ def test_each_action_is_followed_by_its_result():
     assert pairs[1][0] == "Seleccionar el botón «Cancelar»"
     assert "pantalla anterior" in pairs[1][1].lower()
     assert "se muestra eliminar" not in pairs[0][1].lower()
+
+
+def test_redirect_and_visible_state_stay_executable():
+    plans = _unit(
+        "p1",
+        "HN-1",
+        "Ver planes",
+        'When el usuario selecciona el botón "Ver planes"\n'
+        "Then se redirige al usuario a la pantalla del Selector de Planes",
+    )
+    centro = _unit(
+        "c1",
+        "HN-2",
+        "Registro Telmex fuera de casa",
+        "When el usuario selecciona un perfil\nThen el Centro de notificaciones se visualiza desplegado",
+    )
+    stats = GenerationStats()
+    cases = compose_scenario_inventory([plans, centro], [], lambda *_args: None)
+    fill_scenario_ledger(stats, [plans, centro], cases)
+    assert len(cases) == 2
+    plans_case = next(case for case in cases if "planes" in case.name.lower())
+    assert "selector" in " ".join(step.expected_result for step in plans_case.steps).lower()
+    centro_case = next(case for case in cases if "telmex" in case.name.lower())
+    assert "desplegad" in " ".join(step.expected_result for step in centro_case.steps).lower()
+    assert all(row["estado"] == "caso ejecutable" for row in stats.scenario_ledger)
+
+
+def test_entry_flow_stays_in_separate_steps():
+    unit = _unit(
+        "e1",
+        "HN-1",
+        "Registro vía iFrame de Telmex",
+        "Then el Centro de Notificaciones se visualiza desplegado",
+    )
+    unit.feature_background = "\n".join(
+        [
+            "Given un usuario ingresa a la aplicación de Claro video",
+            "And el usuario se autentica por medio del iFrame de Telmex",
+            "And la aplicación muestra la pantalla de perfiles de Claro Video",
+            "And selecciona un perfil",
+        ]
+    )
+    cases = compose_scenario_inventory([unit], [], lambda *_args: None)
+    case = cases[0]
+    actions = [step.action for step in case.steps]
+    assert all(len([part for part in action.split(" y ") if part.strip()]) <= 2 for action in actions)
+    folded = " | ".join(action.lower() for action in actions)
+    assert "ingresar" in folded
+    assert "autentic" in folded
+    assert "perfil" in folded
+    blob = " ".join(step.expected_result.lower() for step in case.steps)
+    assert "perfiles" in blob
+    assert "desplegad" in blob
+
+
+def test_delete_keeps_cancel_and_removal_branches():
+    unit = _unit(
+        "d2",
+        "HN-1",
+        "Eliminación del método de pago Telcel sin suscripciones asociadas",
+        "\n".join(
+            [
+                'When el usuario selecciona el botón "Eliminar"',
+                "Then se muestra el modal ¿Estás seguro de eliminar este método de pago?",
+                'When el usuario accione el botón de "Eliminar"',
+                'Then se debe proceder con la eliminación del método de pago "Telcel"',
+                'When el usuario selecciona el botón "Cancelar"',
+                "Then al ser accionado se debe dirigir al usuario a la pantalla que detonó esta alerta",
+            ]
+        ),
+    )
+    stats = GenerationStats()
+    cases = compose_scenario_inventory([unit], [], lambda *_args: None)
+    fill_scenario_ledger(stats, [unit], cases)
+    actions = [step.action.lower() for step in cases[0].steps]
+    results = [step.expected_result.lower() for step in cases[0].steps]
+    cancel_at = next(index for index, action in enumerate(actions) if "cancelar" in action)
+    removal_at = next(index for index, result in enumerate(results) if "ya no aparece" in result)
+    assert cancel_at < removal_at
+    assert "dirigir" in results[cancel_at]
+    assert stats.scenario_ledger[0]["estado"] == "caso ejecutable"
+
+
+def test_pin_case_prepends_the_sister_flow():
+    alta = _unit(
+        "a1",
+        "HN-1",
+        "Alta exitosa de método de pago Telcel",
+        "\n".join(
+            [
+                'Given el usuario selecciona el método de pago "Telcel"',
+                "When se muestra la pantalla de alta del método de pago Telcel",
+                "And el usuario ingresa un número telefónico",
+                'When selecciona el botón "Siguiente"',
+                "Then se muestra la pantalla de Validación de línea móvil",
+                "And se valida el número celular de forma exitosa",
+                "And se muestra un modal de confirmación del método de pago agregado",
+            ]
+        ),
+    )
+    alta.feature_background = "Given se muestra la pantalla de Checkout"
+    modal = _unit(
+        "m1",
+        "HN-2",
+        "Modal de confirmación de método de pago agregado",
+        "\n".join(
+            [
+                "When se agrega el método de pago Telcel",
+                "Then se muestra un modal de confirmación",
+                "And se muestra el texto Telcel se agregó correctamente",
+            ]
+        ),
+    )
+    cases = compose_scenario_inventory([alta, modal], [], lambda *_args: None)
+    prepend_sister_paths(cases, [alta, modal])
+    modal_case = next(case for case in cases if case.name.startswith("Modal"))
+    actions = " ".join(step.action.lower() for step in modal_case.steps)
+    assert "checkout" in actions
+    assert "telcel" in actions
+    assert "número" in actions or "numero" in actions
+    assert "siguiente" in actions
+    assert actions.index("pin") > actions.index("checkout")
 
 
 def test_priority_bands():

@@ -28,6 +28,8 @@ from app.services.legacy_qc import (
     clean_title,
     finish_case,
     given_goes_to_step,
+    prepend_sister_paths,
+    then_has_visible_outcome,
     gloss_precondition,
     bare_scenario_name,
     is_echo_result,
@@ -1330,7 +1332,9 @@ def redactar_casos(
     for row in candidates:
         units = [by_id[cid] for cid in (row.covers or row.covered_unit_ids or []) if cid in by_id]
         out.append(redactar_caso(row, units))
-    return unique_names(out)
+    named = unique_names(out)
+    prepend_sister_paths(named, inventory or [])
+    return named
 
 
 def redactar_caso(caso: GeneratedCaseCandidate, units: list[CoverageUnit] | None = None) -> GeneratedCaseCandidate:
@@ -1581,10 +1585,15 @@ def fill_scenario_ledger(
                 "",
             )
         elif match is None or case_pending:
+            visible = then_has_visible_outcome(unit.body or "")
             estado, motivo, case_id = (
                 "verificación técnica",
                 (match.applicability_reason if match else None)
-                or "sin Then observable o sin acción de tester derivable",
+                or (
+                    "sin acción de tester derivable"
+                    if visible
+                    else "sin Then observable: el Then no describe nada visible en pantalla"
+                ),
                 match.name if match else "",
             )
         else:
