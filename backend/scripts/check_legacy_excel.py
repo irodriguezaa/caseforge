@@ -132,6 +132,11 @@ def main() -> int:
         "acciones_sin_resultado": "acciones seguidas sin resultado intermedio",
         "llave_o_codigo_en_pre": "llave o código de error en precondición",
         "precondicion_vacia": "precondición Y. o vacía",
+        "unico_verificar": "único paso Verificar",
+        "acciones_duplicadas": "acciones duplicadas seguidas",
+        "pre_sin_cuenta": "precondición sin estado de cuenta",
+        "relleno": "frases de relleno",
+        "gherkin_en_pre": "palabra clave Gherkin en la precondición",
     }
     print(f"casos={len(read_rows)} excel={OUT}")
     failed = 0

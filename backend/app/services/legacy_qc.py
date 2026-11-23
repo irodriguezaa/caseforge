@@ -52,7 +52,15 @@ _THEN_TECH = re.compile(
 )
 _NO_AFECTACION = re.compile(
     r"se ve[n]? igual que antes|mantener comportamiento actual|"
-    r"no se (ve|ven) afect|sin afectaci[oó]n|no afectaci[oó]n",
+    r"no se (ve|ven) afect|sin afectaci[oó]n|no afectaci[oó]n|"
+    r"no debe alterarse|no debe modificarse el comportamiento|"
+    r"comportamiento funcional actual|mantener la estructura|"
+    r"mantener estructura y comportamiento",
+    re.IGNORECASE,
+)
+_PROCESS = re.compile(
+    r"deben considerarse [uú]nicamente|ser[aá]n la referencia|"
+    r"referencia oficial|conforme a dise[nñ]o oficial",
     re.IGNORECASE,
 )
 _THEN_LINE = re.compile(r"^\s*(Then|Entonces)\b(.*)$", re.IGNORECASE | re.MULTILINE)
@@ -171,6 +179,8 @@ def legacy_disposition(title: str, body: str = "") -> tuple[str, str]:
     then = " ".join(match.group(2) or "" for match in _THEN_LINE.finditer(body or ""))
     if _NO_AFECTACION.search(blob):
         return "regresion", "no afectación: lo cubre la regresión por componente"
+    if _PROCESS.search(blob) and not _VISIBLE_THEN.search(then):
+        return "nota", "criterio de proceso: no es un caso de prueba"
     if _KEY_TITLE.search(title or ""):
         return "verificacion", "llave, configuración o metadata: no es caso QC"
     if _THEN_TECH.search(then) and not _VISIBLE_THEN.search(then):
@@ -552,6 +562,10 @@ def _user_action(text: str, history: list[str] | None = None) -> str:
     raw = re.sub(r"\bacciona\b", "accionar", raw, flags=re.IGNORECASE)
     if re.match(r"^me encuentro\b", raw, re.I):
         return ""
+    if _DEV_OR_CODE.search(raw):
+        return ""
+    if re.search(r"comienza a corregir", raw, re.I):
+        return "Corregir el número ingresado"
     if re.search(r"\bal ser accionado\b", raw, re.I):
         return ""
     if not given_goes_to_step(raw) and not re.search(r"\b(identificar|consultar|validar)\b", raw, re.I):
@@ -621,6 +635,89 @@ def echo_pair(action: str, expected: str) -> bool:
     return False
 
 
+_RETURN_ONLY = re.compile(
+    r"pantalla que deton|al ser accionado se debe dirigir",
+    re.IGNORECASE,
+)
+_FILLER_EXPECTED = re.compile(
+    r"la pantalla queda en el estado siguiente|queda seleccionado|queda realizada la selecci",
+    re.IGNORECASE,
+)
+_DEV_OR_CODE = re.compile(
+    r"\bse implementan\b|\bse realiza la actualizaci[oó]n\b|\bc[oó]digo\s*200\b|\bcode\s*200\b",
+    re.IGNORECASE,
+)
+_GHERKIN_LEAD = re.compile(
+    r"^(and|y|given|dado que|dado|when|cuando|then|entonces)\b[:\s]*",
+    re.IGNORECASE,
+)
+
+
+def is_filler_expected(action: str, expected: str) -> bool:
+    """Resultado inventado: no está en el Gherkin."""
+    folded = fold(expected)
+    if not folded:
+        return True
+    if _FILLER_EXPECTED.search(folded):
+        return True
+    if echo_pair(action, expected):
+        return True
+    shown = re.sub(r"^se muestra\s+", "", folded).strip(" .«»\"")
+    act = re.sub(
+        r"^(ingresar|acceder|abrir|buscar|seleccionar|presionar)( a| al| el boton| el)?\s+",
+        "",
+        fold(action),
+    ).strip(" .«»\"")
+    if shown and act and shown == act:
+        return True
+    folded = re.sub(r"\bel usuario\b", " ", folded)
+    words = [word for word in re.findall(r"[a-z0-9]{4,}", folded) if word not in _STOP and word != "usuario"]
+    if words and len(words) <= 6 and all(word[:5] in fold(action) for word in words):
+        return True
+    return False
+
+
+def _setup_state(text: str, action: str) -> str:
+    quoted = re.search(r"[\"“]([^\"”]+)[\"”]", text or "")
+    if re.search(r"pantalla", text or "", re.I) and re.search(r"acced|ingres", text or "", re.I):
+        if quoted:
+            return f"El usuario está en la pantalla de {quoted.group(1)}."
+        return "El usuario está en la pantalla del flujo."
+    if quoted and re.search(r"seleccion|m[eé]todo de pago", text or "", re.I):
+        return f"El método de pago «{quoted.group(1)}» está seleccionado."
+    if re.search(r"aplicaci", action or "", re.I):
+        return "El usuario está en la aplicación."
+    return third_person(text or action)
+
+
+def _account_lines(title: str, body: str) -> list[str]:
+    blob = f"{title}\n{body}"
+    lines: list[str] = []
+    if re.search(r"sin suscripciones", blob, re.I):
+        lines.append("El usuario no tiene suscripciones asociadas al método de pago.")
+    if re.search(r"con suscripciones asociadas", blob, re.I):
+        lines.append("El usuario tiene suscripciones asociadas al método de pago.")
+    if re.search(r"no cuenta con un n[uú]mero|sin (un )?m[eé]todo de pago registrado", blob, re.I):
+        lines.append("El usuario no tiene un método de pago registrado.")
+    if re.search(r"cuenta con un n[uú]mero|tiene un m[eé]todo de pago registrado", blob, re.I):
+        lines.append("El usuario tiene un método de pago registrado.")
+    if re.search(r"sesi[oó]n iniciada|tiene sesi[oó]n", blob, re.I):
+        lines.append("El usuario tiene la sesión iniciada.")
+    return lines
+
+
+def _visible_removal(text: str) -> str:
+    if not re.search(r"proceder con la eliminaci[oó]n|queda eliminad", text or "", re.I):
+        return text
+    match = re.search(r"[\"“]([^\"”]+)[\"”]", text or "")
+    if not match:
+        match = re.search(r"m[eé]todo de pago\s+([A-Za-zÁÉÍÓÚáéíóúñÑ0-9]+)", text or "", re.I)
+    name = match.group(1).strip() if match else ""
+    if not name:
+        return text
+    return f"El método de pago «{name}» ya no aparece."
+
+
 def _fallback_result(action: str) -> str:
     if re.search(r"^seleccionar|^presionar", action or "", re.I):
         match = re.search(r"«([^»]+)»", action or "")
@@ -650,7 +747,7 @@ def _join_results(parts: list[str]) -> str:
         if _TEMPORAL.match(piece):
             pending = True
             continue
-        sentence = _sentence(piece)
+        sentence = _sentence(_visible_removal(piece))
         if pending and sentence:
             body = sentence[0].lower() + sentence[1:]
             sentence = f"Al terminar el tiempo del modal, {body}"
@@ -876,6 +973,7 @@ def _flow(units: list) -> tuple[list[dict[str, object]], list[str], list[str], b
     segments: list[dict[str, object]] = []
     current: dict[str, object] | None = None
     history: list[str] = []
+    background_actions: list[str] = []
 
     def close() -> None:
         nonlocal current
@@ -911,6 +1009,14 @@ def _flow(units: list) -> tuple[list[dict[str, object]], list[str], list[str], b
                 embedded, embedded_result = _embedded_press(text)
             listed = readable_elements(text)
             action = "" if listed or re.match(r"^se muestra\b", text, re.I) else embedded or _user_action(text, history)
+            if from_background and action:
+                background_actions.append(action)
+                states.append(_setup_state(text, action))
+                history.append(text)
+                continue
+            if _DEV_OR_CODE.search(text) or re.search(r"c[oó]digo\s*200", text, re.I):
+                history.append(text)
+                continue
             if action and (kind != "then" or embedded or given_goes_to_step(text)):
                 if current and current.get("action") and not current.get("results"):
                     close()
@@ -942,7 +1048,81 @@ def _flow(units: list) -> tuple[list[dict[str, object]], list[str], list[str], b
                 states.append(text)
             history.append(text)
     close()
+    if background_actions and not any(segment.get("action") for segment in segments):
+        results: list[str] = []
+        for segment in segments:
+            results.extend(segment.get("results") or [])
+        entry = background_actions[0]
+        for extra in background_actions[1:]:
+            entry = f"{entry} y {extra[0].lower()}{extra[1:]}"
+        segments = [{"action": entry, "results": results}]
     return segments, states, warnings, repeated
+
+
+def _leading_action(units: list) -> str:
+    blob = "\n".join(f"{unit.scenario or ''}\n{unit.body or ''}" for unit in units)
+    if re.search(r"validaci[oó]n|n[uú]mero celular|m[eé]todo de pago|\bpin\b", blob, re.I) and re.search(
+        r"modal|exitos|error|agreg", blob, re.I
+    ):
+        return "Ingresar el PIN"
+    return ""
+
+
+def _merge_filler_steps(steps: list) -> list:
+    merged: list = []
+    for step in steps:
+        if merged and is_filler_expected(merged[-1].action, merged[-1].expected_result):
+            nxt = step.action or ""
+            merged[-1].action = f"{merged[-1].action} y {nxt[0].lower()}{nxt[1:]}" if nxt else merged[-1].action
+            merged[-1].expected_result = step.expected_result
+            continue
+        merged.append(step)
+    return merged
+
+
+def _ensure_pin(steps: list) -> list:
+    from app.schemas.case_generation import CandidateStep
+
+    if any(re.search(r"\bpin\b", step.action or "", re.I) for step in steps):
+        return steps
+    out: list = []
+    inserted = False
+    for step in steps:
+        text = step.expected_result or ""
+        if inserted or not re.search(r"validaci[oó]n de l[ií]nea", text, re.I):
+            out.append(step)
+            continue
+        if not re.search(r"exitos|no se concret|modal de error|modal de confirm", text, re.I):
+            out.append(step)
+            continue
+        parts = [part.strip() for part in re.split(r"(?<=\.)\s+", text) if part.strip()]
+        screen: list[str] = []
+        outcome: list[str] = []
+        seen = False
+        for part in parts:
+            if not seen and re.search(r"validaci[oó]n de l[ií]nea", part, re.I):
+                screen.append(part)
+                seen = True
+                continue
+            (outcome if seen else screen).append(part)
+        step.expected_result = " ".join(screen).strip()
+        out.append(step)
+        out.append(
+            CandidateStep(
+                step_number=0,
+                action="Ingresar el PIN",
+                expected_result=" ".join(outcome).strip(),
+                covered_unit_ids=[],
+            )
+        )
+        inserted = True
+    return out
+
+
+def _drop_return_after_removal(steps: list) -> list:
+    if not any("ya no aparece" in (step.expected_result or "") for step in steps):
+        return steps
+    return [step for step in steps if not _RETURN_ONLY.search(step.expected_result or "")]
 
 
 def finish_case(case, units: list) -> None:
@@ -960,13 +1140,11 @@ def finish_case(case, units: list) -> None:
         results = segment.get("results") or []
         expected = _join_results([str(part) for part in results])
         if not action and expected:
-            action = "Verificar lo indicado en pantalla"
+            action = _leading_action(units) or "Verificar lo indicado en pantalla"
         if not action:
             continue
-        if not expected or echo_pair(action, expected) or _FILLER_RESULT.match(expected.strip()):
-            expected = _fallback_result(action)
-        if echo_pair(action, expected):
-            expected = "La pantalla queda en el estado siguiente."
+        if is_filler_expected(action, expected):
+            expected = ""
         steps.append(
             CandidateStep(
                 step_number=len(steps) + 1,
@@ -986,12 +1164,24 @@ def finish_case(case, units: list) -> None:
             folded[-1].expected_result = f"{folded[-1].expected_result} {step.expected_result}".strip()
             continue
         folded.append(step)
-    steps = folded
+    steps = _merge_filler_steps(_drop_return_after_removal(_ensure_pin(folded)))
+    if len(steps) == 1 and fold(steps[0].action).startswith("verificar"):
+        leading = _leading_action(units)
+        if leading:
+            steps[0].action = leading
     for index, step in enumerate(steps, start=1):
         step.step_number = index
         step.expected_result = _at_word(step.expected_result or "", 2000)
         if technical_phrase(step.expected_result or ""):
-            step.expected_result = visible_remainder(step.expected_result) or _fallback_result(step.action)
+            step.expected_result = visible_remainder(step.expected_result) or ""
+        if is_filler_expected(step.action, step.expected_result):
+            step.expected_result = ""
+    steps = _merge_filler_steps(steps)
+    kept = [step for step in steps if (step.expected_result or "").strip()]
+    if kept:
+        steps = kept
+    for index, step in enumerate(steps, start=1):
+        step.step_number = index
     bodies = [primary.body or ""] if repeated else [unit.body or "" for unit in units]
     thens = visible_then_clauses(*bodies)
     blob = " ".join(f"{step.action} {step.expected_result}" for step in steps)
@@ -1005,6 +1195,9 @@ def finish_case(case, units: list) -> None:
             if _KEY_STATE.search(source):
                 enabled = True
     pre_lines: list[str] = []
+    pre_lines.extend(
+        _account_lines(primary.scenario or "", "\n".join((unit.body or "") + "\n" + (unit.scenario or "") for unit in units))
+    )
     if not repeated:
         pre_lines.extend(user_type_lines(primary.scenario or "", "\n".join(unit.body or "" for unit in units)))
     if enabled:
@@ -1017,9 +1210,12 @@ def finish_case(case, units: list) -> None:
             continue
         if given_goes_to_step(state):
             continue
-        line = third_person(visible_remainder(state) or state)
-        if line and not _JUNK_PRE.match(line.strip(" .")):
-            pre_lines.append(line)
+        line = _GHERKIN_LEAD.sub("", third_person(visible_remainder(state) or state)).strip()
+        if not line or _JUNK_PRE.match(line.strip(" .")) or _DEV_OR_CODE.search(line):
+            continue
+        if re.search(r"comienza a corregir", line, re.I):
+            continue
+        pre_lines.append(line if line.endswith(".") else line + ".")
     case.name = title
     case.precondition = "; ".join(_dedupe_pre(pre_lines)) or None
     case.steps = steps

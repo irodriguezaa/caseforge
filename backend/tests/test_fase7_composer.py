@@ -226,6 +226,7 @@ Scenario: Configuración remota vacía
         "regresión",
         "error",
         "criterio de épica – revisar",
+        "nota",
     }
 
 

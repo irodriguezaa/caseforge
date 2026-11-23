@@ -1103,6 +1103,88 @@ def compose_scenario_units(units: list[CoverageUnit]) -> FlowDraft:
     )
 
 
+def _visual_token(unit: CoverageUnit) -> tuple[str, str, str, str] | None:
+    blob = f"{unit.scenario or ''}\n{unit.body or ''}\n{unit.story_summary or ''}".lower()
+    screen = next(
+        (label for label in ("centro de notificaciones", "cintillo") if label in blob),
+        "",
+    )
+    if not screen:
+        return None
+    if "desplegad" in blob:
+        state = "desplegado"
+    elif "replegad" in blob:
+        state = "replegado"
+    elif "ocult" in blob:
+        state = "oculto"
+    else:
+        return None
+    if "ip telmex" in blob or "ip_telmex" in blob:
+        user = "ip telmex"
+    elif "telmex" in blob:
+        user = "telmex"
+    elif "extern" in blob or "external" in blob:
+        user = "externo"
+    else:
+        user = ""
+    return (unit.story_key or "", screen, state, user)
+
+
+def _is_element_screen(unit: CoverageUnit) -> bool:
+    return bool(re.search(r"elementos|se muestran los siguientes", unit.body or "", re.I))
+
+
+def _merge_visual_pairs(
+    groups: dict[str, list[CoverageUnit]],
+    order: list[str],
+) -> tuple[dict[str, list[CoverageUnit]], list[str]]:
+    """Une, dentro de una historia, el estado de una pantalla con su lista de elementos."""
+    buckets: dict[tuple[str, str, str], list[str]] = {}
+    users: dict[str, str] = {}
+    for key in order:
+        token = _visual_token(groups[key][0])
+        if not token:
+            continue
+        story, screen, state, user = token
+        buckets.setdefault((story, screen, state), []).append(key)
+        users[key] = user
+    drop: set[str] = set()
+    for keys in buckets.values():
+        by_user: dict[str, list[str]] = {}
+        for key in keys:
+            by_user.setdefault(users[key], []).append(key)
+        known = [user for user in by_user if user]
+        if "" in by_user and len(known) == 1:
+            by_user[known[0]].extend(by_user.pop(""))
+        for user_keys in by_user.values():
+            element_keys = [key for key in user_keys if any(_is_element_screen(unit) for unit in groups[key])]
+            state_keys = [key for key in user_keys if key not in element_keys]
+            if not element_keys or not state_keys:
+                continue
+            keeper = groups[element_keys[0]][0]
+            extra: list[str] = []
+            for key in state_keys:
+                for unit in groups[key]:
+                    if not re.search(r"(?:When|Cuando)\s+", keeper.body or ""):
+                        whens = re.findall(r"(?:When|Cuando)\s+(.+)", unit.body or "")
+                        if whens:
+                            keeper.body = "\n".join(f"When {item.strip()}" for item in whens) + "\n" + (
+                                keeper.body or ""
+                            )
+                    for match in re.finditer(r"(?:Then|Entonces|And|Y)\s+(.+)", unit.body or ""):
+                        clause = match.group(1).strip()
+                        if re.search(r"visualiza|desplegad|replegad|ocult", clause, re.I) and clause not in (
+                            keeper.body or ""
+                        ):
+                            extra.append(clause)
+                drop.add(key)
+            if extra:
+                keeper.body = (keeper.body or "").rstrip() + "\n" + "\n".join(
+                    f"Then {clause}" for clause in extra
+                )
+    return groups, [key for key in order if key not in drop]
+
+
 def compose_scenario_inventory(
     inventory: list[CoverageUnit],
     existing: list[dict[str, str]],
@@ -1115,7 +1197,10 @@ def compose_scenario_inventory(
         if kind == "caso" and is_robust_consumption(unit.scenario or "", unit.body or ""):
             kind, motivo = "verificacion", "llave, configuración o metadata: no es caso QC"
         if kind != "caso":
-            token = "verificacion-tecnica" if kind == "verificacion" else "regresion-funcional"
+            token = {
+                "verificacion": "verificacion-tecnica",
+                "nota": "nota-proceso",
+            }.get(kind, "regresion-funcional")
             rules = list(unit.applied_rules or [])
             if token not in rules:
                 unit.applied_rules = [*rules, token]
@@ -1143,6 +1228,7 @@ def compose_scenario_inventory(
         merged[merge_key].extend(units)
     groups = merged
     order = merged_order
+    groups, order = _merge_visual_pairs(groups, order)
     out: list[GeneratedCaseCandidate] = []
     for key in order:
         if any("ac-epica" in (unit.applied_rules or []) for unit in groups[key]):
@@ -1458,6 +1544,12 @@ def fill_scenario_ledger(
         elif "criterio-epica" in (unit.applied_rules or []):
             estado, motivo, case_id = (
                 "criterio de épica – revisar",
+                unit.applicability_reason or unit.scenario or "",
+                "",
+            )
+        elif "nota-proceso" in (unit.applied_rules or []):
+            estado, motivo, case_id = (
+                "nota",
                 unit.applicability_reason or unit.scenario or "",
                 "",
             )

@@ -11,6 +11,7 @@ from app.services.legacy_qc import (
     echo_pair,
     fold,
     is_entry_action,
+    is_filler_expected,
     technical_phrase,
     visible_then_clauses,
 )
@@ -20,7 +21,20 @@ _FIRST = re.compile(
     re.IGNORECASE,
 )
 _KEY_OR_CODE = re.compile(
-    r"\bllave\b|c[oó]digo de error|\bPGS_[A-Z0-9_]+\b|la respuesta contiene",
+    r"\bllave\b|c[oó]digo de error|c[oó]digo\s*200|\bPGS_[A-Z0-9_]+\b|la respuesta contiene",
+    re.IGNORECASE,
+)
+_GHERKIN_PRE = re.compile(
+    r"(?:^|;)\s*(and|y|given|dado|when|cuando|then|entonces)\b",
+    re.IGNORECASE,
+)
+_PAY_FLOW = re.compile(r"m[eé]todo de pago|suscrip", re.IGNORECASE)
+_ACCOUNT = re.compile(
+    r"suscrip|m[eé]todo de pago|sesi[oó]n|el usuario (es|tiene|no tiene)",
+    re.IGNORECASE,
+)
+_FILLER_TEXT = re.compile(
+    r"la pantalla queda en el estado siguiente|queda seleccionado",
     re.IGNORECASE,
 )
 _JUNK_PRE = re.compile(r"^(y|and)\.?$", re.IGNORECASE)
@@ -68,6 +82,11 @@ def audit_cases(rows: list[dict[str, Any]], origins: dict[str, str]) -> dict[str
         "acciones_sin_resultado": [],
         "llave_o_codigo_en_pre": [],
         "precondicion_vacia": [],
+        "unico_verificar": [],
+        "acciones_duplicadas": [],
+        "pre_sin_cuenta": [],
+        "relleno": [],
+        "gherkin_en_pre": [],
     }
     for row in rows:
         name = str(row.get("name") or "")
@@ -113,6 +132,18 @@ def audit_cases(rows: list[dict[str, Any]], origins: dict[str, str]) -> dict[str
             issues["llave_o_codigo_en_pre"].append(name)
         if any(_JUNK_PRE.match(part.strip(" .")) for part in clauses) or (pre.strip() and not clauses):
             issues["precondicion_vacia"].append(name)
+        if len(steps) == 1 and fold(steps[0]).startswith("verificar"):
+            issues["unico_verificar"].append(name)
+        for left, right, left_result, right_result in zip(steps, steps[1:], results, results[1:]):
+            if fold(left) == fold(right) and fold(left_result) == fold(right_result):
+                issues["acciones_duplicadas"].append(name)
+                break
+        if _PAY_FLOW.search(f"{name} {scenario}") and not _ACCOUNT.search(pre):
+            issues["pre_sin_cuenta"].append(name)
+        if any(_FILLER_TEXT.search(result) or is_filler_expected(action, result) for action, result in zip(steps, results)):
+            issues["relleno"].append(name)
+        if _GHERKIN_PRE.search(pre):
+            issues["gherkin_en_pre"].append(name)
         if body:
             missing = [
                 clause
