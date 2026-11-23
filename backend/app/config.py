@@ -37,6 +37,11 @@ class Settings:
     case_composition_mode: str = os.getenv("CASE_COMPOSITION_MODE", "scenario")
     # QcPulse: "legacy" (default) | "v2" | "v2b". Solo afecta la generación de casos.
     qc_engine: str = (os.getenv("QC_ENGINE", "legacy") or "legacy").strip().lower()
+    # Redacción opcional sobre el texto que ya armó Legacy. off | groq.
+    qc_llm_polish: str = (os.getenv("QC_LLM_POLISH", "off") or "off").strip().lower()
+    qc_llm_tpm_limit: int = int(os.getenv("QC_LLM_TPM_LIMIT", "7000") or 7000)
+    qc_llm_polish_retries: int = int(os.getenv("QC_LLM_MAX_RETRIES", "1") or 1)
+    groq_api_key: str = os.getenv("GROQ_API_KEY", "")
     qc_v2_model_a: str = (
         os.getenv("OPENAI_QC_MODEL_A")
         or os.getenv("QC_LLM_MODEL")

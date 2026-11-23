@@ -78,10 +78,23 @@ def split_stored_extras(raw: str | None) -> tuple[str, str]:
     match = re.search(r"Referencia técnica:\s*(.+?)(?=\nVariantes:|\Z)", text, re.I | re.S)
     if match:
         tech = match.group(1).strip()
-    match = re.search(r"Variantes:\s*(.+)$", text, re.I | re.S)
+    match = re.search(r"Variantes:\s*(.+?)(?=\nRedacción:|\Z)", text, re.I | re.S)
     if match:
         variants = match.group(1).strip()
     return tech, variants
+
+
+_REDACCION_LINE = re.compile(r"(?:^|\n)Redacción:\s*(.+)\s*\Z", re.IGNORECASE)
+
+
+def split_redaccion(raw: str | None) -> tuple[str, str]:
+    """Separa la etiqueta de redacción del resto de test_data."""
+    text = raw or ""
+    match = _REDACCION_LINE.search(text)
+    if not match:
+        return "Legacy", text
+    label = match.group(1).strip() or "Legacy"
+    return label, (text[: match.start()] + text[match.end() :]).strip()
 
 
 def split_stored_test_data(raw: str | None) -> tuple[str, str, str]:
@@ -348,6 +361,7 @@ QC_HEADERS = [
     "Esfuerzo QC (h)",
     "Referencia técnica",
     "Variantes (condición → resultado)",
+    "Redacción",
 ]
 
 # Matches the FLAT Zephyr layout that CaseForge already imports (see services/imports.py).
@@ -541,13 +555,14 @@ def build_test_cases_workbook(
     _style_header(
         qc,
         QC_HEADERS,
-        [10, 42, 16, 12, 16, 14, 40, 40, 28, 22, 28, 32, 16, 18, 28, 12, 14, 14, 32, 36],
+        [10, 42, 16, 12, 16, 14, 40, 40, 28, 22, 28, 32, 16, 18, 28, 12, 14, 14, 32, 36, 28],
     )
     for row_index, case in enumerate(
         (row for row in ordered if not _is_na_ambiente(row)), start=2
     ):
-        precondition, compact_data, _notes = split_stored_test_data(case.test_data)
-        tech, variants = split_stored_extras(case.test_data)
+        redaccion, stored = split_redaccion(case.test_data)
+        precondition, compact_data, _notes = split_stored_test_data(stored)
+        tech, variants = split_stored_extras(stored)
         values = [
             case.test_case_id,
             _display_case_name(case),
@@ -569,6 +584,7 @@ def build_test_cases_workbook(
             "" if case.estimation_hours is None else float(case.estimation_hours),
             tech,
             variants,
+            redaccion,
         ]
         for col, value in enumerate(values, start=1):
             cell = qc.cell(row_index, col, _excel_value(value))
@@ -577,7 +593,7 @@ def build_test_cases_workbook(
 
     if na_ambiente or any(str(row.get("estado") or "") == "na_ambiente" for row in ledger_rows):
         na_sheet = workbook.create_sheet("No aplicables en ambiente")
-        _style_header(na_sheet, QC_HEADERS, [10, 42, 16, 12, 16, 14, 40, 40, 28, 22, 28, 32, 16, 18, 28, 12, 14, 14, 32, 36])
+        _style_header(na_sheet, QC_HEADERS, [10, 42, 16, 12, 16, 14, 40, 40, 28, 22, 28, 32, 16, 18, 28, 12, 14, 14, 32, 36, 28])
         covered: set[tuple[str, str]] = set()
         next_row = 2
         for case in na_ambiente:
@@ -696,6 +712,34 @@ def build_test_cases_workbook(
         for col, value in enumerate(values, start=1):
             cell = sheet.cell(row_index, col, _excel_value(value))
             _style_cell(cell)
+
+    polish = coverage.get("llm_polish") if isinstance(coverage, dict) else None
+    if isinstance(polish, dict):
+        avance["H1"] = "Redacción IA"
+        avance["I1"] = int(polish.get("ia") or 0)
+        avance["H2"] = "Fallbacks"
+        avance["I2"] = int(polish.get("fallbacks") or 0)
+        avance["H3"] = "Tokens"
+        avance["I3"] = int(polish.get("tokens") or 0)
+        rows = [row for row in (polish.get("rows") or []) if isinstance(row, dict)]
+        if rows:
+            compared = workbook.create_sheet("Comparación IA")
+            _style_header(compared, ["ID", "campo", "texto Legacy", "texto IA"], [16, 24, 60, 60])
+            by_name = {
+                str(getattr(case, "test_case_name", "") or ""): str(getattr(case, "test_case_id", "") or "")
+                for case in ordered
+            }
+            for row_index, row in enumerate(rows, start=2):
+                label = str(row.get("id") or "")
+                values = [
+                    by_name.get(label) or label,
+                    row.get("campo") or "",
+                    row.get("legacy") or "",
+                    row.get("ia") or "",
+                ]
+                for col, value in enumerate(values, start=1):
+                    cell = compared.cell(row_index, col, _excel_value(value))
+                    _style_cell(cell)
 
     buffer = io.BytesIO()
     workbook.save(buffer)

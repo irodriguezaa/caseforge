@@ -94,7 +94,8 @@ def audit_cases(rows: list[dict[str, Any]], origins: dict[str, str]) -> dict[str
         results = _numbered(str(row.get("results") or ""))
         pre = str(row.get("precondition") or "")
         scenario = str(row.get("scenario") or "")
-        body = origins.get(name) or origins.get(fold(name)) or ""
+        legacy_name = str(row.get("legacy_name") or "")
+        body = origins.get(name) or origins.get(legacy_name) or origins.get(fold(name)) or ""
         if len(results) < len(steps):
             results = results + [""] * (len(steps) - len(results))
         if steps and any(not item.strip() for item in results):
@@ -104,8 +105,9 @@ def audit_cases(rows: list[dict[str, Any]], origins: dict[str, str]) -> dict[str
                 issues["entrada_duplicada"].append(name)
                 break
         cleaned = clean_title(scenario) if scenario else ""
+        titled = legacy_name or name
         if cleaned and not (
-            fold(name).startswith(fold(cleaned)) or fold(cleaned).startswith(fold(name))
+            fold(titled).startswith(fold(cleaned)) or fold(cleaned).startswith(fold(titled))
         ):
             issues["titulo_ajeno"].append(name)
         blob_fields = [pre, *steps, *results]

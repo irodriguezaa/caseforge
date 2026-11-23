@@ -66,6 +66,8 @@ def _join_test_data(candidate: GeneratedCaseCandidate) -> str | None:
         parts.append(f"Referencia técnica: {candidate.technical_reference}")
     if candidate.variant_table:
         parts.append(f"Variantes:\n{candidate.variant_table}")
+    if candidate.redaccion and candidate.redaccion != "Legacy":
+        parts.append(f"Redacción: {candidate.redaccion}")
     return "\n".join(parts) or None
 
 

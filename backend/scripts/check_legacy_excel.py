@@ -84,6 +84,7 @@ def main() -> int:
                 "results": results,
                 "precondition": case.precondition or "",
                 "scenario": scenario or "",
+                "legacy_name": case.legacy_name or "",
             }
         )
     ledger = book.create_sheet("Escenarios de Jira")
@@ -112,6 +113,8 @@ def main() -> int:
                 "variants": record[6] or "",
             }
         )
+    for record, source in zip(read_rows, rows):
+        record["legacy_name"] = source.get("legacy_name") or ""
     issues = audit_cases(read_rows, origins)
     errors = [
         str(item[4])

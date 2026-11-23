@@ -1814,6 +1814,10 @@ def generate_release_app_candidates(
     stats.llm_model = resolved_model()
     analysis_details.insert(0, f"Ruta IA: {stats.llm_path} proveedor={stats.llm_provider} modelo={stats.llm_model}")
     fill_scenario_ledger(stats, inventory, candidates)
+    if _is_legacy_qc_engine():
+        from app.services.legacy_polish import polish_legacy_cases
+
+        polish_legacy_cases(candidates, inventory, stats)
     candidates = [row for row in candidates if row.steps]
     stamp_source_types(candidates)
     candidates = stamp_candidates(candidates, functionality_keys, jira_artifacts)
@@ -1826,6 +1830,13 @@ def generate_release_app_candidates(
         candidates=candidates,
     )
     coverage["scenario_ledger"] = list(stats.scenario_ledger)
+    if stats.polish_ia or stats.polish_fallback or stats.polish_comparison:
+        coverage["llm_polish"] = {
+            "ia": stats.polish_ia,
+            "fallbacks": stats.polish_fallback,
+            "tokens": stats.polish_tokens,
+            "rows": list(stats.polish_comparison),
+        }
     required = [unit.coverage_id for unit in inventory]
     uncovered = [cid for cid in required if cid not in set(covered)]
     message = (

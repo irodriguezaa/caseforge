@@ -130,6 +130,8 @@ class GeneratedCaseCandidate(BaseModel):
     batch_id: str | None = None
     technical_reference: str | None = None
     variant_table: str | None = None
+    redaccion: str | None = None
+    legacy_name: str | None = None
 
 
 class GenerationStats(BaseModel):
@@ -159,6 +161,10 @@ class GenerationStats(BaseModel):
     llm_path: str | None = None
     llm_provider: str | None = None
     llm_model: str | None = None
+    polish_comparison: list[dict[str, Any]] = Field(default_factory=list)
+    polish_ia: int = 0
+    polish_fallback: int = 0
+    polish_tokens: int = 0
 
 
 class GenerateCasesResponse(BaseModel):
