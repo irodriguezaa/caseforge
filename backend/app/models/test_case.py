@@ -21,10 +21,11 @@ if TYPE_CHECKING:
 
 
 class TestCasePriority(str, enum.Enum):
-    """Severity/priority scale used across CaseForge's QC standard: exactly Blocker and Critical."""
+    """Blocker, Critical y Major. Major es conformidad visual y textos."""
 
     BLOCKER = "BLOCKER"
     CRITICAL = "CRITICAL"
+    MAJOR = "MAJOR"
 
 
 class TestCaseType(str, enum.Enum):

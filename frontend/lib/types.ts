@@ -8,7 +8,7 @@ export interface AuthUser {
   role: AuthRole;
 }
 
-export type TestCasePriority = "BLOCKER" | "CRITICAL";
+export type TestCasePriority = "BLOCKER" | "CRITICAL" | "MAJOR";
 
 export interface ImportCandidateTestCase {
   test_case_id: string;
@@ -147,7 +147,7 @@ export interface GeneratedCaseCandidate {
   confidence: "high" | "medium" | "low";
   review_required: boolean;
   basic_validation?: boolean;
-  priority?: "BLOCKER" | "CRITICAL" | null;
+  priority?: "BLOCKER" | "CRITICAL" | "MAJOR" | null;
   priority_reason?: string | null;
   user_type?: string | null;
   use_case_key?: string | null;

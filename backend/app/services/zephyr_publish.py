@@ -32,6 +32,7 @@ MAX_ATTEMPTS = 2
 _PRIORITY_TO_JIRA_ID = {
     TestCasePriority.CRITICAL.value: "2",  # Crítica
     TestCasePriority.BLOCKER.value: "1",  # Supone un impedimento
+    TestCasePriority.MAJOR.value: "3",  # Major
 }
 
 

@@ -49,6 +49,7 @@ ZEPHYR_UNSOURCED = (
 PRIORITY_MAP = {
     TestCasePriority.CRITICAL.value: "CRITICAL",
     TestCasePriority.BLOCKER.value: "BLOCKER",
+    TestCasePriority.MAJOR.value: "MAJOR",
 }
 TEST_TYPE_MAP = {member.value: member.value for member in TestCaseType}
 STATUS_MAP = {

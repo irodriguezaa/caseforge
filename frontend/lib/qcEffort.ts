@@ -3,9 +3,10 @@
 export const QC_HOURS_PER_DAY = 6;
 export const BLOCKER_MINUTES = 15;
 export const CRITICAL_MINUTES = 10;
-const PRIORITY_CANON: Record<string, "CRITICAL" | "BLOCKER"> = {
+const PRIORITY_CANON: Record<string, "CRITICAL" | "BLOCKER" | "MAJOR"> = {
   BLOCKER: "BLOCKER",
   CRITICAL: "CRITICAL",
+  MAJOR: "MAJOR",
 };
 const COMPLEXITY_CANON: Record<string, "BAJA" | "MEDIA" | "ALTA"> = {
   BAJA: "BAJA",
@@ -18,6 +19,7 @@ const COMPLEXITY_CANON: Record<string, "BAJA" | "MEDIA" | "ALTA"> = {
 export const QC_CASE_MINUTES: Record<string, Record<string, number>> = {
   CRITICAL: { BAJA: 10, MEDIA: 15, ALTA: 20 },
   BLOCKER: { BAJA: 15, MEDIA: 25, ALTA: 35 },
+  MAJOR: { BAJA: 8, MEDIA: 10, ALTA: 15 },
 };
 
 /** Retired count formula, comparison only: (TC / 46) × 3 days. */
@@ -36,7 +38,7 @@ function token(value?: string | null): string {
   return String(value ?? "").trim().toUpperCase();
 }
 
-function priorityBand(priority?: string | null): "CRITICAL" | "BLOCKER" {
+function priorityBand(priority?: string | null): "CRITICAL" | "BLOCKER" | "MAJOR" {
   const key = token(priority);
   if (!key) {
     return "CRITICAL";
@@ -63,7 +65,10 @@ function complexityBand(complexity?: string | null): "BAJA" | "MEDIA" | "ALTA" {
 }
 
 export function priorityBaseMinutes(priority?: string | null): number {
-  return priorityBand(priority) === "BLOCKER" ? BLOCKER_MINUTES : CRITICAL_MINUTES;
+  const band = priorityBand(priority);
+  if (band === "BLOCKER") return BLOCKER_MINUTES;
+  if (band === "MAJOR") return QC_CASE_MINUTES.MAJOR.BAJA;
+  return CRITICAL_MINUTES;
 }
 
 export function estimateCaseMinutes(priority?: string | null, complexity?: string | null): number {

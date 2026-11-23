@@ -146,11 +146,12 @@ def persist_candidates(
         complexity = classify_complexity(candidate)
         label = next_test_case_id(used_ids)
         used_ids.append(label)
-        priority = (
-            TestCasePriority.BLOCKER
-            if candidate.priority == "BLOCKER"
-            else TestCasePriority.CRITICAL
-        )
+        if candidate.priority == "BLOCKER":
+            priority = TestCasePriority.BLOCKER
+        elif candidate.priority == "MAJOR":
+            priority = TestCasePriority.MAJOR
+        else:
+            priority = TestCasePriority.CRITICAL
         test_data = _join_test_data(candidate)
         test_case = TestCase(
             release_id=release_id,

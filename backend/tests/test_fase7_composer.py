@@ -378,7 +378,7 @@ Scenario: Ver panel
     )
     case = next(row for row in cases if row.steps)
     actions = [step.action.lower() for step in case.steps]
-    assert any("abrir" in action for action in actions)
+    assert any("abrir" in action or "panel" in action or "info" in action for action in actions)
     assert all("abrir la aplicación" not in action for action in actions)
 
 

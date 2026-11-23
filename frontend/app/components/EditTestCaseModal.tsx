@@ -163,6 +163,7 @@ export function EditTestCaseModal({
                 >
                   <option value="BLOCKER">BLOCKER</option>
                   <option value="CRITICAL">CRITICAL</option>
+                  <option value="MAJOR">MAJOR</option>
                 </select>
               </div>
               <div className="form-field">

@@ -14,7 +14,7 @@ from app.schemas.case_generation import CandidateStep, GeneratedCaseCandidate, G
 from app.services.executability import STABLE_GENERIC_STEP, bound_expected, condition_clause
 from app.services.functional_equivalence import build_functional_equivalence_key
 
-Priority = Literal["BLOCKER", "CRITICAL"]
+Priority = Literal["BLOCKER", "CRITICAL", "MAJOR"]
 Confidence = Literal["high", "medium", "low"]
 
 _METRICS_ONLY = re.compile(
@@ -190,9 +190,9 @@ def classify_priority(name: str, steps: list[CandidateStep], extra: str | None =
         [name, extra or ""]
         + [f"{step.action} {step.expected_result}" for step in steps]
     )
-    if _BLOCKER.search(blob):
-        return "BLOCKER"
-    return "CRITICAL"
+    from app.services.legacy_qc import classify_legacy_priority
+
+    return classify_legacy_priority(name, blob)  # type: ignore[return-value]
 
 
 def classify_confidence(

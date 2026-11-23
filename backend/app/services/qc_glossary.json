@@ -1,0 +1,10 @@
+{
+  "EXTERNAL_REGISTER": "Usuario externo que se acaba de registrar",
+  "EXTERNAL_LOGIN": "Usuario externo que inicia sesión",
+  "TELMEX_OOH_REGISTER": "Usuario Telmex fuera de casa (registro por iFrame)",
+  "TELMEX_OOH_LOGIN": "Usuario Telmex fuera de casa (login por iFrame)",
+  "TELMEX_IP_REGISTER": "Usuario IP Telmex",
+  "TELMEX_IP_LOGIN": "Usuario IP Telmex",
+  "has_all_subscriptions=true": "Usuario con todas las suscripciones",
+  "has_all_subscriptions=false": "Usuario sin todas las suscripciones"
+}

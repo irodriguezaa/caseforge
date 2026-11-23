@@ -96,7 +96,7 @@ class GeneratedCaseCandidate(BaseModel):
     confidence: Literal["high", "medium", "low"] = "medium"
     review_required: bool = True
     basic_validation: bool = False
-    priority: Literal["BLOCKER", "CRITICAL"] | None = None
+    priority: Literal["BLOCKER", "CRITICAL", "MAJOR"] | None = None
     user_type: str | None = None
     use_case_key: str | None = None
     use_case_title: str | None = None
