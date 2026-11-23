@@ -16,7 +16,7 @@ import { OperativaCoverageMatrix } from "@/app/components/OperativaCoverageMatri
 import { OperativaEpcTable } from "@/app/components/OperativaEpcTable";
 import { ReleaseAnalysisCard } from "@/app/components/ReleaseAnalysisCard";
 import { StatusBadge } from "@/app/components/StatusBadge";
-import { api, ApiRequestError } from "@/lib/api";
+import { api, ApiRequestError, type PolishStatus } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import {
   columnFilterIsActive,
@@ -104,6 +104,8 @@ export default function ReleaseDetailPage(): React.ReactElement {
   const [coverageMatrix, setCoverageMatrix] = useState<CoverageMatrixResponse | null>(null);
   const [showAnalysisDetails, setShowAnalysisDetails] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [polish, setPolish] = useState<PolishStatus | null>(null);
+  const polishWasActive = useRef(false);
   const [publishing, setPublishing] = useState(false);
   const [publishResult, setPublishResult] = useState<PublishCasesResponse | null>(null);
   const [exporting, setExporting] = useState(false);
@@ -151,6 +153,32 @@ export default function ReleaseDetailPage(): React.ReactElement {
   };
 
   useEffect(load, [releaseId]);
+
+  useEffect(() => {
+    let stop = false;
+    let timer = 0;
+    const tick = (): void => {
+      api.getPolishStatus(releaseId).then((status) => {
+        if (stop) return;
+        setPolish(status);
+        const active = status.label === "pendiente" || status.label.startsWith("en curso");
+        if (active) {
+          polishWasActive.current = true;
+          timer = window.setTimeout(tick, 3000);
+          return;
+        }
+        if (polishWasActive.current) {
+          polishWasActive.current = false;
+          load();
+        }
+      }).catch(() => undefined);
+    };
+    tick();
+    return () => {
+      stop = true;
+      window.clearTimeout(timer);
+    };
+  }, [releaseId, generating]);
 
   const handleStatusChange = async (status: ReleaseStatus): Promise<void> => {
     if (!release) return;
@@ -993,6 +1021,11 @@ export default function ReleaseDetailPage(): React.ReactElement {
                     : "Generar casos desde RN"}
           </button>
           )}
+          {polish?.label ? (
+            <span className="muted" style={{ alignSelf: "center" }}>
+              Redacción IA: {polish.label}
+            </span>
+          ) : null}
           {canLoadRn && SHOW_QCO_ZEPHYR_PUBLISH && isOperativa && hasEngineCases && (
             <button
               type="button"
@@ -1127,7 +1160,7 @@ export default function ReleaseDetailPage(): React.ReactElement {
           ))}
         </div>
         {isApp && caseTab === "rn" && <EpicHoursPanel items={epicHours} fileName={release.name} />}
-        {isApp && caseTab === "rn" && <EpicProgressPanel rows={epicProgress} />}
+        {isApp && caseTab === "rn" && <EpicProgressPanel rows={epicProgress} polish={polish?.epics} />}
         </>
       )}
 

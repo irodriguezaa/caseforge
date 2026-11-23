@@ -1003,6 +1003,9 @@ def _generate_cases_from_rn(
     if chunked and not scoped_key:
         if regenerate:
             delete_engine_cases(db, release.id)
+            from app.services.legacy_polish import clear_polish_job
+
+            clear_polish_job(release.id)
             if isinstance(analysis.raw_analysis, dict):
                 analysis.raw_analysis = replace_scenario_ledger(analysis.raw_analysis, [])
                 flag_modified(analysis, "raw_analysis")
@@ -1113,6 +1116,7 @@ def _generate_cases_from_rn(
                 prior_nco_cells=prior_nco_cells,
             )
             new_candidates: list = []
+            polish_prefix: list = []
             engine_name = "incremental-delta"
             coverage_unit_count = 0
             covered_ids: list[str] = []
@@ -1152,6 +1156,7 @@ def _generate_cases_from_rn(
                 covered_ids = list(scoped.covered_coverage_ids)
                 uncovered_ids = list(scoped.uncovered_coverage_ids)
                 stats = scoped.generation_stats
+                polish_prefix = list(getattr(scoped, "_polish_work", []) or [])
             delta_candidates = candidates_from_incremental_plan(
                 plan,
                 rn_filename=analysis.pdf_filename or "",
@@ -1184,8 +1189,17 @@ def _generate_cases_from_rn(
                 covered_coverage_ids=covered_ids,
                 uncovered_coverage_ids=uncovered_ids,
             )
+            if polish_prefix and len(polish_prefix) == len(new_candidates):
+                object.__setattr__(
+                    proposal,
+                    "_polish_work",
+                    polish_prefix + [{"skip": True} for _ in delta_candidates],
+                )
     if regenerate:
         delete_engine_cases(db, release.id)
+        from app.services.legacy_polish import clear_polish_job
+
+        clear_polish_job(release.id)
 
     persisted_rows = []
     if proposal.candidates:
@@ -1235,6 +1249,9 @@ def _generate_cases_from_rn(
     proposal.test_case_count = summary["test_case_count"]
     proposal.estimation_hours = summary["estimation_hours"]
     proposal.estimation_days = summary["estimation_days"]
+    from app.services.legacy_polish import schedule_persisted_polish
+
+    schedule_persisted_polish(release.id, persisted_rows, getattr(proposal, "_polish_work", None))
     return proposal
 
 
@@ -1252,6 +1269,14 @@ def generate_cases_status(release_id: int, db: Session = Depends(get_db)) -> Gen
             engine="background",
         )
     return job_to_response(release_id, job)
+
+
+@router.get("/{release_id}/polish-status")
+def release_polish_status(release_id: int, db: Session = Depends(get_db)) -> dict:
+    get_release_or_404(release_id, db)
+    from app.services.legacy_polish import polish_status
+
+    return polish_status(release_id)
 
 
 @router.get("/{release_id}/rn-scope/export")
@@ -1289,6 +1314,9 @@ def export_release_test_cases(release_id: int, db: Session = Depends(get_db)) ->
         ledger = None
         if isinstance(coverage, dict):
             ledger = coverage.get("scenario_ledger")
+        from app.services.legacy_polish import polish_export_overlay
+
+        coverage = polish_export_overlay(release.id, coverage if isinstance(coverage, dict) else None)
         payload = build_test_cases_workbook(
             cases, scope_keys=scope_keys, coverage=coverage, scenario_ledger=ledger
         )

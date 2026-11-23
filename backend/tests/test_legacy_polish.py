@@ -8,7 +8,13 @@ import pytest
 
 from app.config import settings
 from app.schemas.case_generation import CandidateStep, CoverageUnit, GeneratedCaseCandidate, GenerationStats
-from app.services.legacy_polish import polish_legacy_cases
+from app.services.legacy_polish import (
+    _label,
+    collect_polish_work,
+    polish_legacy_cases,
+    polish_status,
+    schedule_persisted_polish,
+)
 from app.services.test_case_export import build_test_cases_workbook
 
 
@@ -257,3 +263,96 @@ def test_excel_marks_redaccion_and_comparison() -> None:
     assert book["Comparación IA"]["A2"].value == "QC-001"
     assert book["Comparación IA"]["B2"].value == "Título"
     assert "Escenarios de Jira" in book.sheetnames
+
+
+def test_gpt_oss_sends_low_reasoning_and_1500_tokens(monkeypatch, tmp_path) -> None:
+    _enable(monkeypatch, tmp_path)
+    seen: dict = {}
+
+    def post(payload, *_a, **_k):
+        seen["body"] = payload
+        return _response(_ok())
+
+    monkeypatch.setattr("app.services.legacy_polish._post", post)
+    polish_legacy_cases([_case()], [_unit()], GenerationStats())
+    assert seen["body"]["max_completion_tokens"] == 1500
+    assert seen["body"]["reasoning_effort"] == "low"
+    assert "gpt-oss" in seen["body"]["model"]
+
+
+def test_status_labels() -> None:
+    assert _label([{"done": False}], False) == "pendiente"
+    assert _label([{"done": False}, {"done": True}], True) == "en curso (1/2)"
+    assert _label([{"done": True, "fallback": False}], True) == "lista"
+    assert _label([{"done": True, "fallback": True}], False) == "con fallbacks"
+
+
+def test_interrupted_job_reuses_the_cache(monkeypatch, tmp_path) -> None:
+    from app.services import legacy_polish as polish
+
+    _enable(monkeypatch, tmp_path)
+    calls = {"n": 0}
+
+    def post(*_a, **_k):
+        calls["n"] += 1
+        return _response(_ok())
+
+    monkeypatch.setattr("app.services.legacy_polish._post", post)
+    monkeypatch.setattr("app.services.legacy_polish._stored_redaccion", lambda *_a, **_k: None)
+    monkeypatch.setattr("app.services.legacy_polish._apply_saved", lambda *_a, **_k: None)
+    polish_legacy_cases([_case()], [_unit()], GenerationStats())
+    work = collect_polish_work([_case()], [_unit()])
+    item = {
+        **work[0],
+        "db_id": 9,
+        "label": "QC-009",
+        "done": False,
+        "claimed": True,
+        "fallback": False,
+        "tokens": 0,
+        "rows": [],
+    }
+    polish._store_jobs({"releases": {"9": {"items": [item], "tokens": 0, "running": False}}})
+    polish._process_item(9, item)
+    assert calls["n"] == 1
+    assert polish_status(9)["label"] == "lista"
+    assert polish_status(9)["tokens"] == 0
+    polish.clear_polish_job(9)
+
+
+def test_schedule_returns_before_the_model_answers(monkeypatch, tmp_path) -> None:
+    import threading
+    import time
+
+    from app.services import legacy_polish as polish
+
+    _enable(monkeypatch, tmp_path)
+    started = threading.Event()
+    release = threading.Event()
+
+    def post(*_a, **_k):
+        started.set()
+        assert release.wait(2)
+        return _response(_ok())
+
+    monkeypatch.setattr("app.services.legacy_polish._post", post)
+    monkeypatch.setattr("app.services.legacy_polish._stored_redaccion", lambda *_a, **_k: None)
+    monkeypatch.setattr("app.services.legacy_polish._apply_saved", lambda *_a, **_k: None)
+    case = _case()
+    case.related_functionality = "WEBCL-1586"
+    work = collect_polish_work([case], [_unit()])
+    row = SimpleNamespace(id=41, test_case_id="QC-041", technical_epic="WEBCL-1586")
+    started_at = time.monotonic()
+    schedule_persisted_polish(41, [row], work)
+    elapsed = time.monotonic() - started_at
+    assert elapsed < 0.5
+    assert polish_status(41)["label"] in {"pendiente", "en curso (0/1)"}
+    assert started.wait(2)
+    release.set()
+    thread = polish._THREAD
+    assert thread is not None
+    thread.join(3)
+    status = polish_status(41)
+    assert status["label"] == "lista"
+    assert status["epics"]["WEBCL-1586"] == "lista"
+    polish.clear_polish_job(41)

@@ -1814,13 +1814,14 @@ def generate_release_app_candidates(
     stats.llm_model = resolved_model()
     analysis_details.insert(0, f"Ruta IA: {stats.llm_path} proveedor={stats.llm_provider} modelo={stats.llm_model}")
     fill_scenario_ledger(stats, inventory, candidates)
-    if _is_legacy_qc_engine():
-        from app.services.legacy_polish import polish_legacy_cases
-
-        polish_legacy_cases(candidates, inventory, stats)
     candidates = [row for row in candidates if row.steps]
     stamp_source_types(candidates)
     candidates = stamp_candidates(candidates, functionality_keys, jira_artifacts)
+    polish_work: list = []
+    if _is_legacy_qc_engine():
+        from app.services.legacy_polish import collect_polish_work
+
+        polish_work = collect_polish_work(candidates, inventory)
     covered = sorted(_covered_ids(candidates))
     coverage = build_rn_scope_coverage(
         rn_keys=functionality_keys,
@@ -1830,13 +1831,6 @@ def generate_release_app_candidates(
         candidates=candidates,
     )
     coverage["scenario_ledger"] = list(stats.scenario_ledger)
-    if stats.polish_ia or stats.polish_fallback or stats.polish_comparison:
-        coverage["llm_polish"] = {
-            "ia": stats.polish_ia,
-            "fallbacks": stats.polish_fallback,
-            "tokens": stats.polish_tokens,
-            "rows": list(stats.polish_comparison),
-        }
     required = [unit.coverage_id for unit in inventory]
     uncovered = [cid for cid in required if cid not in set(covered)]
     message = (
@@ -1855,7 +1849,7 @@ def generate_release_app_candidates(
             "El PDF del RN no está almacenado. Vuelve a analizar el RN al crear la Release "
             "para poder generar candidatos."
         )
-    return GenerateCasesResponse(
+    response = GenerateCasesResponse(
         status="PROPOSED" if candidates else "EMPTY",
         message=message,
         release_id=release_id,
@@ -1872,3 +1866,5 @@ def generate_release_app_candidates(
         uncovered_coverage_ids=uncovered,
         rn_scope_coverage=coverage,
     )
+    object.__setattr__(response, "_polish_work", polish_work)
+    return response

@@ -185,6 +185,17 @@ export interface TestCaseInput {
   ecosystem?: string | null;
 }
 
+export type PolishStatus = {
+  enabled: boolean;
+  label: string;
+  done: number;
+  total: number;
+  fallbacks: number;
+  ia: number;
+  tokens: number;
+  epics: Record<string, string>;
+};
+
 export const api = {
   me: () => request<AuthUser>("/api/auth/me"),
   login: (email: string, password: string) =>
@@ -334,6 +345,8 @@ export const api = {
       throw err;
     }
   },
+  getPolishStatus: (releaseId: number) =>
+    request<PolishStatus>(`/api/releases/${releaseId}/polish-status`),
   getCoverageMatrix: (releaseId: number, brfKey?: string) => {
     const query = brfKey ? `?brf_key=${encodeURIComponent(brfKey)}` : "";
     return request<CoverageMatrixResponse>(`/api/releases/${releaseId}/coverage-matrix${query}`);

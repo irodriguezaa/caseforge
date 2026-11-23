@@ -38,6 +38,11 @@ services:
       LLM_MAX_CONCURRENCY: ${LLM_MAX_CONCURRENCY:-2}
       QC_ENGINE: ${QC_ENGINE:-legacy}
       QC_LLM_MODEL: ${QC_LLM_MODEL:-}
+      QC_LLM_POLISH: ${QC_LLM_POLISH:-off}
+      QC_LLM_TPM_LIMIT: ${QC_LLM_TPM_LIMIT:-7000}
+      QC_LLM_MAX_RETRIES: ${QC_LLM_MAX_RETRIES:-1}
+      QC_LLM_CACHE: /app/data/polish_cache.json
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
       QC_V2_MAX_COMPLETION_TOKENS: ${QC_V2_MAX_COMPLETION_TOKENS:-4096}
       OPENAI_QC_MODEL: ${OPENAI_QC_MODEL:-}
       OPENAI_QC_MODEL_A: ${OPENAI_QC_MODEL_A:-}
@@ -67,6 +72,7 @@ services:
       SPRINT45_DEVICE_FILTERS: ${SPRINT45_DEVICE_FILTERS:-}
       SPRINT46_DEVICE_FILTERS: ${SPRINT46_DEVICE_FILTERS:-}
     volumes:
+      - polish_data:/app/data
       - rn_notes:/app/data/release_notes
     ports:
       - "127.0.0.1:8000:8000"
@@ -119,3 +125,4 @@ services:
 volumes:
   postgres_data:
   rn_notes:
+  polish_data:

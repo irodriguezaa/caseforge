@@ -1,5 +1,7 @@
 """CaseForge API application."""
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from starlette.responses import Response
@@ -26,7 +28,15 @@ from app.routers.test_cases import router as test_cases_router
 from app.routers.test_steps import router as test_steps_router
 from app.routers.sprint_testing import router as sprint_testing_router
 
-app = FastAPI(title="CaseForge API", version="0.3.0")
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    from app.services.legacy_polish import resume_interrupted_jobs
+
+    resume_interrupted_jobs()
+    yield
+
+
+app = FastAPI(title="CaseForge API", version="0.3.0", lifespan=_lifespan)
 
 _PUBLIC_EXACT = {"/api/v1/auth/login", "/docs", "/openapi.json", "/redoc"}
 _MUTATING = {"POST", "PUT", "PATCH", "DELETE"}

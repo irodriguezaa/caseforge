@@ -5,7 +5,13 @@ import { useState } from "react";
 import { jiraIssueUrl } from "@/lib/jira";
 import type { EpicProgressRow } from "@/lib/qcEffort";
 
-export function EpicProgressPanel({ rows }: { rows: EpicProgressRow[] }): React.ReactElement {
+export function EpicProgressPanel({
+  rows,
+  polish,
+}: {
+  rows: EpicProgressRow[];
+  polish?: Record<string, string>;
+}): React.ReactElement {
   const [open, setOpen] = useState(false);
   const totals = rows.reduce(
     (acc, row) => ({ total: acc.total + row.total, executed: acc.executed + row.executed, hours: acc.hours + row.hours }),
@@ -41,6 +47,7 @@ export function EpicProgressPanel({ rows }: { rows: EpicProgressRow[] }): React.
                   <th className="num">%</th>
                   <th className="num">Horas</th>
                   <th>Estado</th>
+                  {polish ? <th>Redacción IA</th> : null}
                 </tr>
               </thead>
               <tbody>
@@ -72,6 +79,7 @@ export function EpicProgressPanel({ rows }: { rows: EpicProgressRow[] }): React.
                       </td>
                       <td className="num">{row.hours.toFixed(1)}</td>
                       <td>{row.orphan ? "huérfano" : row.estado || "—"}</td>
+                      {polish ? <td>{polish[row.key] || "—"}</td> : null}
                     </tr>
                   );
                 })}
@@ -92,6 +100,7 @@ export function EpicProgressPanel({ rows }: { rows: EpicProgressRow[] }): React.
                   </td>
                   <td className="num"><strong>{Math.round(totals.hours * 10) / 10}</strong></td>
                   <td />
+                  {polish ? <td /> : null}
                 </tr>
               </tbody>
             </table>
