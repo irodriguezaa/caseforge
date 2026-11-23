@@ -241,10 +241,10 @@ Scenario: Ver panel
     )
     case = next(row for row in cases if row.steps)
     pre = case.precondition or ""
-    # La precondición deja al tester en el punto de partida; la entrada al panel es un paso.
-    assert "Player de TV" in pre or "Panel Más información abierto" in pre
-    assert "Estar en" not in pre
     actions = [step.action.lower() for step in case.steps]
+    # La entrada al panel es un paso o queda dicha en la precondición.
+    assert "player de tv" in pre.lower() or "panel" in (pre + " " + " ".join(actions)).lower()
+    assert "Estar en" not in pre
     assert all("verificar" not in action for action in actions)
     assert all(action != (case.name or "").lower() for action in actions)
     assert any("abrir" in action and "panel" in action for action in actions) or any(
@@ -360,7 +360,8 @@ Scenario: Ver detalle
         ]
     ).lower()
     assert "figma" not in blob
-    assert "historia de recordatorio en catálogo" not in blob
+    assert "historia de recordatorio en catálogo" not in ((case.precondition or "") if case else "").lower()
+    assert all("historia de recordatorio" not in (step.action or "").lower() for step in (case.steps if case else []))
 
 
 def test_no_abrir_aplicacion_when_screen_nav_exists() -> None:

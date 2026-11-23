@@ -26,6 +26,7 @@ from app.services.gherkin_coverage import TECH_VERIFY_MARK
 from app.services.legacy_qc import (
     classify_legacy_priority,
     clean_title,
+    finish_case,
     given_goes_to_step,
     gloss_precondition,
     bare_scenario_name,
@@ -1186,6 +1187,7 @@ def compose_scenario_inventory(
             candidate.applicability = "ejecutable"
             candidate.applicability_reason = None
         candidate.applied_rules = list(dict.fromkeys([*(candidate.applied_rules or []), *(draft.applied_rules or [])]))
+        finish_case(candidate, groups[key])
         if not candidate.steps and (candidate.applicability or "") != "na_ambiente":
             continue
         out.append(candidate)
@@ -1232,82 +1234,6 @@ def redactar_casos(
     return unique_names(out)
 
 
-def _pad_short_case(steps: list[CandidateStep], precondition: str) -> list[CandidateStep]:
-    """Si el caso quedó corto, separa la llegada a la pantalla del resultado."""
-    rows = list(steps or [])
-    seen: set[str] = set()
-    unique: list[CandidateStep] = []
-    for step in rows:
-        key = re.sub(r"\b(a la|al|a|el|la)\b", " ", _norm_text(step.action))
-        key = re.sub(r"\s+", " ", key).strip()
-        if key in seen:
-            continue
-        seen.add(key)
-        unique.append(step)
-    rows = unique
-    if len(rows) >= 3:
-        for index, step in enumerate(rows, start=1):
-            step.step_number = index
-        return rows
-    place = ""
-    match = re.search(
-        r"\b(?:en|al) (?:el |la )?(home[^.;]{0,30}|pantalla[^.;]{0,40}|panel[^.;]{0,40})",
-        precondition or "",
-        re.I,
-    )
-    if match:
-        place = re.sub(r"\s+", " ", match.group(1)).strip()
-    blob = " ".join(step.action or "" for step in rows).lower()
-    if place and place.lower()[:12] not in blob and len(rows) < 3:
-        rows.insert(
-            0,
-            CandidateStep(
-                step_number=1,
-                action=f"Ingresar a {place}",
-                expected_result=f"Se muestra {place}.",
-                covered_unit_ids=list((rows[0].covered_unit_ids if rows else []) or []),
-            ),
-        )
-    if len(rows) < 3 and rows:
-        last = rows[-1]
-        screen = place or "la pantalla"
-        expected = (last.expected_result or "").strip() or f"Se muestra {screen}."
-        rows.append(
-            CandidateStep(
-                step_number=len(rows) + 1,
-                action=f"Verificar lo que muestra {screen}",
-                expected_result=expected,
-                covered_unit_ids=list(last.covered_unit_ids or []),
-            )
-        )
-        if _norm_text(last.expected_result) == _norm_text(expected):
-            last.expected_result = f"Se muestra {screen}."
-    blob = " ".join(step.action or "" for step in rows).lower()
-    if len(rows) < 3 and rows and "aplicaci" not in blob and "home" not in blob and "pantalla" not in blob:
-        rows.insert(
-            0,
-            CandidateStep(
-                step_number=1,
-                action="Ingresar a la pantalla de inicio",
-                expected_result="Se muestra la pantalla de inicio.",
-                covered_unit_ids=list(rows[0].covered_unit_ids or []),
-            ),
-        )
-    elif len(rows) < 3 and rows:
-        rows.insert(
-            0,
-            CandidateStep(
-                step_number=1,
-                action="Ingresar a la aplicación",
-                expected_result="Se muestra la aplicación.",
-                covered_unit_ids=list(rows[0].covered_unit_ids or []),
-            ),
-        )
-    for index, step in enumerate(rows, start=1):
-        step.step_number = index
-    return rows
-
-
 def redactar_caso(caso: GeneratedCaseCandidate, units: list[CoverageUnit] | None = None) -> GeneratedCaseCandidate:
     """Punto único después de agrupar: da forma QC al caso ya armado (qc_redaccion).
 
@@ -1322,17 +1248,8 @@ def redactar_caso(caso: GeneratedCaseCandidate, units: list[CoverageUnit] | None
         if part
     )
     caso = redactar(caso, context)
-    kept_pre: list[str] = []
-    for clause in re.split(r"\s*;\s*", caso.precondition or ""):
-        translated, _warnings = gloss_precondition(clause)
-        if translated and not given_goes_to_step(translated):
-            kept_pre.append(translated)
-    caso.precondition = "; ".join(dict.fromkeys(kept_pre)) or None
-    origin = next((unit.scenario for unit in (units or []) if unit.scenario), caso.name or "")
-    action = caso.steps[0].action if caso.steps else ""
-    result = next((step.expected_result for step in reversed(caso.steps or []) if step.expected_result), "")
-    caso.name = clean_title(origin, "", action, result or "")
-    caso.steps = _pad_short_case(caso.steps, caso.precondition or "")
+    if units:
+        finish_case(caso, units)
     return caso
 
 
@@ -1523,6 +1440,13 @@ def fill_scenario_ledger(
             estado, motivo, case_id = (
                 "na_ambiente",
                 (match.applicability_reason if match else None) or unit.applicability_reason or "na_ambiente",
+                match.name if match else "",
+            )
+        elif any(str(rule).startswith("error-then") for rule in rules):
+            missing = next(str(rule).split(":", 1)[-1] for rule in rules if str(rule).startswith("error-then"))
+            estado, motivo, case_id = (
+                "error",
+                f"Then no reflejado: {missing}",
                 match.name if match else "",
             )
         elif match and match.steps and not case_pending:

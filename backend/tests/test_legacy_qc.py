@@ -136,10 +136,53 @@ def test_action_given_becomes_a_step_and_api_leaves_the_precondition():
     assert any("advertencia" in (row.get("motivo") or "") for row in stats.scenario_ledger)
 
 
-def test_title_rebuilds_when_the_scenario_name_is_cut_off():
+def test_title_comes_from_the_scenario_not_the_steps():
     rebuilt = clean_title('Alta del método "', "Usuario externo", "Seleccionar alta", "Se muestra el formulario")
-    assert len(rebuilt.split()) >= 4
-    assert '"' not in rebuilt
+    assert rebuilt == "Alta del método"
+    assert "Seleccionar" not in rebuilt
+
+
+def test_externalregister_matches_the_glossary_without_underscores():
+    text, warnings = gloss_precondition("source = EXTERNALREGISTER")
+    assert text == "Usuario externo que se acaba de registrar"
+    assert warnings == []
+
+
+def test_unknown_user_type_is_kept_and_warned():
+    text, warnings = gloss_precondition("El usuario es EXTERNAL_FOO_REGISTER")
+    assert text and "EXTERNAL_FOO_REGISTER" in text
+    assert warnings
+
+
+def test_then_sequence_is_kept_and_there_is_no_filler():
+    unit = _unit(
+        "c1",
+        "HN-1",
+        "Confirmar el pago con PIN",
+        "\n".join(
+            [
+                "Given el usuario tiene un método de pago registrado",
+                "When el usuario ingresa el PIN",
+                "Then se valida el PIN",
+                "And se muestra el modal de confirmación",
+                "And se redirige a la pantalla de inicio",
+            ]
+        ),
+    )
+    unit.feature_background = "Given el usuario es anónimo"
+    cases = compose_scenario_inventory([unit], [], lambda *_args: None)
+    assert len(cases) == 1
+    case = cases[0]
+    assert case.name == "Confirmar el pago con PIN"
+    blob = " ".join(step.expected_result or "" for step in case.steps).lower()
+    assert "valida el pin" in blob
+    assert "modal" in blob
+    assert "redirige" in blob
+    assert all((step.expected_result or "").strip() for step in case.steps)
+    assert all("verificar lo que muestra" not in step.action.lower() for step in case.steps)
+    assert all((step.expected_result or "").strip().lower() != "se muestra la pantalla." for step in case.steps)
+    assert "anónimo" not in (case.precondition or "").lower()
+    assert "método de pago" in (case.precondition or "").lower() or "metodo de pago" in (case.precondition or "").lower()
 
 
 def test_priority_bands():
