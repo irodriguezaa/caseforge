@@ -1145,6 +1145,19 @@ def compose_scenario_inventory(
     order = merged_order
     out: list[GeneratedCaseCandidate] = []
     for key in order:
+        if any("ac-epica" in (unit.applied_rules or []) for unit in groups[key]):
+            for unit in groups[key]:
+                rules = list(unit.applied_rules or [])
+                if "criterio-epica" not in rules:
+                    unit.applied_rules = [*rules, "criterio-epica"]
+                text = re.sub(
+                    r"^(Then|Entonces)\s+",
+                    "",
+                    (unit.body or unit.scenario or ""),
+                    flags=re.I,
+                ).strip()
+                unit.applicability_reason = text or unit.scenario
+            continue
         draft = compose_scenario_units(groups[key])
         candidate = draft_to_candidate(draft, existing, duplicate_of)
         candidate.generation_origin = "scenario-case"
@@ -1414,7 +1427,7 @@ def fill_scenario_ledger(
         for index, row in enumerate(stats.scenario_ledger)
     }
     for unit in inventory:
-        if (unit.source_origin or "gherkin") != "gherkin":
+        if (unit.source_origin or "gherkin") not in {"gherkin", "ac"}:
             continue
         scenario = re.sub(r"\s*\([^)]*\)\s*$", "", unit.scenario or "").strip()
         key = (unit.story_key or "", scenario)
@@ -1441,6 +1454,12 @@ def fill_scenario_ledger(
                 "na_ambiente",
                 (match.applicability_reason if match else None) or unit.applicability_reason or "na_ambiente",
                 match.name if match else "",
+            )
+        elif "criterio-epica" in (unit.applied_rules or []):
+            estado, motivo, case_id = (
+                "criterio de épica – revisar",
+                unit.applicability_reason or unit.scenario or "",
+                "",
             )
         elif any(str(rule).startswith("error-then") for rule in rules):
             missing = next(str(rule).split(":", 1)[-1] for rule in rules if str(rule).startswith("error-then"))

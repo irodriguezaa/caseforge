@@ -17,7 +17,9 @@ _USER_VERBS = re.compile(
     r"ingresar|ingresa|ingreso a|es dirigido|"
     r"registrarse|se registra|autenticarse|se autentica|"
     r"dar de alta|da de alta|da clic|hace clic|presiona|presionar|elegir|elige|"
-    r"pulsar|pulsa|confirmar|confirma|cancelar|cancela)\b",
+    r"pulsar|pulsa|confirmar|confirma|cancelar|cancela|"
+    r"acceder|accede|accionar|acciona|accione|al accionar|"
+    r"identificar|identifico|identifica)\b",
     re.IGNORECASE,
 )
 _STATE = re.compile(
@@ -108,6 +110,9 @@ def _glossary_hits(text: str) -> list[str]:
 def _unknown_user_codes(text: str) -> list[str]:
     found: list[str] = []
     for token in re.findall(r"\b[A-Za-z][A-Za-z0-9_]{3,}\b", text or ""):
+        letters = re.sub(r"[^A-Za-z]", "", token)
+        if not letters or letters != letters.upper():
+            continue
         compact = _compact(token)
         if not re.search(r"REGISTER|LOGIN", compact):
             continue
@@ -282,6 +287,10 @@ def technical_phrase(text: str) -> bool:
 
 def third_person(text: str) -> str:
     raw = re.sub(r"\s+", " ", (text or "").strip())
+    raw = re.sub(r"\bque tengo\b", "el usuario tiene", raw, flags=re.IGNORECASE)
+    raw = re.sub(r"\bme encuentro\b", "el usuario se encuentra", raw, flags=re.IGNORECASE)
+    raw = re.sub(r"\bidentifico\b", "el usuario identifica", raw, flags=re.IGNORECASE)
+    raw = re.sub(r"\bconsulto\b", "el usuario consulta", raw, flags=re.IGNORECASE)
     raw = _FIRST_PERSON.sub("el usuario", raw)
     raw = re.sub(r"^ingreso\b", "El usuario ingresa", raw, flags=re.IGNORECASE)
     if re.match(r"^(se |no se |al |ocurre\b|existe\b)", raw, re.I):
@@ -475,17 +484,182 @@ def _walk(body: str) -> list[tuple[str, str]]:
     return rows
 
 
-def _user_action(text: str) -> str:
-    if not text or technical_phrase(text) or not given_goes_to_step(text):
+_KEY_STATE = re.compile(
+    r"valor de la llave|llave de configuraci[oó]n|\bllave\b[^.]{0,40}\bindica|"
+    r"mediante la llave|home_cdn_config",
+    re.IGNORECASE,
+)
+_ERROR_CODE = re.compile(
+    r"\bPGS_[A-Z0-9_]+\b|la respuesta contiene|c[oó]digo de error|"
+    r"\bcode distinto\b|status code",
+    re.IGNORECASE,
+)
+_VISIBLE_ASSERT = re.compile(
+    r"distancia|componente|se muestra|pantalla|modal|bot[oó]n|elemento|"
+    r"overlay|[ií]cono|alerta|redirig|dirige|mensaje|texto|espaciado",
+    re.IGNORECASE,
+)
+_TEMPORAL = re.compile(r"^al (finalizar|terminar|concluir|cerrar el tiempo)\b", re.IGNORECASE)
+_ENABLED = "La funcionalidad está habilitada para la operación del usuario."
+_JUNK_PRE = re.compile(r"^(y|and)\.?$", re.IGNORECASE)
+
+
+def visible_remainder(text: str) -> str:
+    """Quita la referencia técnica y conserva la afirmación visible."""
+    raw = re.sub(r"\s+", " ", text or "").strip()
+    if not raw:
         return ""
+    cleaned = re.sub(r"https?://\S+", " ", raw)
+    cleaned = re.sub(r"\b(en\s+)?figma\b", " ", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" ,;.")
+    if _ERROR_CODE.search(cleaned) and not _VISIBLE_ASSERT.search(cleaned):
+        return ""
+    if _KEY_STATE.search(cleaned) and not _VISIBLE_ASSERT.search(cleaned):
+        return ""
+    if technical_phrase(cleaned):
+        return ""
+    if technical_phrase(raw) and not _VISIBLE_ASSERT.search(cleaned):
+        return ""
+    return cleaned
+
+
+def _named_button(text: str, history: list[str]) -> str:
+    quoted = re.search(r"[\"“]([^\"”]+)[\"”]", text or "")
+    if quoted and not re.search(r"accionable", quoted.group(1), re.I):
+        if re.search(r"bot[oó]n", text or "", re.I):
+            return quoted.group(1).strip()
+    if re.search(r"bot[oó]n accionable", text or "", re.I):
+        for prev in reversed(history):
+            match = re.search(
+                r"bot[oó]n accionable(?:\s*\d+)?\s*[\"“]([^\"”]+)[\"”]",
+                prev,
+                re.I,
+            )
+            if match:
+                return match.group(1).strip()
+    return ""
+
+
+def _user_action(text: str, history: list[str] | None = None) -> str:
+    raw = re.sub(r"\s+", " ", (text or "").strip())
+    if not raw or (technical_phrase(raw) and not visible_remainder(raw)):
+        return ""
+    raw = re.sub(r"^(que\s+)?identifico\b", "identificar", raw, flags=re.IGNORECASE)
+    raw = re.sub(r"^(que\s+)?consulto\b", "consultar", raw, flags=re.IGNORECASE)
+    raw = re.sub(r"^(que\s+)?valido\b", "validar", raw, flags=re.IGNORECASE)
+    raw = re.sub(r"\baccede\b", "acceder", raw, flags=re.IGNORECASE)
+    raw = re.sub(r"\baccione\b", "accionar", raw, flags=re.IGNORECASE)
+    raw = re.sub(r"\bacciona\b", "accionar", raw, flags=re.IGNORECASE)
+    if re.match(r"^me encuentro\b", raw, re.I):
+        return ""
+    if re.search(r"\bal ser accionado\b", raw, re.I):
+        return ""
+    if not given_goes_to_step(raw) and not re.search(r"\b(identificar|consultar|validar)\b", raw, re.I):
+        return ""
+    if re.search(r"\bse autentica\b", raw, re.I):
+        rest = re.sub(r"^.*\bse autentica\b", "", raw, flags=re.IGNORECASE).strip()
+        return re.sub(r"\s+", " ", f"Autenticarse {rest}").strip()
+    button = _named_button(raw, history or [])
+    if button and re.search(r"seleccion|clic|presion|accion", raw, re.I):
+        return f"Seleccionar el botón «{button}»"
+    quoted = re.search(r"[\"“]([^\"”]+)[\"”]", raw)
+    if quoted and re.search(r"bot[oó]n", raw, re.I):
+        return f"Seleccionar el botón «{quoted.group(1).strip()}»"
+    if quoted and re.search(r"seleccion|clic|presion|accion", raw, re.I):
+        return f"Seleccionar «{quoted.group(1).strip()}»"
     from app.services.case_composer import to_infinitive
 
-    quoted = re.search(r"[\"“]([^\"”]+)[\"”]", text)
-    if quoted and re.search(r"clic|seleccion|presion", text, re.I):
-        return f"Seleccionar {quoted.group(1)}"
-    action = to_infinitive(text) or text
+    action = to_infinitive(raw) or raw
     action = re.sub(r"^ingreso\b", "Ingresar", action, flags=re.IGNORECASE)
+    action = re.sub(r"\bbot[oó]n accionable(?:\s*\d+)?\b", "el botón", action, flags=re.IGNORECASE)
     return re.sub(r"\s+", " ", action).strip()
+
+
+def _embedded_press(text: str) -> tuple[str, str]:
+    if not re.search(r"\b(al presionar|presionar|presiona|da clic|hace clic)\b", text or "", re.I):
+        return "", ""
+    if re.search(r"\bal ser accionado\b", text or "", re.I):
+        return "", ""
+    if not re.search(r"se muestra|se redirige|se dirige", text or "", re.I):
+        return "", ""
+    quoted = re.search(r"[\"“]([^\"”]+)[\"”]", text or "")
+    name = quoted.group(1).strip() if quoted else ""
+    if not name:
+        match = re.search(r"bot[oó]n\s+([A-Za-zÁÉÍÓÚáéíóúñÑ0-9]+)", text or "")
+        name = match.group(1) if match else ""
+    verb = "Presionar" if re.search(r"presion", text or "", re.I) else "Seleccionar"
+    shown = re.search(r"(se muestra\s+.+|se redirige\s+.+|se dirige\s+.+)$", text or "", re.I)
+    result = shown.group(1).strip() if shown else ""
+    if name and re.search(r"bot[oó]n", text or "", re.I):
+        return f"{verb} el botón «{name}»", result
+    return f"{verb} {name or 'el control indicado'}".strip(), result
+
+
+def echo_pair(action: str, expected: str) -> bool:
+    """Seleccionar X → Se muestra X, o un resultado que repite la acción."""
+    folded_expected = fold(expected)
+    folded_action = fold(action)
+    if not folded_expected:
+        return True
+    if re.match(r"^se muestra se\b", folded_expected):
+        return True
+    shown = re.sub(r"^se muestra\s+", "", folded_expected).strip(" .«»\"")
+    if shown and shown == folded_action:
+        return True
+    match = re.match(
+        r"^(seleccionar|presionar|dar clic en)\s+(el boton\s+|la\s+|el\s+|un\s+|una\s+)?(.+)$",
+        folded_action,
+    )
+    target = ""
+    if match:
+        target = match.group(3).strip(" .«»\"")
+    quoted = re.search(r"«([^»]+)»", action or "")
+    if quoted:
+        target = fold(quoted.group(1))
+    if target and shown in {target, f"el {target}", f"la {target}", f"un {target}", f"una {target}"}:
+        return True
+    return False
+
+
+def _fallback_result(action: str) -> str:
+    if re.search(r"^seleccionar|^presionar", action or "", re.I):
+        match = re.search(r"«([^»]+)»", action or "")
+        target = match.group(1) if match else re.sub(
+            r"^(Seleccionar|Presionar)(?: el botón)?\s+", "", action or "", flags=re.I
+        )
+        target = target.strip(" «».")
+        return f"Queda seleccionado «{target}»." if target else "Queda realizada la selección."
+    if re.search(r"^(ingresar|abrir|acceder)", action or "", re.I):
+        dest = re.sub(r"^(Ingresar|Abrir|Acceder)(?: a| al)?\s+", "", action or "", flags=re.I).strip()
+        if dest:
+            return f"Se muestra {dest}."
+    if re.search(r"^autenticarse", action or "", re.I):
+        return "El usuario queda autenticado."
+    if re.search(r"^identificar", action or "", re.I):
+        return "Quedan identificados los elementos de la pantalla."
+    return "La pantalla queda en el estado siguiente."
+
+
+def _join_results(parts: list[str]) -> str:
+    merged: list[str] = []
+    pending = False
+    for part in parts:
+        piece = visible_remainder(part) or re.sub(r"\s+", " ", part).strip()
+        if not piece or (_ERROR_CODE.search(piece) and not _VISIBLE_ASSERT.search(piece)):
+            continue
+        if _TEMPORAL.match(piece):
+            pending = True
+            continue
+        sentence = _sentence(piece)
+        if pending and sentence:
+            body = sentence[0].lower() + sentence[1:]
+            sentence = f"Al terminar el tiempo del modal, {body}"
+            pending = False
+        if sentence:
+            merged.append(sentence)
+    if pending:
+        merged.append("Al terminar el tiempo del modal.")
+    return " ".join(merged)
 
 
 def _arrival(action: str) -> str:
@@ -551,12 +725,27 @@ def _event_step(clause: str) -> tuple[str, str]:
 def visible_then_clauses(*bodies: str) -> list[str]:
     """Cláusulas visibles del Then. La parte técnica de la frase no cuenta."""
     clauses: list[str] = []
+    pending = False
     for body in bodies:
         for kind, text in _walk(body):
-            if kind != "then" or technical_phrase(text):
+            if kind != "then":
                 continue
             listed = readable_elements(text)
-            clauses.append(listed or re.sub(r"\s+", " ", text).strip())
+            kept = listed or visible_remainder(text)
+            if not kept:
+                continue
+            if _TEMPORAL.match(kept):
+                pending = True
+                continue
+            if pending:
+                sentence = _sentence(kept)
+                body_text = sentence[0].lower() + sentence[1:] if sentence else kept
+                clauses.append(f"Al terminar el tiempo del modal, {body_text}")
+                pending = False
+                continue
+            clauses.append(kept)
+    if pending:
+        clauses.append("Al terminar el tiempo del modal.")
     return list(dict.fromkeys(clause for clause in clauses if clause))
 
 
@@ -569,7 +758,15 @@ def clause_reflected(clause: str, blob: str) -> bool:
     if not words:
         return fold(clause) in fold(blob) if clause else True
     folded = fold(blob)
-    found = sum(1 for word in words if word in folded)
+    tokens = re.findall(r"[0-9a-z]{4,}", folded)
+
+    def seen(word: str) -> bool:
+        if word in folded:
+            return True
+        stem = word[:5]
+        return any(token.startswith(stem) or word.startswith(token[:5]) for token in tokens if len(token) >= 5)
+
+    found = sum(1 for word in words if seen(word))
     return found == len(words) if len(words) <= 3 else found / len(words) >= 0.7
 
 
@@ -630,6 +827,124 @@ def _collapse_entry(steps: list) -> list:
     return out
 
 
+def _same_scenario(units: list) -> bool:
+    names = {bare_scenario_name(unit.scenario or "") for unit in units}
+    return len(units) > 1 and len(names) == 1 and bool(next(iter(names)))
+
+
+def _entry_form(unit) -> str:
+    bits: list[str] = []
+    history: list[str] = []
+    for _kind, text in _walk(unit.feature_background or ""):
+        if technical_phrase(text) or _KEY_STATE.search(text) or _ERROR_CODE.search(text):
+            history.append(text)
+            continue
+        action = _user_action(text, history)
+        if action:
+            bits.append(action)
+        history.append(text)
+    return "; ".join(dict.fromkeys(bits))
+
+
+def _dedupe_pre(lines: list[str]) -> list[str]:
+    ranked = sorted(lines, key=lambda line: 0 if fold(line).startswith("el usuario") else 1)
+    kept: list[str] = []
+    cores: list[str] = []
+    for line in ranked:
+        if _JUNK_PRE.match(line.strip(" .")):
+            continue
+        core = re.sub(
+            r"^(el usuario (es|esta|está|tiene|corresponde a)\s+|usuario\s+)",
+            "",
+            fold(line),
+        ).strip(" .")
+        if any(core == other or (len(core) > 8 and (core in other or other in core)) for other in cores):
+            continue
+        cores.append(core)
+        kept.append(line)
+    return kept
+
+
+def _flow(units: list) -> tuple[list[dict[str, object]], list[str], list[str], bool]:
+    """Pasos en el orden del Gherkin: cada acción seguida de sus resultados."""
+    repeated = _same_scenario(units)
+    primary = units[0]
+    story = fold(primary.story_summary or "")
+    anon, auth = scenario_stance(primary.scenario or "", primary.body or "")
+    states: list[str] = []
+    warnings: list[str] = []
+    segments: list[dict[str, object]] = []
+    current: dict[str, object] | None = None
+    history: list[str] = []
+
+    def close() -> None:
+        nonlocal current
+        if current and (current.get("action") or current.get("results")):
+            segments.append(current)
+        current = None
+
+    sources: list[tuple[str, bool]] = []
+    if repeated:
+        sources.append((primary.body or "", False))
+    else:
+        for unit in units:
+            sources.append((unit.feature_background or "", True))
+            sources.append((unit.body or "", False))
+    for source, from_background in sources:
+        for kind, text in _walk(source):
+            if from_background and kind == "then":
+                continue
+            if story and fold(text) == story:
+                continue
+            if from_background and background_contradicts(text, anon, auth):
+                continue
+            if _KEY_STATE.search(text) and not _VISIBLE_ASSERT.search(text):
+                warnings.append(text[:180])
+                history.append(text)
+                continue
+            if (_ERROR_CODE.search(text) or technical_phrase(text)) and not visible_remainder(text):
+                warnings.append(text[:180])
+                history.append(text)
+                continue
+            embedded, embedded_result = ("", "")
+            if kind == "then":
+                embedded, embedded_result = _embedded_press(text)
+            listed = readable_elements(text)
+            action = "" if listed or re.match(r"^se muestra\b", text, re.I) else embedded or _user_action(text, history)
+            if action and (kind != "then" or embedded or given_goes_to_step(text)):
+                if current and current.get("action") and not current.get("results"):
+                    close()
+                elif current and (current.get("action") or current.get("results")):
+                    close()
+                current = {"action": action, "results": []}
+                if kind == "then" and not embedded_result:
+                    current["results"].append(text)
+                elif embedded_result:
+                    current["results"].append(embedded_result)
+                history.append(text)
+                continue
+            visible = kind == "then" or bool(_OUTCOME.search(text)) or (
+                current is not None
+                and current.get("action")
+                and bool(re.match(r"^se muestra\b", text, re.I))
+            )
+            if visible:
+                piece = readable_elements(text) or visible_remainder(text)
+                if piece:
+                    if current is None:
+                        current = {"action": "", "results": []}
+                    results = current["results"]
+                    assert isinstance(results, list)
+                    results.append(piece)
+                history.append(text)
+                continue
+            if not given_goes_to_step(text):
+                states.append(text)
+            history.append(text)
+    close()
+    return segments, states, warnings, repeated
+
+
 def finish_case(case, units: list) -> None:
     """Reconstruye el caso desde el escenario: no pierde el Then ni inventa pasos."""
     from app.schemas.case_generation import CandidateStep
@@ -638,88 +953,99 @@ def finish_case(case, units: list) -> None:
         return
     primary = units[0]
     title = clean_title(primary.scenario or case.name or "")
-    anon, auth = scenario_stance(primary.scenario or "", "\n".join(unit.body or "" for unit in units))
-    actions: list[str] = []
-    states: list[str] = []
-    outcomes: list[str] = []
-    warnings: list[str] = []
-    for unit in units:
-        story = fold(unit.story_summary or "")
-        for source, skip_then in ((unit.feature_background or "", True), (unit.body or "", False)):
-            for kind, text in _walk(source):
-                if kind == "then" and skip_then:
-                    continue
-                if kind == "then":
-                    continue
-                if technical_phrase(text):
-                    warnings.append(text[:180])
-                    continue
-                if story and fold(text) == story:
-                    continue
-                if skip_then and background_contradicts(text, anon, auth):
-                    continue
-                action = _user_action(text)
-                if action:
-                    actions.append(action)
-                elif _OUTCOME.search(text):
-                    outcomes.append(text)
-                elif not given_goes_to_step(text):
-                    states.append(text)
-    deduped: list[str] = []
-    for action in actions:
-        if deduped and fold(deduped[-1]) == fold(action):
+    segments, states, warnings, repeated = _flow(units)
+    steps = []
+    for segment in segments:
+        action = str(segment.get("action") or "")
+        results = segment.get("results") or []
+        expected = _join_results([str(part) for part in results])
+        if not action and expected:
+            action = "Verificar lo indicado en pantalla"
+        if not action:
             continue
-        deduped.append(action)
-    thens = list(dict.fromkeys([*outcomes, *visible_then_clauses(*(unit.body or "" for unit in units))]))
-    steps = [
-        CandidateStep(step_number=index, action=action, expected_result="", covered_unit_ids=[primary.coverage_id])
-        for index, action in enumerate(deduped, start=1)
-    ]
-    steps = [step for step in _collapse_entry(steps) if not is_filler_step(step.action, step.expected_result)]
-    hidden = bool(thens) and bool(re.search(r"presionar|presiona|da clic|hace clic", thens[0] if len(thens) == 1 else "", re.I))
-    if len(thens) == 1 and steps and not hidden:
-        steps[-1].expected_result = _sentence(thens[0])
-    elif thens:
-        for clause in thens:
-            action, expected = _event_step(clause)
-            steps.append(
-                CandidateStep(
-                    step_number=len(steps) + 1,
-                    action=action,
-                    expected_result=expected,
-                    covered_unit_ids=[primary.coverage_id],
-                )
+        if not expected or echo_pair(action, expected) or _FILLER_RESULT.match(expected.strip()):
+            expected = _fallback_result(action)
+        if echo_pair(action, expected):
+            expected = "La pantalla queda en el estado siguiente."
+        steps.append(
+            CandidateStep(
+                step_number=len(steps) + 1,
+                action=action,
+                expected_result=expected,
+                covered_unit_ids=[primary.coverage_id],
             )
+        )
+    steps = [step for step in _collapse_entry(steps) if not is_filler_step(step.action, step.expected_result)]
+    # Unir verificaciones seguidas de la misma pantalla en un solo paso.
+    folded: list = []
     for step in steps:
-        if technical_phrase(step.action or ""):
-            step.action = ""
-        if technical_phrase(step.expected_result or ""):
-            step.expected_result = ""
-        if not (step.expected_result or "").strip() and step.action:
-            step.expected_result = _arrival(step.action)
-        if _FILLER_RESULT.match((step.expected_result or "").strip()):
-            step.expected_result = _arrival(step.action)
-    steps = [step for step in steps if (step.action or "").strip() and not is_filler_step(step.action, "")]
+        if (
+            folded
+            and fold(step.action) == fold(folded[-1].action) == fold("Verificar lo indicado en pantalla")
+        ):
+            folded[-1].expected_result = f"{folded[-1].expected_result} {step.expected_result}".strip()
+            continue
+        folded.append(step)
+    steps = folded
     for index, step in enumerate(steps, start=1):
         step.step_number = index
-        step.expected_result = _at_word(step.expected_result or "", 500)
-    blob = " ".join(step.expected_result or "" for step in steps)
+        step.expected_result = _at_word(step.expected_result or "", 2000)
+        if technical_phrase(step.expected_result or ""):
+            step.expected_result = visible_remainder(step.expected_result) or _fallback_result(step.action)
+    bodies = [primary.body or ""] if repeated else [unit.body or "" for unit in units]
+    thens = visible_then_clauses(*bodies)
+    blob = " ".join(f"{step.action} {step.expected_result}" for step in steps)
     missing = [clause for clause in thens if not clause_reflected(clause, blob)]
     rules = [rule for rule in (case.applied_rules or []) if not str(rule).startswith("error-then")]
     for clause in missing:
         rules.append(f"error-then:{_at_word(clause, 160)}")
-    pre_lines = user_type_lines(primary.scenario or "", "\n".join(unit.body or "" for unit in units))
+    enabled = False
+    for unit in units:
+        for source in (unit.feature_background or "", unit.body or ""):
+            if _KEY_STATE.search(source):
+                enabled = True
+    pre_lines: list[str] = []
+    if not repeated:
+        pre_lines.extend(user_type_lines(primary.scenario or "", "\n".join(unit.body or "" for unit in units)))
+    if enabled:
+        pre_lines.append(_ENABLED)
+    anon, auth = scenario_stance(primary.scenario or "", primary.body or "")
     for state in states:
-        if background_contradicts(state, anon, auth) or technical_phrase(state):
+        if background_contradicts(state, anon, auth) or _KEY_STATE.search(state) or _ERROR_CODE.search(state):
             continue
-        line = third_person(state)
-        if line and not any(fold(line) in fold(item) or fold(item) in fold(line) for item in pre_lines):
+        if technical_phrase(state) and not visible_remainder(state):
+            continue
+        if given_goes_to_step(state):
+            continue
+        line = third_person(visible_remainder(state) or state)
+        if line and not _JUNK_PRE.match(line.strip(" .")):
             pre_lines.append(line)
-    # El tipo declarado en el escenario no se pierde aunque el Background diga otra cosa.
     case.name = title
-    case.precondition = "; ".join(dict.fromkeys(pre_lines)) or None
+    case.precondition = "; ".join(_dedupe_pre(pre_lines)) or None
     case.steps = steps
     case.applied_rules = rules
+    if repeated:
+        rows = ["Tipo de usuario | Forma de entrada"]
+        seen: set[str] = set()
+        for unit in units:
+            summary = (unit.story_summary or "").strip()
+            if summary and len(summary.split()) <= 6 and re.search(
+                r"usuario|telmex|an[oó]nim", summary, re.I
+            ):
+                label = summary
+            else:
+                label = (
+                    user_type_lines(unit.story_summary or "", unit.story_summary or "")
+                    or ["El usuario del escenario."]
+                )[0]
+            entry = _entry_form(unit) or "Ingreso según su tipo de usuario."
+            row = f"{label} | {entry}"
+            if row in seen:
+                continue
+            seen.add(row)
+            rows.append(row)
+        if len(rows) > 1:
+            case.variant_table = "\n".join(rows)
     if warnings and hasattr(primary, "technical_notes"):
         notes = list(primary.technical_notes or [])
         for warning in warnings:

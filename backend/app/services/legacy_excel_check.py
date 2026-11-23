@@ -8,13 +8,22 @@ from typing import Any
 from app.services.legacy_qc import (
     clause_reflected,
     clean_title,
+    echo_pair,
     fold,
     is_entry_action,
     technical_phrase,
     visible_then_clauses,
 )
 
-_FIRST = re.compile(r"\b(yo|estoy|soy|mi|nosotros)\b", re.IGNORECASE)
+_FIRST = re.compile(
+    r"\b(yo|estoy|soy|mi|nosotros|que tengo|me encuentro|identifico)\b",
+    re.IGNORECASE,
+)
+_KEY_OR_CODE = re.compile(
+    r"\bllave\b|c[oó]digo de error|\bPGS_[A-Z0-9_]+\b|la respuesta contiene",
+    re.IGNORECASE,
+)
+_JUNK_PRE = re.compile(r"^(y|and)\.?$", re.IGNORECASE)
 _CUT = re.compile(
     r"\b(de|del|la|el|los|las|un|una|que|al|con|por|para|en|se)$",
     re.IGNORECASE,
@@ -54,6 +63,11 @@ def audit_cases(rows: list[dict[str, Any]], origins: dict[str, str]) -> dict[str
         "palabra_tecnica": [],
         "primera_persona": [],
         "texto_cortado": [],
+        "resultado_eco": [],
+        "verificar_repetido": [],
+        "acciones_sin_resultado": [],
+        "llave_o_codigo_en_pre": [],
+        "precondicion_vacia": [],
     }
     for row in rows:
         name = str(row.get("name") or "")
@@ -78,15 +92,32 @@ def audit_cases(rows: list[dict[str, Any]], origins: dict[str, str]) -> dict[str
         blob_fields = [pre, *steps, *results]
         if any(technical_phrase(field) for field in blob_fields if field):
             issues["palabra_tecnica"].append(name)
-        if _FIRST.search(pre):
+        if any(_FIRST.search(field or "") for field in (pre, *steps, *results)):
             issues["primera_persona"].append(name)
         if any(_cut(field) for field in (name, pre, *steps, *results)):
             issues["texto_cortado"].append(name)
+        for action, result in zip(steps, results):
+            if echo_pair(action, result):
+                issues["resultado_eco"].append(name)
+                break
+        verify = [action for action in steps if fold(action) == fold("Verificar el resultado")]
+        if len(verify) > 1:
+            issues["verificar_repetido"].append(name)
+        for left_action, left_result, right_action in zip(steps, results, steps[1:]):
+            if echo_pair(left_action, left_result) or not (left_result or "").strip():
+                if left_action and right_action:
+                    issues["acciones_sin_resultado"].append(name)
+                    break
+        clauses = [part.strip() for part in re.split(r"\s*;\s*", pre) if part.strip()]
+        if _KEY_OR_CODE.search(pre):
+            issues["llave_o_codigo_en_pre"].append(name)
+        if any(_JUNK_PRE.match(part.strip(" .")) for part in clauses) or (pre.strip() and not clauses):
+            issues["precondicion_vacia"].append(name)
         if body:
             missing = [
                 clause
                 for clause in visible_then_clauses(body)
-                if not clause_reflected(clause, " ".join(results))
+                if not clause_reflected(clause, " ".join([*steps, *results]))
             ]
             if missing:
                 issues["then_no_reflejado"].append(f"{name}: {missing[0][:80]}")

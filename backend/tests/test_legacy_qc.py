@@ -185,6 +185,48 @@ def test_then_sequence_is_kept_and_there_is_no_filler():
     assert "método de pago" in (case.precondition or "").lower() or "metodo de pago" in (case.precondition or "").lower()
 
 
+def test_epic_criterion_is_registered_and_not_a_case():
+    unit = _unit(
+        "e1",
+        "HN-1",
+        "Los mensajes se muestran de forma clara",
+        "Then Los mensajes se muestran de forma clara",
+    )
+    unit.source_origin = "ac"
+    unit.applied_rules = ["ac-epica"]
+    stats = GenerationStats()
+    cases = compose_scenario_inventory([unit], [], lambda *_args: None)
+    assert cases == []
+    fill_scenario_ledger(stats, [unit], cases)
+    row = stats.scenario_ledger[0]
+    assert row["estado"] == "criterio de épica – revisar"
+    assert "mensajes" in row["motivo"].lower()
+
+
+def test_each_action_is_followed_by_its_result():
+    unit = _unit(
+        "d1",
+        "HN-1",
+        "Eliminar con suscripciones",
+        "\n".join(
+            [
+                'When el usuario selecciona el botón "Eliminar"',
+                "Then se muestra el modal de confirmación",
+                'When el usuario selecciona el botón "Cancelar"',
+                "Then se dirige a la pantalla anterior",
+            ]
+        ),
+    )
+    cases = compose_scenario_inventory([unit], [], lambda *_args: None)
+    case = cases[0]
+    pairs = [(step.action, step.expected_result) for step in case.steps]
+    assert pairs[0][0] == "Seleccionar el botón «Eliminar»"
+    assert "modal" in pairs[0][1].lower()
+    assert pairs[1][0] == "Seleccionar el botón «Cancelar»"
+    assert "pantalla anterior" in pairs[1][1].lower()
+    assert "se muestra eliminar" not in pairs[0][1].lower()
+
+
 def test_priority_bands():
     assert classify_legacy_priority("Alta de método de pago", "seleccionar alta") == "BLOCKER"
     assert classify_legacy_priority("Error al ocultar el botón", "no se muestra el botón") == "CRITICAL"

@@ -24,6 +24,9 @@ OUT = Path("/tmp/qcpulse_legacy_check.xlsx")
 REVIEW = (
     "usuario anonimo con contenido no contratado",
     "identificar contenido bloqueado",
+    "eliminacion del metodo de pago telcel con suscripciones",
+    "navegacion al selector de planes",
+    "ajustar distancia entre el menu",
 )
 
 
@@ -50,6 +53,7 @@ def main() -> int:
             "Precondición",
             "Technical Story",
             "Scenario / origen",
+            "Variantes",
         ]
     )
     rows = []
@@ -69,6 +73,7 @@ def main() -> int:
                 _cell(case.precondition or ""),
                 _cell(covered[0].story_key if covered else ""),
                 _cell(scenario or ""),
+                _cell(case.variant_table or ""),
             ]
         )
         origins[case.name or ""] = body
@@ -104,6 +109,7 @@ def main() -> int:
                 "results": record[2] or "",
                 "precondition": record[3] or "",
                 "scenario": record[5] or "",
+                "variants": record[6] or "",
             }
         )
     issues = audit_cases(read_rows, origins)
@@ -121,6 +127,11 @@ def main() -> int:
         "palabra_tecnica": "palabras técnicas",
         "primera_persona": "primera persona",
         "texto_cortado": "texto cortado",
+        "resultado_eco": "resultado eco",
+        "verificar_repetido": "pasos Verificar el resultado repetidos",
+        "acciones_sin_resultado": "acciones seguidas sin resultado intermedio",
+        "llave_o_codigo_en_pre": "llave o código de error en precondición",
+        "precondicion_vacia": "precondición Y. o vacía",
     }
     print(f"casos={len(read_rows)} excel={OUT}")
     failed = 0
@@ -141,6 +152,7 @@ def main() -> int:
             continue
         print(record["name"])
         print("PRE:", record["precondition"])
+        print("VAR:", record.get("variants") or "")
         print(record["steps"])
         print(record["results"])
         print()

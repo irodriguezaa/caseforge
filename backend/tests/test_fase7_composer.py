@@ -223,6 +223,9 @@ Scenario: Configuración remota vacía
         "na_ambiente",
         "pendiente de revisión QC",
         "verificación técnica",
+        "regresión",
+        "error",
+        "criterio de épica – revisar",
     }
 
 
@@ -399,13 +402,14 @@ Scenario: Modal
         lambda *_a: None,
     )
     case = next(row for row in cases if row.steps)
-    expecteds = [step.expected_result for step in case.steps if (step.expected_result or "").strip()]
-    assert expecteds
-    consecutive = [
-        expecteds[i] == expecteds[i + 1]
-        for i in range(len(expecteds) - 1)
+    actions = [step.action.lower() for step in case.steps]
+    assert any("seleccion" in action or "recordatorio" in action for action in actions)
+    assert any("confirm" in action for action in actions)
+    pairs = [
+        (step.action or "").lower() + "|" + (step.expected_result or "").lower()
+        for step in case.steps
     ]
-    assert not any(consecutive)
+    assert all(pairs[index] != pairs[index + 1] for index in range(len(pairs) - 1))
 
 
 def test_redactar_caso_is_identity_today() -> None:
