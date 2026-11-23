@@ -344,7 +344,9 @@ def test_v2b_fallback_filters_entry_and_marks_ledger():
     assert any(row.get("estado") == "fallback" for row in run.ledger)
 
 
-def test_dispatch_v2b_name():
+def test_portal_ignores_v2b_and_stays_on_legacy():
     from app.config import settings
+    from app.services.ai_case_engine import _qc_engine_name
 
     assert settings.qc_engine in {"legacy", "v2", "v2b"}
+    assert _qc_engine_name() == "legacy"

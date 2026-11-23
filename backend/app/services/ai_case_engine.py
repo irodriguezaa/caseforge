@@ -72,7 +72,11 @@ def _setting_str(*names: str) -> str:
 
 
 def _qc_engine_name() -> str:
-    return (_setting_str("qc_engine") or "legacy").strip().lower()
+    """El portal escribe los casos con legacy. v2 y v2b no se usan."""
+    name = (_setting_str("qc_engine") or "legacy").strip().lower()
+    if name in {"v2", "v2b"}:
+        return "legacy"
+    return name
 
 
 def _is_legacy_qc_engine() -> bool:
