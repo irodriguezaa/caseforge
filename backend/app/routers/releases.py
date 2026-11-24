@@ -4,6 +4,7 @@ Apps, Operativas and Release BE can be hard-deleted (including the stored Releas
 A Release that is origin of Revalidaciones cannot be deleted.
 """
 
+import copy
 import logging
 from urllib.parse import quote
 
@@ -32,7 +33,9 @@ from app.schemas.jira_epic import JiraEpicCreate, JiraEpicResult
 from app.schemas.publication import PublicationRecordRead, PublishCasesResponse
 from app.schemas.release import (
     AnalyzeEpcsRequest,
+    ReleaseAnalysisBase,
     ReleaseAnalysisRead,
+    RevalidationScopeRequest,
     ReleaseCreate,
     ReleaseNoteAnalyzeResponse,
     ReleaseRead,
@@ -260,6 +263,29 @@ def analyze_pasted_technical_epics(body: AnalyzeEpcsRequest) -> ReleaseNoteAnaly
     )
 
 
+@router.post("/revalidation-scope", response_model=ReleaseAnalysisBase)
+def preview_revalidation_scope(
+    body: RevalidationScopeRequest,
+    db: Session = Depends(get_db),
+) -> ReleaseAnalysisBase:
+    """Scope of a revalidation RN: only the issues that were not in the origin."""
+    get_release_or_404(body.parent_release_id, db)
+    from app.services.rn_revalidation_scope import append_pdf_delta_keys, narrow_revalidation_analysis
+    from app.services.rn_storage import read_release_note_pdf
+
+    origin = _latest_analysis(db, body.parent_release_id)
+    preview = append_pdf_delta_keys(
+        body.analysis.model_dump(),
+        read_release_note_pdf(body.analysis.pdf_file_path),
+        read_release_note_pdf(origin.pdf_file_path) if origin is not None else None,
+    )
+    narrowed = narrow_revalidation_analysis(
+        preview,
+        origin.raw_analysis if origin is not None else None,
+    )
+    return ReleaseAnalysisBase.model_validate(narrowed)
+
+
 def _xlsx_attachment(payload: bytes, raw_name: str, ascii_name: str) -> Response:
     disposition = (
         f"attachment; filename=\"{ascii_name}\"; "
@@ -358,7 +384,9 @@ def list_releases(
                 **release_read,
                 test_case_count=count,
                 functionality_count=(
-                    latest_analysis.features_count if latest_analysis is not None else None
+                    _analysis_for_display(release, latest_analysis, db).features_count
+                    if latest_analysis is not None
+                    else None
                 ),
                 estimation_hours=round(float(estimation_hours or 0), 2),
                 latest_analysis=(
@@ -396,6 +424,16 @@ def create_release(payload: ReleaseCreate, db: Session = Depends(get_db)) -> Rel
 
     if payload.analysis_data is not None:
         analysis_dict = payload.analysis_data.model_dump()
+        if payload.release_type == ReleaseType.REVALIDACION and payload.parent_release_id is not None:
+            from app.services.rn_revalidation_scope import append_pdf_delta_keys
+            from app.services.rn_storage import read_release_note_pdf
+
+            origin_analysis = _latest_analysis(db, payload.parent_release_id)
+            analysis_dict = append_pdf_delta_keys(
+                analysis_dict,
+                read_release_note_pdf(analysis_dict.get("pdf_file_path")),
+                read_release_note_pdf(origin_analysis.pdf_file_path) if origin_analysis is not None else None,
+            )
         analysis_row = ReleaseAnalysis(release_id=release.id, **analysis_dict)
         db.add(analysis_row)
 
@@ -551,9 +589,26 @@ def delete_release(
     hard_delete_release_and_notes(db, get_release_or_404(release_id, db))
 
 
+def _analysis_for_display(release: Release, analysis: ReleaseAnalysis, db: Session) -> ReleaseAnalysisRead:
+    """Revalidation screen shows only the new issues. The stored note is left intact."""
+    view = ReleaseAnalysisRead.model_validate(analysis)
+    if release.release_type != ReleaseType.REVALIDACION or release.parent_release_id is None:
+        return view
+    from app.services.rn_revalidation_scope import narrow_revalidation_analysis
+
+    origin = _latest_analysis(db, release.parent_release_id)
+    payload = view.model_dump()
+    payload["raw_analysis"] = copy.deepcopy(payload.get("raw_analysis") or {})
+    narrowed = narrow_revalidation_analysis(
+        payload,
+        origin.raw_analysis if origin is not None else None,
+    )
+    return ReleaseAnalysisRead.model_validate(narrowed)
+
+
 @router.get("/{release_id}/analysis", response_model=ReleaseAnalysisRead)
-def get_release_analysis(release_id: int, db: Session = Depends(get_db)) -> ReleaseAnalysis:
-    get_release_or_404(release_id, db)
+def get_release_analysis(release_id: int, db: Session = Depends(get_db)) -> ReleaseAnalysisRead:
+    release = get_release_or_404(release_id, db)
     analysis = (
         db.execute(
             select(ReleaseAnalysis)
@@ -568,7 +623,7 @@ def get_release_analysis(release_id: int, db: Session = Depends(get_db)) -> Rele
             status.HTTP_404_NOT_FOUND,
             detail="No se encontró ningún análisis de Release Note para esta release.",
         )
-    return analysis
+    return _analysis_for_display(release, analysis, db)
 
 
 def _already_generated_response(release: Release, summary: dict) -> GenerateCasesResponse:

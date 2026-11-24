@@ -223,6 +223,11 @@ export const api = {
     request<Release>(`/api/releases/${id}`, { method: "POST", body: JSON.stringify(payload) }),
   deleteRelease: (id: number) => request<void>(`/api/releases/${id}`, { method: "DELETE" }),
 
+  previewRevalidationScope: (parentReleaseId: number, analysis: ReleaseAnalysis) =>
+    request<ReleaseAnalysis>("/api/releases/revalidation-scope", {
+      method: "POST",
+      body: JSON.stringify({ parent_release_id: parentReleaseId, analysis }),
+    }),
   analyzeReleaseNote: async (file: File): Promise<ReleaseNoteAnalyzeResponse> => {
     const formData = new FormData();
     formData.append("file", file);

@@ -304,6 +304,15 @@ from app.services.release_note_analyzer import (
     _classify_heading,
     _table_header_override,
 )
+from app.services.rn_revalidation_scope import loose_qa_key
+
+
+def test_loose_qa_line_is_a_ticket_row_not_a_mention() -> None:
+    found = loose_qa_key("🧪 QA WINCL-2520 - WIN | Pantalla en negro después de cerrar sesión")
+    assert found is not None
+    assert found[0] == "WINCL-2520"
+    assert loose_qa_key("El ticket WINCL-2520 se menciona en el párrafo.") is None
+    assert loose_qa_key("QA bugs / QC bugs") is None
 
 
 def test_table_header_nco_is_recognized_as_an_override_signal() -> None:

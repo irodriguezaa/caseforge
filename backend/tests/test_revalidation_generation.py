@@ -439,3 +439,78 @@ def test_revalidation_keeps_revalidation_delta_engine_without_llm(
     assert body["engine"] == "revalidation-delta"
     assert fake_client.post.call_count == 0
     assert {row["related_jira"] for row in body["candidates"]} == {"BUG-1"}
+
+
+def test_revalidation_scope_keeps_only_the_new_issue(client) -> None:
+    origin = client.post(
+        "/api/v1/releases",
+        json={
+            "name": "WIN 11.1.0",
+            "version": "11.1.0",
+            "platform": "WIN/XBOX",
+            "deliverable_name": "WIN alcance",
+            "release_type": "NUEVO",
+            "analysis_data": {
+                "pdf_filename": "11.1.0.pdf",
+                "features_count": 1,
+                "qa_qc_issues_count": 1,
+                "nco_issues_count": 0,
+                "tri_issues_count": 0,
+                "observations": [],
+                "qc_engine_version": "v0.1",
+                "raw_analysis": {
+                    "vendor": "damco",
+                    "normalized": {
+                        "technical_epics": [{"id": "WINCL-2237", "title": "WINCL-2237: ya estaba"}],
+                        "qa_qc": [{"id": "WINCL-2358", "title": "WINCL-2358: ya estaba"}],
+                    },
+                },
+            },
+        },
+    )
+    assert origin.status_code == 201, origin.text
+    reval = client.post(
+        "/api/v1/releases",
+        json={
+            "name": "WIN 11.1.1",
+            "version": "11.1.1",
+            "platform": "WIN/XBOX",
+            "deliverable_name": "WIN alcance",
+            "release_type": "REVALIDACION",
+            "parent_release_id": origin.json()["id"],
+            "analysis_data": {
+                "pdf_filename": "11.1.1.pdf",
+                "features_count": 1,
+                "qa_qc_issues_count": 2,
+                "nco_issues_count": 0,
+                "tri_issues_count": 0,
+                "observations": [],
+                "qc_engine_version": "v0.1",
+                "raw_analysis": {
+                    "vendor": "damco",
+                    "normalized": {
+                        "technical_epics": [{"id": "WINCL-2237", "title": "WINCL-2237: ya estaba"}],
+                        "qa_qc": [
+                            {"id": "WINCL-2358", "title": "WINCL-2358: ya estaba"},
+                            {"id": "WINCL-2520", "title": "WINCL-2520: pantalla en negro"},
+                        ],
+                    },
+                },
+            },
+        },
+    )
+    assert reval.status_code == 201, reval.text
+    shown = client.get(f"/api/v1/releases/{reval.json()['id']}/analysis")
+    assert shown.status_code == 200, shown.text
+    body = shown.json()
+    assert body["features_count"] == 0
+    assert body["qa_qc_issues_count"] == 1
+    qa = body["raw_analysis"]["normalized"]["qa_qc"]
+    assert [row["id"] for row in qa] == ["WINCL-2520"]
+
+    generated = client.post(f"/api/v1/releases/{reval.json()['id']}/generate-cases")
+    assert generated.status_code == 200, generated.text
+    result = generated.json()
+    assert result["engine"] == "revalidation-delta"
+    assert {row["related_jira"] for row in result["candidates"]} == {"WINCL-2520"}
+    assert any("WINCL-2237" in detail and "No se regeneró" in detail for detail in result["analysis_details"])

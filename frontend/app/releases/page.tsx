@@ -98,6 +98,7 @@ export default function ReleasesPage(): React.ReactElement {
   const [analyzing, setAnalyzing] = useState(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [analysisResult, setAnalysisResult] = useState<ReleaseAnalysis | null>(null);
+  const [uploadedAnalysis, setUploadedAnalysis] = useState<ReleaseAnalysis | null>(null);
   const [generateMessage, setGenerateMessage] = useState<string | null>(null);
   const [matrixTouched, setMatrixTouched] = useState<string[] | null>(null);
   const [matrixTemplates, setMatrixTemplates] = useState<Record<string, string> | null>(null);
@@ -180,6 +181,32 @@ export default function ReleasesPage(): React.ReactElement {
     return () => clearTimeout(handle);
   }, [form.deliverableName, form.releaseType]);
 
+  useEffect(() => {
+    if (!uploadedAnalysis) {
+      return;
+    }
+    if (form.releaseType !== "REVALIDACION" || !form.parentReleaseId) {
+      setAnalysisResult(uploadedAnalysis);
+      return;
+    }
+    let cancelled = false;
+    api
+      .previewRevalidationScope(Number(form.parentReleaseId), uploadedAnalysis)
+      .then((narrowed) => {
+        if (!cancelled) {
+          setAnalysisResult(narrowed);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setAnalysisResult(uploadedAnalysis);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [form.releaseType, form.parentReleaseId, uploadedAnalysis]);
+
   const handleFileSelect = (file: File): void => {
     if (!file.name.toLowerCase().endsWith(".pdf")) {
       setAnalysisError("Solo se permiten archivos en formato PDF.");
@@ -188,6 +215,7 @@ export default function ReleasesPage(): React.ReactElement {
     setPdfFile(file);
     setAnalysisError(null);
     setAnalysisResult(null);
+    setUploadedAnalysis(null);
     setGenerateMessage(null);
     // Never keep a previous PDF's derived fields visible while a new one is selected/analyzing.
     setForm((prev) => ({ ...prev, name: "", version: "", platform: "", description: "", deliverableName: "" }));
@@ -208,6 +236,7 @@ export default function ReleasesPage(): React.ReactElement {
     setRnSource(next);
     setAnalysisError(null);
     setAnalysisResult(null);
+    setUploadedAnalysis(null);
     setGenerateMessage(null);
     if (next === "with_rn") {
       setEpcText("");
@@ -225,6 +254,7 @@ export default function ReleasesPage(): React.ReactElement {
     try {
       const response = await api.analyzeReleaseNote(pdfFile);
       const analysis = response.analysis;
+      setUploadedAnalysis(analysis);
       setAnalysisResult(analysis);
       applyAnalysisToForm(analysis);
     } catch (err) {
@@ -242,6 +272,7 @@ export default function ReleasesPage(): React.ReactElement {
     try {
       const response = await api.analyzeEpcs(epcText);
       const analysis = response.analysis;
+      setUploadedAnalysis(analysis);
       setAnalysisResult(analysis);
       applyAnalysisToForm(analysis);
     } catch (err) {
@@ -280,7 +311,7 @@ export default function ReleasesPage(): React.ReactElement {
         jira_issue_filter: form.jiraIssueFilter || null,
         qc_matrix_touched_modules: matrixTouched,
         qc_matrix_template_values: matrixTemplates,
-        analysis_data: analysisResult || undefined,
+        analysis_data: uploadedAnalysis || analysisResult || undefined,
         deliverable_name: form.deliverableName || null,
         release_type: form.releaseType,
         parent_release_id:
@@ -311,6 +342,7 @@ export default function ReleasesPage(): React.ReactElement {
       setEpcText("");
       setRnSource("with_rn");
       setAnalysisResult(null);
+      setUploadedAnalysis(null);
       router.push(`/releases/${created.id}`);
     } catch (err) {
       setFormError(err instanceof ApiRequestError ? err.message : "No se pudo crear la release.");

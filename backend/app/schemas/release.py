@@ -46,6 +46,11 @@ class ReleaseNoteAnalyzeResponse(BaseModel):
     calculated_business_days: int = 0
 
 
+class RevalidationScopeRequest(BaseModel):
+    parent_release_id: int
+    analysis: ReleaseAnalysisBase
+
+
 class ReleaseBase(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     version: str = Field(min_length=1, max_length=50)
