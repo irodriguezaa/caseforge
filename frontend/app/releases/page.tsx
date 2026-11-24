@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ReleaseAnalysisCard } from "@/app/components/ReleaseAnalysisCard";
-import { StatusBadge } from "@/app/components/StatusBadge";
 import { StatusListFilter } from "@/app/components/StatusListFilter";
 import { api, ApiRequestError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
@@ -20,6 +19,13 @@ import {
 } from "@/lib/releaseListStatusFilter";
 import { usePersistedStatusFilter } from "@/lib/usePersistedStatusFilter";
 import type { DeliverableReleaseSummary, ReleaseAnalysis, ReleaseType, ReleaseWithCounts } from "@/lib/types";
+
+const ACTIVITY_LABEL: Record<string, string> = {
+  HotFix: "HotFix",
+  Exc: "Exc",
+  Mantenimiento: "Mtto",
+  Release: "Release",
+};
 
 const emptyForm = {
   name: "",
@@ -717,7 +723,7 @@ export default function ReleasesPage(): React.ReactElement {
       {loadError && <p className="error-text">{loadError}</p>}
 
       {!loading && !loadError && (
-        <div className="panel">
+        <div className="panel" style={{ overflowX: "auto" }}>
           <table className="activity">
             <thead>
               <tr>
@@ -726,8 +732,11 @@ export default function ReleasesPage(): React.ReactElement {
                 <th>Dispositivo</th>
                 <th>Cluster</th>
                 <th>Entregable</th>
-                <th>Estado</th>
-                <th>Test Cases</th>
+                <th>Tipo</th>
+                <th>Ambiente</th>
+                <th className="num"># Funcionalidades</th>
+                <th className="num">Test Cases</th>
+                <th className="num">Estimación</th>
               </tr>
             </thead>
             <tbody>
@@ -752,13 +761,22 @@ export default function ReleasesPage(): React.ReactElement {
                         }`
                       : "—"}
                   </td>
-                  <td><StatusBadge status={release.status} /></td>
-                  <td>{release.test_case_count}</td>
+                  <td className="muted">
+                    {release.activity_type ? ACTIVITY_LABEL[release.activity_type] ?? release.activity_type : "—"}
+                  </td>
+                  <td className="muted">{release.environment ?? "—"}</td>
+                  <td className="num">{release.functionality_count ?? "—"}</td>
+                  <td className="num">{release.test_case_count}</td>
+                  <td className="num">
+                    {release.test_case_count > 0
+                      ? `${(release.estimation_hours ?? 0).toFixed(1)} h`
+                      : "—"}
+                  </td>
                 </tr>
               ))}
               {visibleReleases.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="muted">
+                  <td colSpan={10} className="muted">
                     {releases.length === 0
                       ? "No hay releases todavía."
                       : "No hay releases con este estado."}

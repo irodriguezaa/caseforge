@@ -47,6 +47,8 @@ def test_list_releases_includes_test_case_count(client) -> None:
     releases = response.json()
     assert len(releases) == 1
     assert releases[0]["test_case_count"] == 1
+    assert releases[0]["functionality_count"] is None
+    assert releases[0]["estimation_hours"] == 0
 
 
 def test_list_releases_filters_by_status(client) -> None:

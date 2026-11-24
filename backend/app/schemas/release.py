@@ -121,6 +121,8 @@ class ReleaseRead(ReleaseBase):
 
 class ReleaseWithCounts(ReleaseRead):
     test_case_count: int = 0
+    functionality_count: int | None = None
+    estimation_hours: float = 0
     latest_analysis: ReleaseAnalysisRead | None = None
     # deliverable_name is inherited from ReleaseRead (populated in the list/get routers).
 

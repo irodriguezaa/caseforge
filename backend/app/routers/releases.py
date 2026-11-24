@@ -322,7 +322,11 @@ def list_releases(
     db: Session = Depends(get_db),
 ) -> list[ReleaseWithCounts]:
     stmt = (
-        select(Release, func.count(TestCase.id))
+        select(
+            Release,
+            func.count(TestCase.id),
+            func.coalesce(func.sum(TestCase.estimation_hours), 0),
+        )
         .outerjoin(TestCase, TestCase.release_id == Release.id)
         .group_by(Release.id)
         .order_by(Release.created_at.desc())
@@ -338,7 +342,7 @@ def list_releases(
 
     rows = db.execute(stmt).all()
     results: list[ReleaseWithCounts] = []
-    for release, count in rows:
+    for release, count, estimation_hours in rows:
         latest_analysis = (
             db.execute(
                 select(ReleaseAnalysis)
@@ -353,6 +357,10 @@ def list_releases(
             ReleaseWithCounts(
                 **release_read,
                 test_case_count=count,
+                functionality_count=(
+                    latest_analysis.features_count if latest_analysis is not None else None
+                ),
+                estimation_hours=round(float(estimation_hours or 0), 2),
                 latest_analysis=(
                     ReleaseAnalysisRead.model_validate(latest_analysis)
                     if latest_analysis

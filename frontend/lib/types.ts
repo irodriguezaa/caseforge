@@ -293,6 +293,8 @@ export interface Release {
 
 export interface ReleaseWithCounts extends Release {
   test_case_count: number;
+  functionality_count?: number | null;
+  estimation_hours?: number | null;
   latest_analysis?: ReleaseAnalysis | null;
   deliverable_name: string | null;
 }
