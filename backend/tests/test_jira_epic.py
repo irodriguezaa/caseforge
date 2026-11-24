@@ -15,6 +15,7 @@ from app.services.jira_epic import (
     epic_summary,
     program_code,
     publish_epic,
+    subtasks_for,
     task_description,
 )
 
@@ -152,6 +153,41 @@ def test_later_version_task_lists_only_the_new_scope() -> None:
     assert "QA/QC Bugs" not in with_feature
 
 
+def test_subtasks_follow_the_same_scope_as_the_task() -> None:
+    first = _scope(1, "vWINCL-11.1.0", (("WINCL-528", ""), ("WINCL-2237", "")), (("WINCL-2358", ""),))
+    second = _scope(
+        2,
+        "vWINCL-11.1.1",
+        (("WINCL-528", ""), ("WINCL-2237", "")),
+        (("WINCL-2358", ""), ("WINCL-2520", "")),
+    )
+    opening = subtasks_for("WINCL", [first, second], first)
+    assert [row.summary for row in opening] == [
+        "WINCL | vWINCL-11.1.0 | WINCL-528",
+        "WINCL | vWINCL-11.1.0 | WINCL-2237",
+        "WINCL | vWINCL-11.1.0 | Revisión QC Bugs",
+        "WINCL | vWINCL-11.1.0 | REGRESIÓN",
+    ]
+    assert opening[0].description == "Validación funcional de WINCL-528 con la versión vWINCL-11.1.0"
+    assert "WINCL-2358" in opening[2].description
+    assert opening[3].description == "Regresión completa"
+
+    later = subtasks_for("WINCL", [first, second], second)
+    assert [row.summary for row in later] == [
+        "WINCL | vWINCL-11.1.1 | Revisión QC Bugs",
+        "WINCL | vWINCL-11.1.1 | REGRESIÓN",
+    ]
+    assert "WINCL-2520" in later[0].description
+    assert "WINCL-2358" not in later[0].description
+    assert "WINCL-528" not in later[0].description
+
+    no_bugs = subtasks_for("WINCL", [first, _scope(2, "vWINCL-11.1.1", (("WINCL-2600", ""),), ())], _scope(2, "vWINCL-11.1.1", (("WINCL-2600", ""),), ()))
+    assert [row.summary for row in no_bugs] == [
+        "WINCL | vWINCL-11.1.1 | WINCL-2600",
+        "WINCL | vWINCL-11.1.1 | REGRESIÓN",
+    ]
+
+
 def _plain(node: object) -> str:
     if isinstance(node, dict):
         parts = [str(node.get("text") or ""), str((node.get("attrs") or {}).get("url") or "")]
@@ -243,7 +279,8 @@ def test_revalidation_adds_the_new_task_under_the_same_epic(monkeypatch) -> None
         return []
 
     monkeypatch.setattr("app.services.jira_epic._search", search)
-    monkeypatch.setattr("app.services.jira_epic._create_issue", lambda fields: created.append(fields) or "QCO-9")
+    keys = iter(["QCO-9", "QCO-10", "QCO-11", "QCO-12"])
+    monkeypatch.setattr("app.services.jira_epic._create_issue", lambda fields: created.append(fields) or next(keys))
     monkeypatch.setattr("app.services.jira_epic._account_id", lambda: None)
     monkeypatch.setattr("app.services.jira_epic._put_fields", lambda key, fields: updated.append((key, fields)))
     monkeypatch.setattr("app.services.jira_epic._read_labels", lambda _key: ["qcpulse", "qcpulse-r1"])
@@ -257,7 +294,9 @@ def test_revalidation_adds_the_new_task_under_the_same_epic(monkeypatch) -> None
     assert result.task_key == "QCO-9"
     assert result.task_summary == "TVOSPR | vTVOS-10.13.2 | RELEASE"
     assert result.task_already_existed is False
-    assert len(created) == 1
+    assert result.subtask_count == 3
+    assert result.subtasks_already_existed == 0
+    assert len(created) == 4
     assert created[0]["issuetype"] == {"name": "Tarea"}
     assert created[0]["parent"] == {"key": "QCO-49805"}
     assert created[0]["assignee"] == {"accountId": "5f6a0720f0d4010070378042"}
@@ -267,10 +306,71 @@ def test_revalidation_adds_the_new_task_under_the_same_epic(monkeypatch) -> None
     assert "TVOSPR-2100" in description
     assert "TVOSPR-2108" in description
     assert "TVOSPR-255" not in description
+    assert [row["summary"] for row in created[1:]] == [
+        "TVOSPR | vTVOS-10.13.2 | TVOSPR-2100",
+        "TVOSPR | vTVOS-10.13.2 | Revisión QC Bugs",
+        "TVOSPR | vTVOS-10.13.2 | REGRESIÓN",
+    ]
+    assert all(row["issuetype"] == {"name": "Subtarea"} for row in created[1:])
+    assert all(row["parent"] == {"key": "QCO-9"} for row in created[1:])
+    assert all(row["assignee"] == {"accountId": "5f6a0720f0d4010070378042"} for row in created[1:])
+    assert created[1]["description"]["content"][0]["content"][0]["text"] == (
+        "Validación funcional de TVOSPR-2100 con la versión vTVOS-10.13.2"
+    )
+    assert "TVOSPR-2108" in _plain(created[2]["description"])
+    assert "TVOSPR-255" not in _plain(created[2]["description"])
+    assert _plain(created[3]["description"]) == "Regresión completa"
     assert updated[0][0] == "QCO-49805"
     assert updated[0][1]["summary"] == result.summary
     assert "qcpulse-d9" in updated[0][1]["labels"]
     assert attached == ["QCO-49805", "QCO-9"]
+
+
+def test_second_click_updates_subtasks_without_duplicating(monkeypatch) -> None:
+    scopes = (
+        _scope(1, "vWINCL-11.1.0", (("WINCL-528", ""),), (("WINCL-2358", ""),)),
+        _scope(2, "vWINCL-11.1.1", (("WINCL-528", ""),), (("WINCL-2358", ""), ("WINCL-2520", ""))),
+    )
+    draft = EpicDraft(
+        release_id=2,
+        summary="WINCL | vWINCL-11.1.1 | RELEASE",
+        description="tarea",
+        activity_type="Release",
+        environment="PROD",
+        assignee_id="60be5d2ba01e11006ab15146",
+        deliverable_id=4,
+        program="WINCL",
+        scopes=scopes,
+    )
+    created: list[dict] = []
+
+    def search(jql: str, limit: int = 5, fields: list[str] | None = None):
+        del limit, fields
+        if "Epic" in jql:
+            return [{"key": "QCO-1", "fields": {"labels": ["qcpulse-r1"]}}]
+        if "Subtarea" in jql and "Revisión QC Bugs" in jql:
+            return [{"key": "QCO-21"}]
+        if "Subtarea" in jql and "REGRESIÓN" in jql:
+            return [{"key": "QCO-22"}]
+        if "issuetype = \"Tarea\"" in jql and "summary" in jql:
+            return [{"key": "QCO-9"}]
+        if "labels in" in jql:
+            return [{"key": "QCO-9", "fields": {"labels": ["qcpulse-r2"]}}]
+        return []
+
+    monkeypatch.setattr("app.services.jira_epic._search", search)
+    monkeypatch.setattr("app.services.jira_epic._create_issue", lambda fields: created.append(fields) or "QCO-99")
+    monkeypatch.setattr("app.services.jira_epic._account_id", lambda: None)
+    monkeypatch.setattr("app.services.jira_epic._put_fields", lambda _key, _fields: None)
+    monkeypatch.setattr("app.services.jira_epic._read_labels", lambda _key: ["qcpulse"])
+    monkeypatch.setattr("app.services.jira_epic._attach_release_note", lambda _key, _draft: None)
+
+    result = publish_epic(draft)
+
+    assert created == []
+    assert result.task_already_existed is True
+    assert result.subtask_count == 2
+    assert result.subtasks_already_existed == 2
 
 
 def test_pdf_upload_is_multipart() -> None:

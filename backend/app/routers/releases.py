@@ -1429,7 +1429,7 @@ def create_jira_epic(
     payload: JiraEpicCreate,
     db: Session = Depends(get_db),
 ) -> JiraEpicResult:
-    """Create the QCO Epic for this deliverable and the Task for this version."""
+    """Create the QCO Epic, the Task for this version, and its subtasks."""
     release = get_release_or_404(release_id, db)
     try:
         draft = draft_for_release(db, release, payload.activity_type, payload.environment)
@@ -1452,6 +1452,8 @@ def create_jira_epic(
         task_key=result.task_key,
         task_summary=result.task_summary,
         task_already_existed=result.task_already_existed,
+        subtask_count=result.subtask_count,
+        subtasks_already_existed=result.subtasks_already_existed,
     )
 
 

@@ -8,6 +8,13 @@ import { jiraIssueUrl } from "@/lib/jira";
 type ActivityType = (typeof ACTIVITY_TYPE_OPTIONS)[number];
 type EnvironmentName = (typeof ENVIRONMENT_OPTIONS)[number];
 
+function subtaskLine(total: number, alreadyExisted: number): string {
+  const created = total - alreadyExisted;
+  const createdLabel = created === 1 ? "1 creada" : `${created} creadas`;
+  const existedLabel = alreadyExisted === 1 ? "1 ya estaba" : `${alreadyExisted} ya estaban`;
+  return `Subtareas: ${createdLabel}, ${existedLabel}.`;
+}
+
 export function JiraEpicButton({
   releaseId,
   activityType,
@@ -30,6 +37,8 @@ export function JiraEpicButton({
     taskKey: string;
     taskSummary: string;
     taskAlreadyExisted: boolean;
+    subtaskCount: number;
+    subtasksAlreadyExisted: number;
   } | null>(null);
 
   async function create(): Promise<void> {
@@ -51,6 +60,8 @@ export function JiraEpicButton({
         taskKey: created.task_key,
         taskSummary: created.task_summary,
         taskAlreadyExisted: created.task_already_existed,
+        subtaskCount: created.subtask_count,
+        subtasksAlreadyExisted: created.subtasks_already_existed,
       });
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : "No se pudo crear la EPC en Jira.");
@@ -66,7 +77,7 @@ export function JiraEpicButton({
     <div className="card" style={{ marginTop: "1rem" }}>
       <h2>Artefactos de Jira</h2>
       <p className="muted" style={{ fontSize: "12.5px", marginTop: 0 }}>
-        Se crea una EPC por entregable y una tarea por versión. La tarea queda asignada a la misma persona y su Principal es la EPC. Las subtareas quedan para el siguiente paso.
+        Se crea una EPC por entregable y una tarea por versión. Cada tarea abre una subtarea por funcionalidad, una con los QC Bugs y una de regresión. La tarea y las subtareas quedan asignadas a la misma persona.
       </p>
       <div className="form-actions" style={{ alignItems: "center" }}>
         <label htmlFor="jira-epic-type" className="muted" style={{ margin: 0 }}>Tipo</label>
@@ -108,6 +119,11 @@ export function JiraEpicButton({
             )}{" "}
             <span className="muted">{result.taskSummary}</span>
           </p>
+          {result.subtaskCount > 0 ? (
+            <p style={{ fontSize: "13px", marginBottom: 0 }}>
+              {subtaskLine(result.subtaskCount, result.subtasksAlreadyExisted)}
+            </p>
+          ) : null}
         </>
       ) : null}
     </div>

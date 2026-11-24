@@ -17,3 +17,5 @@ class JiraEpicResult(BaseModel):
     task_key: str
     task_summary: str
     task_already_existed: bool
+    subtask_count: int = 0
+    subtasks_already_existed: int = 0

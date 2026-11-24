@@ -3,7 +3,8 @@
 The Epic title is PROGRAMA | VERSIÓN | TIPO. A later version of the same
 deliverable renames that Epic with Ciclo1, Ciclo2, … and adds only the new
 scope. Each version gets its own Task, assigned to the same person, with the
-Epic in Principal. Subtasks are not created here.
+Epic in Principal. That task gets one Subtask per functionality, one for the
+QC bugs, and one whose description is the regression type.
 """
 
 from __future__ import annotations
@@ -28,6 +29,7 @@ from app.services.rn_storage import read_release_note_pdf
 PROJECT_KEY = "QCO"
 ISSUE_EPIC = "Epic"
 ISSUE_TASK = "Tarea"
+ISSUE_SUBTASK = "Subtarea"
 # The scheme lists this priority as "Importante", but creating with the name is rejected.
 # The id is what QCO accepts.
 PRIORITY_ID = "3"
@@ -110,6 +112,12 @@ class EpicDraft:
 
 
 @dataclass(frozen=True)
+class SubtaskDraft:
+    summary: str
+    description: str
+
+
+@dataclass(frozen=True)
 class EpicResult:
     already_existed: bool
     key: str
@@ -119,6 +127,8 @@ class EpicResult:
     task_key: str
     task_summary: str
     task_already_existed: bool
+    subtask_count: int = 0
+    subtasks_already_existed: int = 0
 
 
 @dataclass(frozen=True)
@@ -131,6 +141,7 @@ class _Plan:
     identity_labels: tuple[str, ...]
     task_labels: tuple[str, ...]
     lookup_summaries: tuple[str, ...]
+    subtasks: tuple[SubtaskDraft, ...] = ()
 
 
 def program_code(platform: str) -> str:
@@ -292,6 +303,7 @@ def publish_epic(draft: EpicDraft) -> EpicResult:
     task_key, task_existed = _ensure_task(draft, plan, epic_key)
     if plan.attach_pdf_to_task:
         _attach_release_note(task_key, draft)
+    subtasks = _ensure_subtasks(draft, plan, task_key)
     return EpicResult(
         already_existed=epic_existed,
         key=epic_key,
@@ -301,6 +313,8 @@ def publish_epic(draft: EpicDraft) -> EpicResult:
         task_key=task_key,
         task_summary=plan.task_summary,
         task_already_existed=task_existed,
+        subtask_count=len(subtasks),
+        subtasks_already_existed=sum(1 for _key, existed in subtasks if existed),
     )
 
 
@@ -318,24 +332,50 @@ def _description_for(scope: VersionScope) -> str:
 
 def task_description(scopes: list[VersionScope], current: VersionScope) -> str:
     """The first version lists its whole RN. A later version lists only new keys."""
-    prior = [scope for scope in scopes if scope.release_id < current.release_id]
-    if not prior:
+    if not any(scope.release_id < current.release_id for scope in scopes):
         return _description_for(current)
-    seen_func: set[str] = set()
-    seen_bugs: set[str] = set()
-    for scope in prior:
-        seen_func.update(_keyset(scope.functionalities))
-        seen_bugs.update(_keyset(scope.qc_bugs))
+    functionalities, bugs = _scoped_items(scopes, current)
     return epic_description(
         device=current.device,
         version=current.version,
         environment=current.environment,
         validation_type=current.validation_type,
         rn_filename=current.rn_filename,
-        functionalities=_unseen(current.functionalities, seen_func),
-        qc_bugs=_unseen(current.qc_bugs, seen_bugs),
+        functionalities=functionalities,
+        qc_bugs=bugs,
         empty_functionalities="No hay nuevas funcionalidades",
     )
+
+
+def subtasks_for(program: str, scopes: list[VersionScope], current: VersionScope) -> tuple[SubtaskDraft, ...]:
+    """One subtask per functionality, one for the QC bugs, and one for the regression type."""
+    functionalities, bugs = _scoped_items(scopes, current)
+    version = current.version
+    rows: list[SubtaskDraft] = []
+    seen: set[str] = set()
+    for key, _title in functionalities:
+        token = str(key).strip().upper()
+        if token in seen or not _KEY_RE.match(token):
+            continue
+        seen.add(token)
+        rows.append(
+            SubtaskDraft(
+                summary=f"{program} | {version} | {token}",
+                description=f"Validación funcional de {token} con la versión {version}",
+            )
+        )
+    if bugs:
+        listing = "\n".join(
+            [
+                f"Validación de los siguientes QC Bugs con la versión {version}:",
+                "",
+                *_lines(bugs, ""),
+            ]
+        ).strip()
+        rows.append(SubtaskDraft(summary=f"{program} | {version} | Revisión QC Bugs", description=listing))
+    regression = (current.validation_type or "").strip() or "Sin tipo de prueba"
+    rows.append(SubtaskDraft(summary=f"{program} | {version} | REGRESIÓN", description=regression))
+    return tuple(rows)
 
 
 def _delta_lines(
@@ -364,6 +404,20 @@ def _unseen(items: tuple[tuple[str, str], ...], seen: set[str]) -> list[tuple[st
         if _KEY_RE.match(token) and token not in seen:
             fresh.append((token, title))
     return fresh
+
+
+def _scoped_items(
+    scopes: list[VersionScope],
+    current: VersionScope,
+) -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
+    seen_func: set[str] = set()
+    seen_bugs: set[str] = set()
+    for scope in scopes:
+        if scope.release_id >= current.release_id:
+            continue
+        seen_func.update(_keyset(scope.functionalities))
+        seen_bugs.update(_keyset(scope.qc_bugs))
+    return _unseen(current.functionalities, seen_func), _unseen(current.qc_bugs, seen_bugs)
 
 
 def _deliverable_releases(db: Session, release: Release) -> list[Release]:
@@ -466,6 +520,7 @@ def _publication(draft: EpicDraft) -> _Plan:
         identity_labels=_identity_labels(draft.deliverable_id, tuple(scope.release_id for scope in included)),
         task_labels=_identity_labels(draft.deliverable_id, (current.release_id,)),
         lookup_summaries=tuple(dict.fromkeys((epic_summary, *single_titles))),
+        subtasks=subtasks_for(draft.program, included, current),
     )
 
 
@@ -657,6 +712,43 @@ def _ensure_task(draft: EpicDraft, plan: _Plan, epic_key: str) -> tuple[str, boo
         )
     )
     return key, False
+
+
+def _ensure_subtasks(draft: EpicDraft, plan: _Plan, task_key: str) -> list[tuple[str, bool]]:
+    ensured: list[tuple[str, bool]] = []
+    for subtask in plan.subtasks:
+        existing = _find_subtask(task_key, subtask.summary)
+        if existing:
+            fields: dict[str, Any] = {
+                "description": _adf(subtask.description),
+                "parent": {"key": task_key},
+            }
+            if draft.assignee_id:
+                fields["assignee"] = {"accountId": draft.assignee_id}
+            _put_fields(existing, fields)
+            ensured.append((existing, True))
+            continue
+        key = _create_issue(
+            _issue_fields(
+                issuetype=ISSUE_SUBTASK,
+                summary=subtask.summary,
+                description=subtask.description,
+                labels=_stored_labels(plan.task_labels),
+                assignee_id=draft.assignee_id,
+                parent_key=task_key,
+            )
+        )
+        ensured.append((key, False))
+    return ensured
+
+
+def _find_subtask(parent_key: str, summary: str) -> str | None:
+    jql = (
+        f"project = {PROJECT_KEY} AND issuetype = {_jql_quote(ISSUE_SUBTASK)} "
+        f"AND parent = {parent_key} AND summary = {_jql_quote(summary)} ORDER BY created DESC"
+    )
+    issues = _search(jql, limit=1)
+    return str(issues[0]["key"]) if issues else None
 
 
 def _find_epic(labels: tuple[str, ...], summaries: tuple[str, ...]) -> str | None:
