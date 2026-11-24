@@ -23,7 +23,14 @@ export function JiraEpicButton({
   const [env, setEnv] = useState(environment ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<{ key: string; summary: string; alreadyExisted: boolean } | null>(null);
+  const [result, setResult] = useState<{
+    key: string;
+    summary: string;
+    alreadyExisted: boolean;
+    taskKey: string;
+    taskSummary: string;
+    taskAlreadyExisted: boolean;
+  } | null>(null);
 
   async function create(): Promise<void> {
     if (!kind || !env || busy) {
@@ -41,6 +48,9 @@ export function JiraEpicButton({
         key: created.key,
         summary: created.summary,
         alreadyExisted: created.already_existed,
+        taskKey: created.task_key,
+        taskSummary: created.task_summary,
+        taskAlreadyExisted: created.task_already_existed,
       });
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : "No se pudo crear la EPC en Jira.");
@@ -50,12 +60,13 @@ export function JiraEpicButton({
   }
 
   const href = result ? jiraIssueUrl(result.key) : null;
+  const taskHref = result ? jiraIssueUrl(result.taskKey) : null;
 
   return (
     <div className="card" style={{ marginTop: "1rem" }}>
       <h2>Artefactos de Jira</h2>
       <p className="muted" style={{ fontSize: "12.5px", marginTop: 0 }}>
-        Con los casos ya generados se crea la EPC en QCO. La tarea y las subtareas quedan para el siguiente paso.
+        Se crea una EPC por entregable y una tarea por versión. La tarea queda asignada a la misma persona y su Principal es la EPC. Las subtareas quedan para el siguiente paso.
       </p>
       <div className="form-actions" style={{ alignItems: "center" }}>
         <label htmlFor="jira-epic-type" className="muted" style={{ margin: 0 }}>Tipo</label>
@@ -73,20 +84,31 @@ export function JiraEpicButton({
           ))}
         </select>
         <button type="button" disabled={!kind || !env || busy} onClick={() => void create()}>
-          {busy ? "Creando EPC…" : "Generar artefactos de Jira"}
+          {busy ? "Creando artefactos…" : "Generar artefactos de Jira"}
         </button>
       </div>
       {error ? <p className="error-text">{error}</p> : null}
       {result ? (
-        <p style={{ fontSize: "13px", marginBottom: 0 }}>
-          {result.alreadyExisted ? "Esa EPC ya estaba en Jira." : "EPC creada."}{" "}
-          {href ? (
-            <a href={href} target="_blank" rel="noreferrer">{result.key}</a>
-          ) : (
-            result.key
-          )}{" "}
-          <span className="muted">{result.summary}</span>
-        </p>
+        <>
+          <p style={{ fontSize: "13px", marginBottom: 0 }}>
+            {result.alreadyExisted ? "Esa EPC ya estaba en Jira." : "EPC creada."}{" "}
+            {href ? (
+              <a href={href} target="_blank" rel="noreferrer">{result.key}</a>
+            ) : (
+              result.key
+            )}{" "}
+            <span className="muted">{result.summary}</span>
+          </p>
+          <p style={{ fontSize: "13px", marginBottom: 0 }}>
+            {result.taskAlreadyExisted ? "Esa tarea ya estaba en Jira." : "Tarea creada."}{" "}
+            {taskHref ? (
+              <a href={taskHref} target="_blank" rel="noreferrer">{result.taskKey}</a>
+            ) : (
+              result.taskKey
+            )}{" "}
+            <span className="muted">{result.taskSummary}</span>
+          </p>
+        </>
       ) : null}
     </div>
   );

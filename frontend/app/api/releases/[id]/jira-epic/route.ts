@@ -9,7 +9,7 @@ export async function POST(
   const response = await proxyToBackend(
     `/api/v1/releases/${id}/jira-epic`,
     { method: "POST", body },
-    { timeoutMs: 60_000 },
+    { timeoutMs: 120_000 },
   );
   const payload = await response.json().catch(() => ({ detail: "Jira no respondió." }));
   return NextResponse.json(payload, { status: response.status });

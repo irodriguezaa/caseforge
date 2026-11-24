@@ -14,3 +14,6 @@ class JiraEpicResult(BaseModel):
     summary: str
     activity_type: str
     environment: str
+    task_key: str
+    task_summary: str
+    task_already_existed: bool

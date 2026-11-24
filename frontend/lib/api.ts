@@ -367,6 +367,9 @@ export const api = {
       summary: string;
       activity_type: string;
       environment: string;
+      task_key: string;
+      task_summary: string;
+      task_already_existed: boolean;
     }>(`/api/releases/${releaseId}/jira-epic`, {
       method: "POST",
       body: JSON.stringify(payload),

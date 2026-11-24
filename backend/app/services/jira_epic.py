@@ -1,7 +1,9 @@
-"""Create one QCO Epic from a release that already has test cases.
+"""Create one QCO Epic per deliverable and one Task per version.
 
-Tasks and subtasks are not created here. The Epic title is
-PROGRAMA | VERSIÓN | TIPO.
+The Epic title is PROGRAMA | VERSIÓN | TIPO. A later version of the same
+deliverable renames that Epic with Ciclo1, Ciclo2, … and adds only the new
+scope. Each version gets its own Task, assigned to the same person, with the
+Epic in Principal. Subtasks are not created here.
 """
 
 from __future__ import annotations
@@ -25,6 +27,7 @@ from app.services.rn_storage import read_release_note_pdf
 
 PROJECT_KEY = "QCO"
 ISSUE_EPIC = "Epic"
+ISSUE_TASK = "Tarea"
 # The scheme lists this priority as "Importante", but creating with the name is rejected.
 # The id is what QCO accepts.
 PRIORITY_ID = "3"
@@ -70,10 +73,25 @@ _PROGRAM_ASSIGNEE = {
 }
 _HEADINGS = {"Objetivo", "Contexto", "Alcance", "Otra información"}
 _KEY_RE = re.compile(r"^([A-Z][A-Z0-9]+)-\d+$")
+_ENVIRONMENTS = {"BERC", "FEHF", "OPER", "PROD"}
+_RELEASE_LABEL = re.compile(r"^qcpulse-r(\d+)$")
 
 
 class JiraEpicError(Exception):
     """The release is not ready to open an Epic."""
+
+
+@dataclass(frozen=True)
+class VersionScope:
+    release_id: int
+    version: str
+    device: str
+    environment: str
+    validation_type: str | None
+    rn_filename: str | None
+    activity_type: str
+    functionalities: tuple[tuple[str, str], ...]
+    qc_bugs: tuple[tuple[str, str], ...]
 
 
 @dataclass(frozen=True)
@@ -86,6 +104,9 @@ class EpicDraft:
     assignee_id: str | None = None
     pdf_path: str | None = None
     pdf_name: str | None = None
+    deliverable_id: int | None = None
+    program: str = ""
+    scopes: tuple[VersionScope, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -95,6 +116,21 @@ class EpicResult:
     summary: str
     activity_type: str
     environment: str
+    task_key: str
+    task_summary: str
+    task_already_existed: bool
+
+
+@dataclass(frozen=True)
+class _Plan:
+    epic_summary: str
+    epic_description: str
+    task_summary: str
+    task_description: str
+    attach_pdf_to_task: bool
+    identity_labels: tuple[str, ...]
+    task_labels: tuple[str, ...]
+    lookup_summaries: tuple[str, ...]
 
 
 def program_code(platform: str) -> str:
@@ -119,6 +155,16 @@ def epic_summary(program: str, version: str, activity_type: str) -> str:
     if not version_text:
         raise JiraEpicError("La release no tiene versión.")
     return f"{program} | {version_text} | {kind}"
+
+
+def cycle_title(program: str, versions: list[str], activity_type: str) -> str:
+    if len(versions) == 1:
+        return epic_summary(program, versions[0], activity_type)
+    kind = ACTIVITY_TITLE.get(activity_type)
+    if kind is None:
+        raise JiraEpicError("El tipo debe ser HotFix, Exc, Mantenimiento o Release.")
+    body = " ".join(f"Ciclo{index}: {version}" for index, version in enumerate(versions, start=1))
+    return f"{program} | {body} | {kind}"
 
 
 def epic_description(
@@ -169,6 +215,29 @@ def epic_description(
     )
 
 
+def accumulated_description(scopes: list[VersionScope]) -> str:
+    """Cycle 1 keeps its full text. Each later cycle adds only the new keys."""
+    if not scopes:
+        raise JiraEpicError("La release no tiene versión.")
+    text = _description_for(scopes[0])
+    if len(scopes) == 1:
+        return text
+    seen_func = _keyset(scopes[0].functionalities)
+    seen_bugs = _keyset(scopes[0].qc_bugs)
+    extra: list[str] = []
+    for scope in scopes[1:]:
+        new_func = _unseen(scope.functionalities, seen_func)
+        new_bugs = _unseen(scope.qc_bugs, seen_bugs)
+        seen_func.update(_keyset(scope.functionalities))
+        seen_bugs.update(_keyset(scope.qc_bugs))
+        extra.extend(_delta_lines(scope, new_func, new_bugs))
+    marker = "\nOtra información\n"
+    if marker not in text:
+        return text.rstrip() + "\n\n" + "\n".join(extra).strip("\n")
+    head, tail = text.split(marker, 1)
+    return head.rstrip() + "\n\n" + "\n".join(extra).strip("\n") + "\n\nOtra información\n" + tail
+
+
 def draft_for_release(
     db: Session,
     release: Release,
@@ -179,7 +248,7 @@ def draft_for_release(
     chosen_env = environment or release.environment
     if chosen_type not in ACTIVITY_TITLE:
         raise JiraEpicError("Elige el Tipo: HotFix, Exc, Mantenimiento o Release.")
-    if chosen_env not in {"BERC", "FEHF", "OPER", "PROD"}:
+    if chosen_env not in _ENVIRONMENTS:
         raise JiraEpicError("Elige el Ambiente: BERC, FEHF, OPER o PROD.")
 
     case_count = db.scalar(
@@ -188,32 +257,18 @@ def draft_for_release(
     if not case_count:
         raise JiraEpicError("Genera los casos de prueba antes de crear la EPC.")
 
-    analysis = db.scalars(
-        select(ReleaseAnalysis)
-        .where(ReleaseAnalysis.release_id == release.id)
-        .order_by(ReleaseAnalysis.created_at.desc())
-    ).first()
-    functionalities = _bucket(analysis, "technical_epics")
-    bugs = _bucket(analysis, "qc_bugs") or _bucket(analysis, "qa_qc")
-    keys = [key for key, _title in functionalities]
-    if not keys:
-        keys = _case_keys(db, release.id)
-    version = re.sub(r"\s+", " ", (release.version or "").strip())
-    program = program_code(release.platform)
-    summary = epic_summary(program, version, chosen_type)
-    description = epic_description(
-        device=release.platform,
-        version=version,
-        environment=chosen_env,
-        validation_type=release.validation_type,
-        rn_filename=analysis.pdf_filename if analysis is not None else None,
-        functionalities=functionalities or [(key, "") for key in keys],
-        qc_bugs=bugs,
-    )
     if activity_type is not None:
         release.activity_type = activity_type
     if environment is not None:
         release.environment = environment
+    program = program_code(release.platform)
+    scopes = tuple(
+        _scope_for_release(db, row, chosen_type, chosen_env) for row in _deliverable_releases(db, release)
+    )
+    current = next(scope for scope in scopes if scope.release_id == release.id)
+    analysis = _latest_analysis(db, release.id)
+    summary = cycle_title(program, [current.version], chosen_type)
+    description = _description_for(current)
     return EpicDraft(
         release_id=release.id,
         summary=summary,
@@ -223,29 +278,171 @@ def draft_for_release(
         assignee_id=assignee_for(program),
         pdf_path=analysis.pdf_file_path if analysis is not None else None,
         pdf_name=analysis.pdf_filename if analysis is not None else None,
+        deliverable_id=release.deliverable_id,
+        program=program,
+        scopes=scopes,
     )
 
 
 def publish_epic(draft: EpicDraft) -> EpicResult:
-    existing = _find_epic(draft.summary)
-    if existing:
-        _update_description(existing, draft.description)
-        _attach_release_note(existing, draft)
-        return EpicResult(
-            already_existed=True,
-            key=existing,
-            summary=draft.summary,
-            activity_type=draft.activity_type,
-            environment=draft.environment,
-        )
-    key = _create_issue(_fields(draft))
-    _attach_release_note(key, draft)
+    plan = _publication(draft)
+    epic_key, epic_existed = _ensure_epic(draft, plan)
+    _attach_release_note(epic_key, draft)
+    task_key, task_existed = _ensure_task(draft, plan, epic_key)
+    if plan.attach_pdf_to_task:
+        _attach_release_note(task_key, draft)
     return EpicResult(
-        already_existed=False,
-        key=key,
-        summary=draft.summary,
+        already_existed=epic_existed,
+        key=epic_key,
+        summary=plan.epic_summary,
         activity_type=draft.activity_type,
         environment=draft.environment,
+        task_key=task_key,
+        task_summary=plan.task_summary,
+        task_already_existed=task_existed,
+    )
+
+
+def _description_for(scope: VersionScope) -> str:
+    return epic_description(
+        device=scope.device,
+        version=scope.version,
+        environment=scope.environment,
+        validation_type=scope.validation_type,
+        rn_filename=scope.rn_filename,
+        functionalities=list(scope.functionalities),
+        qc_bugs=list(scope.qc_bugs),
+    )
+
+
+def _delta_lines(
+    scope: VersionScope,
+    functionalities: list[tuple[str, str]],
+    bugs: list[tuple[str, str]],
+) -> list[str]:
+    lines = [f"Nuevo alcance en la versión {scope.version}", ""]
+    if functionalities:
+        lines.extend(["Listado de EPCs (funcionalidades)", *_lines(functionalities, ""), ""])
+    if bugs:
+        lines.extend(["Listado de QA/QC Bugs", *_lines(bugs, ""), ""])
+    regression = (scope.validation_type or "").strip() or "Sin tipo de prueba"
+    lines.append(f"Tipo de regresión: {regression}")
+    return lines
+
+
+def _keyset(items: tuple[tuple[str, str], ...] | list[tuple[str, str]]) -> set[str]:
+    return {key.strip().upper() for key, _title in items if _KEY_RE.match(str(key).strip().upper())}
+
+
+def _unseen(items: tuple[tuple[str, str], ...], seen: set[str]) -> list[tuple[str, str]]:
+    fresh: list[tuple[str, str]] = []
+    for key, title in items:
+        token = str(key).strip().upper()
+        if _KEY_RE.match(token) and token not in seen:
+            fresh.append((token, title))
+    return fresh
+
+
+def _deliverable_releases(db: Session, release: Release) -> list[Release]:
+    if release.deliverable_id is None:
+        return [release]
+    rows = list(
+        db.scalars(
+            select(Release)
+            .where(Release.deliverable_id == release.deliverable_id)
+            .order_by(Release.id.asc())
+        ).all()
+    )
+    if not any(row.id == release.id for row in rows):
+        rows.append(release)
+        rows.sort(key=lambda row: row.id)
+    return rows or [release]
+
+
+def _latest_analysis(db: Session, release_id: int) -> ReleaseAnalysis | None:
+    return db.scalars(
+        select(ReleaseAnalysis)
+        .where(ReleaseAnalysis.release_id == release_id)
+        .order_by(ReleaseAnalysis.created_at.desc())
+    ).first()
+
+
+def _scope_for_release(
+    db: Session,
+    release: Release,
+    fallback_type: str,
+    fallback_env: str,
+) -> VersionScope:
+    version = re.sub(r"\s+", " ", (release.version or "").strip())
+    if not version:
+        raise JiraEpicError("La release no tiene versión.")
+    kind = release.activity_type if release.activity_type in ACTIVITY_TITLE else fallback_type
+    environment = release.environment if release.environment in _ENVIRONMENTS else fallback_env
+    analysis = _latest_analysis(db, release.id)
+    functionalities = _bucket(analysis, "technical_epics")
+    bugs = _bucket(analysis, "qc_bugs") or _bucket(analysis, "qa_qc")
+    keys = [key for key, _title in functionalities]
+    if not keys:
+        keys = _case_keys(db, release.id)
+        functionalities = [(key, "") for key in keys]
+    return VersionScope(
+        release_id=release.id,
+        version=version,
+        device=release.platform,
+        environment=environment,
+        validation_type=release.validation_type,
+        rn_filename=analysis.pdf_filename if analysis is not None else None,
+        activity_type=kind,
+        functionalities=tuple(functionalities),
+        qc_bugs=tuple(bugs),
+    )
+
+
+def _identity_labels(deliverable_id: int | None, release_ids: tuple[int, ...]) -> tuple[str, ...]:
+    labels: list[str] = []
+    if deliverable_id is not None:
+        labels.append(f"qcpulse-d{deliverable_id}")
+    for release_id in release_ids:
+        label = f"qcpulse-r{release_id}"
+        if label not in labels:
+            labels.append(label)
+    return tuple(labels)
+
+
+def _publication(draft: EpicDraft) -> _Plan:
+    if not draft.scopes:
+        labels = _identity_labels(draft.deliverable_id, (draft.release_id,))
+        return _Plan(
+            epic_summary=draft.summary,
+            epic_description=draft.description,
+            task_summary=draft.summary,
+            task_description=draft.description,
+            attach_pdf_to_task=False,
+            identity_labels=labels,
+            task_labels=labels,
+            lookup_summaries=(draft.summary,),
+        )
+    if not draft.program:
+        raise JiraEpicError("El dispositivo no tiene programa de QCO.")
+    published = _published_release_ids([scope.release_id for scope in draft.scopes])
+    latest = max([draft.release_id, *published])
+    included = [scope for scope in draft.scopes if scope.release_id <= latest]
+    current = next((scope for scope in draft.scopes if scope.release_id == draft.release_id), None)
+    if current is None or not included:
+        raise JiraEpicError("La release no tiene versión.")
+    kind = included[0].activity_type if included[0].activity_type in ACTIVITY_TITLE else draft.activity_type
+    versions = [scope.version for scope in included]
+    epic_summary = cycle_title(draft.program, versions, kind)
+    single_titles = tuple(cycle_title(draft.program, [scope.version], kind) for scope in included)
+    return _Plan(
+        epic_summary=epic_summary,
+        epic_description=accumulated_description(included),
+        task_summary=cycle_title(draft.program, [current.version], draft.activity_type),
+        task_description=_description_for(current),
+        attach_pdf_to_task=included[0].release_id != current.release_id,
+        identity_labels=_identity_labels(draft.deliverable_id, tuple(scope.release_id for scope in included)),
+        task_labels=_identity_labels(draft.deliverable_id, (current.release_id,)),
+        lookup_summaries=tuple(dict.fromkeys((epic_summary, *single_titles))),
     )
 
 
@@ -295,17 +492,35 @@ def _lines(items: list[tuple[str, str]], empty: str) -> list[str]:
     return lines or [empty]
 
 
-def _fields(draft: EpicDraft) -> dict[str, Any]:
+def _stored_labels(identity: tuple[str, ...]) -> list[str]:
+    labels = ["qcpulse"]
+    for label in identity:
+        if label not in labels:
+            labels.append(label)
+    return labels
+
+
+def _issue_fields(
+    *,
+    issuetype: str,
+    summary: str,
+    description: str,
+    labels: list[str],
+    assignee_id: str | None,
+    parent_key: str | None = None,
+) -> dict[str, Any]:
     fields: dict[str, Any] = {
         "project": {"key": PROJECT_KEY},
-        "issuetype": {"name": ISSUE_EPIC},
-        "summary": draft.summary,
+        "issuetype": {"name": issuetype},
+        "summary": summary,
         "priority": {"id": PRIORITY_ID},
-        "description": _adf(draft.description),
-        "labels": ["qcpulse", f"qcpulse-r{draft.release_id}"],
+        "description": _adf(description),
+        "labels": labels,
     }
-    if draft.assignee_id:
-        fields["assignee"] = {"accountId": draft.assignee_id}
+    if assignee_id:
+        fields["assignee"] = {"accountId": assignee_id}
+    if parent_key:
+        fields["parent"] = {"key": parent_key}
     account = _account_id()
     if account:
         fields["reporter"] = {"accountId": account}
@@ -352,7 +567,8 @@ def _adf(text: str) -> dict[str, Any]:
             content.append({"type": "paragraph", "content": []})
             continue
         node: dict[str, Any] = {"type": "text", "text": line}
-        if line.strip() in _HEADINGS:
+        stripped = line.strip()
+        if stripped in _HEADINGS or stripped.startswith("Nuevo alcance en la versión"):
             node["marks"] = [{"type": "strong"}]
         content.append({"type": "paragraph", "content": [node]})
     flush_issues()
@@ -361,12 +577,9 @@ def _adf(text: str) -> dict[str, Any]:
     return {"type": "doc", "version": 1, "content": content}
 
 
-def _update_description(key: str, description: str) -> None:
+def _put_fields(key: str, fields: dict[str, Any]) -> None:
     with _client() as client:
-        response = client.put(
-            f"/rest/api/3/issue/{key}",
-            json={"fields": {"description": _adf(description)}},
-        )
+        response = client.put(f"/rest/api/3/issue/{key}", json={"fields": fields})
     if response.status_code not in (200, 204):
         raise JiraApiError(response.status_code, response.text[:800])
 
@@ -375,20 +588,124 @@ def _jql_quote(value: str) -> str:
     return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
-def _find_epic(summary: str) -> str | None:
-    jql = (
-        f"project = {PROJECT_KEY} AND issuetype = Epic AND summary = {_jql_quote(summary)} "
-        "ORDER BY created DESC"
+def _ensure_epic(draft: EpicDraft, plan: _Plan) -> tuple[str, bool]:
+    existing = _find_epic(plan.identity_labels, plan.lookup_summaries)
+    if existing:
+        _put_fields(
+            existing,
+            {
+                "summary": plan.epic_summary,
+                "description": _adf(plan.epic_description),
+                "labels": _merge_labels(existing, plan.identity_labels),
+            },
+        )
+        return existing, True
+    key = _create_issue(
+        _issue_fields(
+            issuetype=ISSUE_EPIC,
+            summary=plan.epic_summary,
+            description=plan.epic_description,
+            labels=_stored_labels(plan.identity_labels),
+            assignee_id=draft.assignee_id,
+        )
     )
-    issues = _search(jql)
+    return key, False
+
+
+def _ensure_task(draft: EpicDraft, plan: _Plan, epic_key: str) -> tuple[str, bool]:
+    existing = _find_by_summary(ISSUE_TASK, plan.task_summary)
+    if existing:
+        fields: dict[str, Any] = {
+            "description": _adf(plan.task_description),
+            "parent": {"key": epic_key},
+        }
+        if draft.assignee_id:
+            fields["assignee"] = {"accountId": draft.assignee_id}
+        _put_fields(existing, fields)
+        return existing, True
+    key = _create_issue(
+        _issue_fields(
+            issuetype=ISSUE_TASK,
+            summary=plan.task_summary,
+            description=plan.task_description,
+            labels=_stored_labels(plan.task_labels),
+            assignee_id=draft.assignee_id,
+            parent_key=epic_key,
+        )
+    )
+    return key, False
+
+
+def _find_epic(labels: tuple[str, ...], summaries: tuple[str, ...]) -> str | None:
+    if labels:
+        quoted = ", ".join(_jql_quote(label) for label in labels)
+        jql = (
+            f"project = {PROJECT_KEY} AND issuetype = {_jql_quote(ISSUE_EPIC)} "
+            f"AND labels in ({quoted}) ORDER BY created ASC"
+        )
+        issues = _search(jql, limit=5)
+        if issues:
+            return str(issues[0]["key"])
+    for summary in summaries:
+        found = _find_by_summary(ISSUE_EPIC, summary)
+        if found:
+            return found
+    return None
+
+
+def _find_by_summary(issuetype: str, summary: str) -> str | None:
+    jql = (
+        f"project = {PROJECT_KEY} AND issuetype = {_jql_quote(issuetype)} "
+        f"AND summary = {_jql_quote(summary)} ORDER BY created DESC"
+    )
+    issues = _search(jql, limit=1)
     return str(issues[0]["key"]) if issues else None
 
 
-def _search(jql: str) -> list[dict[str, Any]]:
+def _published_release_ids(release_ids: list[int]) -> set[int]:
+    if not release_ids:
+        return set()
+    quoted = ", ".join(_jql_quote(f"qcpulse-r{release_id}") for release_id in release_ids)
+    jql = (
+        f"project = {PROJECT_KEY} AND issuetype = {_jql_quote(ISSUE_TASK)} "
+        f"AND labels in ({quoted}) ORDER BY created ASC"
+    )
+    found: set[int] = set()
+    for issue in _search(jql, limit=50, fields=["labels"]):
+        labels = (issue.get("fields") or {}).get("labels") or []
+        for label in labels:
+            match = _RELEASE_LABEL.match(str(label))
+            if match:
+                found.add(int(match.group(1)))
+    return found
+
+
+def _merge_labels(key: str, identity: tuple[str, ...]) -> list[str]:
+    merged = _read_labels(key)
+    for label in _stored_labels(identity):
+        if label not in merged:
+            merged.append(label)
+    return merged
+
+
+def _read_labels(key: str) -> list[str]:
+    with _client() as client:
+        response = client.get(f"/rest/api/3/issue/{key}", params={"fields": "labels"})
+    if response.status_code != 200:
+        return []
+    labels = ((response.json().get("fields") or {}).get("labels") or [])
+    return [str(label) for label in labels]
+
+
+def _search(
+    jql: str,
+    limit: int = 5,
+    fields: list[str] | None = None,
+) -> list[dict[str, Any]]:
     with _client() as client:
         response = client.post(
             "/rest/api/3/search/jql",
-            json={"jql": jql, "maxResults": 5, "fields": ["summary"]},
+            json={"jql": jql, "maxResults": limit, "fields": fields or ["summary"]},
         )
     if response.status_code != 200:
         raise JiraApiError(response.status_code, response.text[:500])
@@ -403,7 +720,7 @@ def _create_issue(fields: dict[str, Any]) -> str:
         raise JiraApiError(response.status_code, response.text[:800])
     key = str(response.json().get("key") or "")
     if not key:
-        raise JiraApiError(response.status_code, "Jira no devolvió la key de la EPC.")
+        raise JiraApiError(response.status_code, "Jira no devolvió la clave del artefacto.")
     return key
 
 
