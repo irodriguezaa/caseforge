@@ -731,7 +731,6 @@ export default function ReleasesPage(): React.ReactElement {
                 <th>Versión</th>
                 <th>Dispositivo</th>
                 <th>Cluster</th>
-                <th>Entregable</th>
                 <th>Tipo</th>
                 <th>Ambiente</th>
                 <th className="num"># Func.</th>
@@ -751,17 +750,6 @@ export default function ReleasesPage(): React.ReactElement {
                   <td className="muted">{release.platform}</td>
                   <td className="muted">{release.cluster ?? "—"}</td>
                   <td className="muted">
-                    {release.deliverable_name
-                      ? `${release.deliverable_name}${
-                          release.release_type === "REVALIDACION"
-                            ? " · Revalidación"
-                            : release.release_type === "NUEVO"
-                              ? " · Nuevo"
-                              : ""
-                        }`
-                      : "—"}
-                  </td>
-                  <td className="muted">
                     {release.activity_type ? ACTIVITY_LABEL[release.activity_type] ?? release.activity_type : "—"}
                   </td>
                   <td className="muted">{release.environment ?? "—"}</td>
@@ -776,7 +764,7 @@ export default function ReleasesPage(): React.ReactElement {
               ))}
               {visibleReleases.length === 0 && (
                 <tr>
-                  <td colSpan={10} className="muted">
+                  <td colSpan={9} className="muted">
                     {releases.length === 0
                       ? "No hay releases todavía."
                       : "No hay releases con este estado."}
