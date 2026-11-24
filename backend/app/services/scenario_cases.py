@@ -1139,6 +1139,23 @@ def _covering_case(unit: CoverageUnit, pool: list[GeneratedCaseCandidate]) -> Ge
     from app.services.gherkin_coverage import _cover_tokens
 
     needle = _cover_tokens(f"{unit.scenario or ''} {unit.body or ''}") - _GENERIC_COVER
+    distinct = re.search(
+        r"cambiar el (audio|subt[ií]tulo)",
+        f"{unit.scenario or ''} {unit.body or ''}",
+        re.IGNORECASE,
+    )
+    if distinct:
+        phrase = distinct.group(0)
+        pool = [
+            row
+            for row in pool
+            if any(re.search(phrase, f"{step.action or ''} {row.name or ''}", re.I) for step in row.steps)
+            and not (
+                re.search(r"subt[ií]tulo", phrase, re.I)
+                and re.search(r"cambiar el audio\b", row.name or "", re.I)
+                and not re.search(r"cambiar el subt[ií]tulo\b", row.name or "", re.I)
+            )
+        ]
     if not pool:
         return None
     if len(needle) < 1:

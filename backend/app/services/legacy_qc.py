@@ -1040,6 +1040,14 @@ def _sentence(text: str) -> str:
     raw = re.sub(r"\s+", " ", (text or "").strip())
     if not raw:
         return ""
+    # Un Scenario Outline "Then se aplica <resultado>" pega el verbo al valor del ejemplo.
+    raw = re.sub(
+        r"^(?:se aplica|el resultado es)\s+[\"“”']*((?:no\s+)?se\b[^\"“”']*)[\"“”']*$",
+        r"\1",
+        raw,
+        count=1,
+        flags=re.IGNORECASE,
+    )
     raw = raw[0].upper() + raw[1:]
     if raw[-1] not in ".!?":
         raw += "."
@@ -1597,8 +1605,61 @@ def _present_screen_first(steps: list, units: list) -> list:
     return [intro, *steps]
 
 
-def _check_after_action(steps: list) -> list:
-    """La comprobación del Then es un paso propio cuando el caso tenía una sola acción."""
+def _observation_target(expected: str, title: str) -> str:
+    """El objeto que Luminia pondría en «Observar …», sacado del Then o del título."""
+    first = re.split(r"(?<=[.!?])\s+", re.sub(r"\s+", " ", expected or "").strip())
+    cut = first[0] if first else ""
+    cut = re.sub(
+        r"^(?:(?:WEB|WIN|STV|ADT)CL|la aplicación)\s+(?:no\s+)?(?:presenta|muestra)\s+",
+        "",
+        cut,
+        flags=re.IGNORECASE,
+    )
+    shown = re.search(
+        r"^((?:el|la|los|las)\s+\S+(?:\s+\S+){0,4})\s+se muestra\b",
+        cut,
+        flags=re.IGNORECASE,
+    )
+    if shown:
+        cut = shown.group(1)
+    else:
+        cut = re.sub(
+            r"^(?:se muestra|se presenta|se visualiza|no se muestra|no se presenta)\s+",
+            "",
+            cut,
+            flags=re.IGNORECASE,
+        )
+    cut = re.sub(
+        r"\s+(?:con|conforme|según|segun|para|actualmente|mediante|cuando)\b.*",
+        "",
+        cut,
+        flags=re.IGNORECASE,
+    )
+    cut = cut.strip(" .\"“”")
+    words = cut.split()
+    if (
+        2 <= len(words) <= 6
+        and re.match(r"^(?:el|la|los|las|un|una)\b", cut, re.IGNORECASE)
+        and not re.search(r"\b(se\s+\w+|sigue|queda|presenta|muestra|da|falla|conserva)\b", cut, re.IGNORECASE)
+    ):
+        return cut[0].lower() + cut[1:]
+    named = re.search(
+        r"\b(?:del|de la|de los|de las)\s+([A-Za-zÁ-úáéíóúñ][^.]{2,40})$",
+        title or "",
+        re.IGNORECASE,
+    )
+    if not named:
+        return ""
+    phrase = named.group(1).strip(" .")
+    if not 1 <= len(phrase.split()) <= 6:
+        return ""
+    if re.search(r"\b(se\s+\w+|sigue|queda|presenta|muestra|falla|conserva)\b", phrase, re.IGNORECASE):
+        return ""
+    return phrase[0].lower() + phrase[1:]
+
+
+def _check_after_action(steps: list, title: str = "") -> list:
+    """Separa el ingreso de la observación cuando el Then nombra lo que hay que mirar."""
     from app.schemas.case_generation import CandidateStep
 
     if len(steps) != 1:
@@ -1606,26 +1667,39 @@ def _check_after_action(steps: list) -> list:
     step = steps[0]
     if (
         _FROZEN_ONE_STEP.match(step.action or "")
-        or re.match(r"^comprobar\b", step.action or "", re.I)
+        or re.match(r"^(?:comprobar|observar)\b", step.action or "", re.I)
         or re.search(r"\bpin\b", step.action or "", re.I)
     ):
         return steps
     expected = (step.expected_result or "").strip()
-    if not expected or _RESULT_LEAD.search(step.action or ""):
+    if not expected or _RESULT_LEAD.search(step.action or "") or _RESULT_LEAD.search(expected):
+        return steps
+    target = _observation_target(expected, title)
+    if not target:
         return steps
     action = step.action or ""
-    echo = ""
-    named = re.match(r"^(?:Ingresar|Acceder)\s+a\s+la\s+(.+)$", action, re.IGNORECASE)
-    if named:
-        echo = f"Se muestra la {named.group(1).strip(' .')}."
-        if fold(expected) == fold(echo):
-            return steps
-    step.expected_result = echo or "La acción se completa."
+    if re.search(r"credencial", action, re.I):
+        echo = "Las credenciales quedan ingresadas."
+    else:
+        head = re.split(r"\s+y\s+", action, maxsplit=1, flags=re.IGNORECASE)[0]
+        named = re.match(
+            r"^(?:Ingresar|Acceder|Abrir|Entrar)\s+(?:a\s+|al\s+)?(.+)$",
+            head,
+            re.IGNORECASE,
+        )
+        echo = f"Se muestra {named.group(1).strip(' .')}." if named else ""
+        if not echo:
+            fallback = _fallback_result(action)
+            if fallback != "La pantalla queda en el estado siguiente.":
+                echo = fallback
+    if not echo or fold(expected) == fold(echo):
+        return steps
+    step.expected_result = echo
     return [
         step,
         CandidateStep(
             step_number=2,
-            action="Comprobar el resultado en pantalla",
+            action=f"Observar {target}",
             expected_result=expected,
             covered_unit_ids=list(step.covered_unit_ids or []),
         ),
@@ -1725,7 +1799,7 @@ def finish_case(case, units: list) -> None:
                 )
             ]
     steps = _present_screen_first(steps, units)
-    steps = _check_after_action(steps)
+    steps = _check_after_action(steps, title)
     for index, step in enumerate(steps, start=1):
         step.step_number = index
         step.action = _plain_step(_strip_md(step.action or ""))

@@ -576,6 +576,23 @@ def test_corrected_incidents_get_a_retest_case():
     assert clean_incident_title("ADTCL-1305", "ADTCL-1305: No sevisualizan contenidos QA Validation").startswith(
         "No se visualizan"
     )
+    from app.services.legacy_qc import _sentence
+
+    from app.services.legacy_qc import _observation_target
+
+    assert _observation_target(
+        "WEBCL presenta el Modal de transición con la experiencia configurada.",
+        "Modal de transición",
+    ) == "el Modal de transición"
+    assert _observation_target("El logotipo se muestra en el modal.", "Resolución de textos") == "el logotipo"
+    assert _observation_target("Se presentan ambos.", "Reglas de presentación del bloque promocional") == "bloque promocional"
+    assert _sentence("se aplica se presentan ambos") == "Se presentan ambos."
+    assert _sentence('el resultado es "se muestran ambos"') == "Se muestran ambos."
+    assert _sentence("No se aplica ninguna ventana de supresión.") == "No se aplica ninguna ventana de supresión."
+    assert (
+        _sentence("El resultado es indistinguible del comportamiento anterior al cambio.")
+        == "El resultado es indistinguible del comportamiento anterior al cambio."
+    )
     kind, _reason = legacy_disposition(
         "Texto sin cargar",
         "Given la llave no está cargada\nWhen el usuario abre la pantalla\nThen conserva el comportamiento vigente y no se muestra el nombre de la llave",
