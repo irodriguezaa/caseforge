@@ -581,7 +581,7 @@ export default function ReleaseDetailPage(): React.ReactElement {
   const { hours: caseHours, days: caseDays } = isOperativa
     ? estimateOperativaEffort(visibleCases)
     : isApp
-      ? estimateReleaseEffortFromCases(visibleCases)
+      ? estimateReleaseEffortFromCases(rnCases)
       : { hours: 0, days: 0 };
   const scopeHours = isBe
     ? beQcScopeHours(release.validation_type || release.regresivo_scope)
@@ -1044,6 +1044,11 @@ export default function ReleaseDetailPage(): React.ReactElement {
             { label: "Días-persona", value: personDays.toFixed(1) },
             { label: "Duración estimada", value: `${estimatedDurationDays.toFixed(1)} días` },
             { label: "Recursos QC", value: String(qcResources) },
+            {
+              label: "Regresión fija",
+              value: scopeHours > 0 ? `${scopeHours.toFixed(0)} h` : "—",
+              tip: "Tiempo fijo del tipo de regresión. Ya está incluido en el esfuerzo, los días-persona y la duración. No se suma de nuevo por cada caso de la matriz.",
+            },
           ].map((stat) => (
             <div
               key={stat.label}
