@@ -586,6 +586,8 @@ def test_corrected_incidents_get_a_retest_case():
     ) == "el Modal de transición"
     assert _observation_target("El logotipo se muestra en el modal.", "Resolución de textos") == "el logotipo"
     assert _observation_target("Se presentan ambos.", "Reglas de presentación del bloque promocional") == "bloque promocional"
+    assert _observation_target("El video se reproduce al cruzar la medianoche.", "Reproducción del Video de Marca del día") == ""
+    assert _observation_target("La pantalla deja de estar montada.", "La pantalla se libera") == ""
     assert _sentence("se aplica se presentan ambos") == "Se presentan ambos."
     assert _sentence('el resultado es "se muestran ambos"') == "Se muestran ambos."
     assert _sentence("No se aplica ninguna ventana de supresión.") == "No se aplica ninguna ventana de supresión."

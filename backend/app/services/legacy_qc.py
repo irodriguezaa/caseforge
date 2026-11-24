@@ -1605,6 +1605,26 @@ def _present_screen_first(steps: list, units: list) -> list:
     return [intro, *steps]
 
 
+_SCREEN_NOUN = re.compile(
+    r"\b(pantalla|modal|men[uú]|logotipo|logo|bloque|texto|centro|bot[oó]n|"
+    r"alerta|video|landing|panel|home|formulario|mensaje|imagen|carrusel|"
+    r"banner|notificaci[oó]n|experiencia)\b",
+    re.IGNORECASE,
+)
+_NOT_A_LOOK = re.compile(
+    r"\b(deja|dirige|tiene|sale|montada|sigue|queda|presenta|muestra|falla|conserva|"
+    r"d[ií]a|dispositivo|navegador|usuario|operaci[oó]n|aplicaci[oó]n|llaves?|sistema)\b",
+    re.IGNORECASE,
+)
+
+
+def _looks_on_screen(phrase: str) -> str:
+    text = re.sub(r"\s+", " ", phrase or "").strip(" .")
+    if not text or not _SCREEN_NOUN.search(text) or _NOT_A_LOOK.search(text):
+        return ""
+    return text[0].lower() + text[1:]
+
+
 def _observation_target(expected: str, title: str) -> str:
     """El objeto que Luminia pondría en «Observar …», sacado del Then o del título."""
     first = re.split(r"(?<=[.!?])\s+", re.sub(r"\s+", " ", expected or "").strip())
@@ -1637,12 +1657,10 @@ def _observation_target(expected: str, title: str) -> str:
     )
     cut = cut.strip(" .\"“”")
     words = cut.split()
-    if (
-        2 <= len(words) <= 6
-        and re.match(r"^(?:el|la|los|las|un|una)\b", cut, re.IGNORECASE)
-        and not re.search(r"\b(se\s+\w+|sigue|queda|presenta|muestra|da|falla|conserva)\b", cut, re.IGNORECASE)
-    ):
-        return cut[0].lower() + cut[1:]
+    if 2 <= len(words) <= 6 and re.match(r"^(?:el|la|los|las|un|una)\b", cut, re.IGNORECASE):
+        found = _looks_on_screen(cut)
+        if found:
+            return found
     named = re.search(
         r"\b(?:del|de la|de los|de las)\s+([A-Za-zÁ-úáéíóúñ][^.]{2,40})$",
         title or "",
@@ -1651,11 +1669,9 @@ def _observation_target(expected: str, title: str) -> str:
     if not named:
         return ""
     phrase = named.group(1).strip(" .")
-    if not 1 <= len(phrase.split()) <= 6:
+    if not 2 <= len(phrase.split()) <= 6:
         return ""
-    if re.search(r"\b(se\s+\w+|sigue|queda|presenta|muestra|falla|conserva)\b", phrase, re.IGNORECASE):
-        return ""
-    return phrase[0].lower() + phrase[1:]
+    return _looks_on_screen(phrase)
 
 
 def _check_after_action(steps: list, title: str = "") -> list:
@@ -1787,7 +1803,13 @@ def finish_case(case, units: list) -> None:
         if not visible and criterion:
             visible = _strip_md(re.sub(r"^(?:then|entonces)\s+", "", primary.body or "", flags=re.I))
         action = _leading_action(units) or _entry_screen(units)
-        if not action and criterion:
+        plain = _strip_md(visible or "")
+        if re.search(r"campos de facturaci[oó]n incompletos", plain, re.I):
+            action = "Dejar incompletos los campos de facturación"
+            visible = re.split(r",\s*", plain, maxsplit=1)[-1]
+            if visible:
+                visible = visible[0].upper() + visible[1:]
+        elif not action and criterion:
             action = _action_from_clause(visible)
         if visible and action:
             steps = [

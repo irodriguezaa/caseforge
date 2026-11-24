@@ -1213,8 +1213,6 @@ def _keep_uncovered_epic_criteria(
             if (other.related_functionality or "").split(" | ")[0].strip() == epic
         ]
         cover = _covering_case(unit, pool)
-        if cover is None and "criterio-precubierto" in (unit.applied_rules or []) and pool:
-            cover = pool[0]
         if cover is not None:
             rules = list(unit.applied_rules or [])
             if "criterio-cubierto" not in rules:
