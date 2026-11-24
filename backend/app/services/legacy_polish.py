@@ -50,6 +50,10 @@ def polish_model() -> str:
     )
 
 
+def fallback_model() -> str:
+    return (os.getenv("QC_LLM_FALLBACK_MODEL") or getattr(settings, "qc_llm_fallback_model", "") or "").strip()
+
+
 def _groq_key() -> str:
     own = (os.getenv("GROQ_API_KEY") or getattr(settings, "groq_api_key", "") or "").strip()
     if own:
@@ -147,8 +151,12 @@ def _gherkin(case: GeneratedCaseCandidate, by_id: dict) -> str:
     return "\n".join(parts)[:12000]
 
 
-def _hash(payload: dict[str, Any]) -> str:
-    blob = json.dumps({"model": polish_model(), "entrada": payload}, ensure_ascii=False, sort_keys=True)
+def _hash(payload: dict[str, Any], model: str | None = None) -> str:
+    blob = json.dumps(
+        {"model": model or polish_model(), "entrada": payload},
+        ensure_ascii=False,
+        sort_keys=True,
+    )
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 
@@ -263,19 +271,61 @@ def _post(payload: dict[str, Any], key: str) -> httpx.Response:
         )
 
 
-def _retry_after(response: httpx.Response) -> float:
-    raw = response.headers.get("Retry-After")
+class GroqDailyLimit(Exception):
+    """Groq cortó por el cupo del día. No se reintenta en bucle."""
+
+    def __init__(self, retry_after: float, model: str) -> None:
+        self.retry_after = retry_after
+        self.model = model
+        super().__init__(f"límite diario de Groq ({model})")
+
+
+def _retry_after_seconds(response: httpx.Response, *, cap: float) -> float:
+    raw = (response.headers.get("Retry-After") or "").strip()
     if not raw:
         return 2.0
     try:
-        return min(max(float(raw), 0.2), 60.0)
+        value = float(raw)
     except ValueError:
-        return 2.0
+        try:
+            from email.utils import parsedate_to_datetime
+
+            moment = parsedate_to_datetime(raw)
+            value = moment.timestamp() - time.time()
+        except (TypeError, ValueError, OSError):
+            value = 2.0
+    return min(max(value, 0.2), cap)
 
 
-def _call(messages: list[dict[str, str]], key: str) -> tuple[str, int]:
-    """Una llamada. Ante 429/413 espera y reintenta. No aborta la corrida."""
-    model = polish_model()
+def _is_daily_limit(response: httpx.Response) -> bool:
+    if response.status_code != 429:
+        return False
+    retry = (response.headers.get("x-should-retry") or "").strip().lower()
+    if retry == "false":
+        return True
+    text = (response.text or "").lower()
+    return "tokens per day" in text or "tpd" in text
+
+
+def _log_groq(response: httpx.Response, model: str) -> None:
+    if response.status_code == 429 and _is_daily_limit(response):
+        kind = "TPD"
+    elif response.status_code == 429:
+        kind = "TPM"
+    else:
+        kind = "-"
+    logger.warning(
+        "groq HTTP %s modelo=%s limite=%s retry_after=%s",
+        response.status_code,
+        model,
+        kind,
+        response.headers.get("Retry-After") or "-",
+    )
+
+
+def _call(messages: list[dict[str, str]], key: str, model: str | None = None) -> tuple[str, int]:
+    """Una llamada. 429 TPM espera y sigue. 429 TPD no entra al bucle."""
+    model = (model or polish_model()).strip()
     estimate = max(200, sum(len(item.get("content") or "") for item in messages) // 3)
     use_temp = True
     use_json = True
@@ -295,8 +345,13 @@ def _call(messages: list[dict[str, str]], key: str) -> tuple[str, int]:
             response = _post(body, key)
         except (httpx.TimeoutException, httpx.TransportError) as exc:
             last = exc.__class__.__name__
+            logger.warning("groq HTTP transporte modelo=%s limite=- retry_after=- error=%s", model, exc.__class__.__name__)
             time.sleep(1.5)
             continue
+        if response.status_code != 200:
+            _log_groq(response, model)
+        if _is_daily_limit(response):
+            raise GroqDailyLimit(_retry_after_seconds(response, cap=86400), model)
         if response.status_code == 400 and use_temp and "temperature" in response.text.lower():
             use_temp = False
             continue
@@ -307,7 +362,7 @@ def _call(messages: list[dict[str, str]], key: str) -> tuple[str, int]:
             use_reasoning = False
             continue
         if response.status_code in (413, 429) or response.status_code >= 500:
-            time.sleep(_retry_after(response))
+            time.sleep(_retry_after_seconds(response, cap=60))
             last = f"HTTP {response.status_code}"
             continue
         if response.status_code != 200:
@@ -362,6 +417,30 @@ def _diffs(case_id: str, before: dict[str, Any], after: dict[str, Any]) -> list[
     return rows
 
 
+def _is_transient(reason: str) -> bool:
+    text = (reason or "").lower()
+    markers = (
+        "429",
+        "tpd",
+        "tpm",
+        "tokens per day",
+        "tokens per minute",
+        "timeout",
+        "timed out",
+        "http 5",
+        "http 413",
+        "http 408",
+        "transport",
+        "connect",
+        "network",
+        "remoteprotocol",
+        "sin groq_api_key",
+        "sin respuesta",
+        "límite diario",
+    )
+    return any(marker in text for marker in markers)
+
+
 def _polish_one(
     case: GeneratedCaseCandidate,
     payload: dict[str, Any],
@@ -372,71 +451,105 @@ def _polish_one(
     key: str,
     retries: int,
     cache: dict[str, Any],
-) -> None:
-    digest = _hash(payload)
+    model: str | None = None,
+    case_id: str = "",
+    release_id: str | None = None,
+) -> str:
+    """Reescribe un caso. Devuelve el modelo que respondió. GroqDailyLimit se propaga."""
+    current = (model or polish_model()).strip()
     original_name = case.name or ""
-    cached = cache.get(digest)
-    if isinstance(cached, dict) and cached.get("status") in {"ia", "fallback"}:
-        _finish_cached(case, cached, original_name, stats)
-        logger.info("polish cache %s %s", cached.get("status"), original_name[:80])
-        return
-    if not key:
-        _fallback(case, stats, "sin GROQ_API_KEY", original_name, digest, cache, None)
-        return
-    messages = [
-        {"role": "system", "content": _SYSTEM},
-        {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
-    ]
-    reason = ""
-    rewritten: dict[str, Any] | None = None
-    spent = 0
-    for attempt in range(retries + 1):
-        try:
-            content, tokens = _call(messages, key)
-        except Exception as exc:
-            reason = str(exc) or exc.__class__.__name__
-            break
-        spent += tokens
-        if not content:
-            reason = "sin respuesta del modelo"
-            break
-        try:
-            parsed = extract_json_object(content)
-            rewritten = _parse_case(parsed)
-            reason = _validate(
-                payload, rewritten, bodies, legacy_name=original_name, scenario=scenario
-            )
-        except (LlmError, ValueError) as exc:
-            rewritten = None
-            reason = str(exc)
-        if not reason and rewritten is not None:
-            break
-        if attempt >= retries:
-            rewritten = None
-            break
+    label = case_id or original_name
+    switched: set[str] = set()
+    while True:
+        digest = _hash(payload, current)
+        cached = cache.get(digest)
+        if isinstance(cached, dict) and cached.get("status") in {"ia", "fallback"}:
+            _finish_cached(case, cached, original_name, stats)
+            if cached.get("status") == "ia":
+                logger.info("polish ia %s", label)
+            else:
+                logger.info("polish fallback %s: %s", label, _short_reason(str(cached.get("reason") or "")))
+            return current
+        if not key:
+            _fallback(case, stats, "sin GROQ_API_KEY", original_name, digest, cache, None, label=label)
+            return current
         messages = [
-            *messages,
-            {"role": "assistant", "content": content[:4000]},
-            {
-                "role": "user",
-                "content": (
-                    f"El JSON no pasó la validación: {reason}. "
-                    "Corrige solo el texto y responde el JSON, con los mismos pasos y variantes."
-                ),
-            },
+            {"role": "system", "content": _SYSTEM},
+            {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
         ]
-    stats.polish_tokens += spent
-    logger.info("polish %s %s", "ia" if not reason and rewritten else f"fallback: {reason}", original_name[:80])
-    if reason or rewritten is None:
-        _fallback(case, stats, reason or "respuesta inválida", original_name, digest, cache, spent)
-        return
-    before = payload["caso"]
-    _apply(case, rewritten, original_name)
-    _retarget(stats, original_name, case.name)
-    stats.polish_ia += 1
-    stats.polish_comparison.extend(_diffs(case.name, before, rewritten))
-    cache[digest] = {"status": "ia", "case": rewritten, "before": before, "tokens": spent}
-    _store_cache(cache)
+        reason = ""
+        rewritten: dict[str, Any] | None = None
+        spent = 0
+        try:
+            for attempt in range(retries + 1):
+                try:
+                    content, tokens = _call(messages, key, current)
+                except GroqDailyLimit:
+                    raise
+                except Exception as exc:
+                    reason = str(exc) or exc.__class__.__name__
+                    break
+                spent += tokens
+                if not content:
+                    reason = "sin respuesta del modelo"
+                    break
+                try:
+                    parsed = extract_json_object(content)
+                    rewritten = _parse_case(parsed)
+                    reason = _validate(
+                        payload, rewritten, bodies, legacy_name=original_name, scenario=scenario
+                    )
+                except (LlmError, ValueError) as exc:
+                    rewritten = None
+                    reason = str(exc)
+                if not reason and rewritten is not None:
+                    break
+                if attempt >= retries:
+                    rewritten = None
+                    break
+                messages = [
+                    *messages,
+                    {"role": "assistant", "content": content[:4000]},
+                    {
+                        "role": "user",
+                        "content": (
+                            f"El JSON no pasó la validación: {reason}. "
+                            "Corrige solo el texto y responde el JSON, con los mismos pasos y variantes."
+                        ),
+                    },
+                ]
+        except GroqDailyLimit as exc:
+            alt = fallback_model()
+            if alt and alt != current and alt not in switched:
+                switched.add(current)
+                logger.warning("groq límite diario modelo=%s; sigue con %s", current, alt)
+                if release_id is not None:
+                    _set_job_model(release_id, alt)
+                current = alt
+                continue
+            raise exc
+        stats.polish_tokens += spent
+        if reason or rewritten is None:
+            _fallback(
+                case,
+                stats,
+                reason or "respuesta inválida",
+                original_name,
+                digest,
+                cache,
+                spent,
+                label=label,
+            )
+            return current
+        before = payload["caso"]
+        _apply(case, rewritten, original_name)
+        _retarget(stats, original_name, case.name)
+        stats.polish_ia += 1
+        stats.polish_comparison.extend(_diffs(case.name, before, rewritten))
+        cache[digest] = {"status": "ia", "case": rewritten, "before": before, "tokens": spent}
+        _store_cache(cache)
+        logger.info("polish ia %s", label)
+        return current
 
 
 def polish_legacy_cases(
@@ -475,6 +588,8 @@ def polish_legacy_cases(
             key=key,
             retries=retries,
             cache=cache,
+            model=polish_model(),
+            case_id=case.name or "",
         )
 
 
@@ -551,6 +666,8 @@ def _fallback(
     digest: str,
     cache: dict[str, Any],
     tokens: int | None,
+    *,
+    label: str = "",
 ) -> None:
     short = _short_reason(reason)
     case.redaccion = f"Legacy (fallback: {short})"
@@ -558,6 +675,9 @@ def _fallback(
     stats.polish_comparison.append(
         {"id": original_name, "campo": "Fallback", "legacy": original_name, "ia": short}
     )
+    logger.info("polish fallback %s: %s", label or original_name, short)
+    if _is_transient(reason):
+        return
     cache[digest] = {"status": "fallback", "reason": short, "tokens": tokens or 0}
     _store_cache(cache)
 
@@ -565,6 +685,7 @@ def _fallback(
 _JOB_LOCK = threading.Condition()
 _THREAD: threading.Thread | None = None
 _CANCELLED: set[str] = set()
+_EPOCH: dict[str, int] = {}
 _REDACCION_LINE = re.compile(r"\n?Redacción:.*\Z", re.IGNORECASE | re.DOTALL)
 
 
@@ -598,6 +719,7 @@ def clear_polish_job(release_id: int) -> None:
     key = str(release_id)
     with _JOB_LOCK:
         _CANCELLED.add(key)
+        _EPOCH[key] = _EPOCH.get(key, 0) + 1
         data = _load_jobs()
         data.get("releases", {}).pop(key, None)
         _store_jobs(data)
@@ -609,11 +731,22 @@ def _counts(items: list[dict[str, Any]]) -> tuple[int, int, int]:
     return done, len(items), fallbacks
 
 
-def _label(items: list[dict[str, Any]], running: bool) -> str:
+def _pause_label(paused_until: float | None) -> str:
+    moment = float(paused_until or 0)
+    if moment <= time.time():
+        return ""
+    hhmm = time.strftime("%H:%M", time.localtime(moment))
+    return f"pausada – límite diario de Groq (reanuda {hhmm})"
+
+
+def _label(items: list[dict[str, Any]], running: bool, paused_until: float | None = None) -> str:
     done, total, fallbacks = _counts(items)
     if total == 0:
         return ""
     if done < total:
+        paused = _pause_label(paused_until)
+        if paused:
+            return paused
         return f"en curso ({done}/{total})" if running else "pendiente"
     if fallbacks:
         return "con fallbacks"
@@ -625,17 +758,21 @@ def polish_status(release_id: int) -> dict[str, Any]:
     job = (data.get("releases") or {}).get(str(release_id)) or {}
     items = list(job.get("items") or [])
     done, total, fallbacks = _counts(items)
+    paused_until = job.get("paused_until")
     running = bool(job.get("running")) and done < total
     epics: dict[str, str] = {}
     grouped: dict[str, list[dict[str, Any]]] = {}
     for item in items:
         grouped.setdefault(str(item.get("epic") or "—"), []).append(item)
     for epic, rows in grouped.items():
-        epic_running = running and any(not row.get("done") for row in rows)
-        epics[epic] = _label(rows, epic_running)
+        epic_pending = any(not row.get("done") for row in rows)
+        epic_running = running and epic_pending
+        epics[epic] = _label(rows, epic_running, paused_until if epic_pending else None)
+    models = [str(model) for model in (job.get("models") or []) if model]
     return {
         "enabled": polish_enabled(),
-        "label": _label(items, running) if polish_enabled() or items else "",
+        "label": _label(items, running, paused_until) if polish_enabled() or items else "",
+        "model": ", ".join(models),
         "done": done,
         "total": total,
         "fallbacks": fallbacks,
@@ -664,11 +801,18 @@ def polish_export_overlay(release_id: int, coverage: dict[str, Any] | None) -> d
                 )
     if not items and not rows:
         return coverage
+    ia = sum(1 for item in items if not item.get("fallback"))
+    fallbacks = sum(1 for item in items if item.get("fallback"))
+    tokens = int(job.get("tokens") or 0)
+    finished = ia + fallbacks
+    models = [str(model) for model in (job.get("models") or []) if model]
     merged = dict(coverage or {})
     merged["llm_polish"] = {
-        "ia": sum(1 for item in items if not item.get("fallback")),
-        "fallbacks": sum(1 for item in items if item.get("fallback")),
-        "tokens": int(job.get("tokens") or 0),
+        "ia": ia,
+        "fallbacks": fallbacks,
+        "tokens": tokens,
+        "model": ", ".join(models),
+        "average_tokens": round(tokens / finished) if finished else 0,
         "rows": rows,
     }
     return merged
@@ -704,16 +848,32 @@ def schedule_persisted_polish(release_id: int, rows: list, work: list[dict[str, 
     key = str(release_id)
     with _JOB_LOCK:
         _CANCELLED.discard(key)
+        epoch = _EPOCH.get(key, 0)
         data = _load_jobs()
         releases = data.setdefault("releases", {})
-        current = releases.get(key) or {"items": [], "tokens": 0, "running": False, "started": None, "finished": None}
+        current = releases.get(key) or {
+            "items": [],
+            "tokens": 0,
+            "running": False,
+            "started": None,
+            "finished": None,
+            "epoch": epoch,
+            "models": [],
+        }
         current.setdefault("items", [])
+        current.setdefault("models", [])
+        current["epoch"] = current.get("epoch", epoch)
+        for item in queued:
+            item["epoch"] = current["epoch"]
         current["items"].extend(queued)
         current["finished"] = None
+        current["paused_until"] = None
+        current["running"] = True
         releases[key] = current
         _store_jobs(data)
+        logger.info("polish encolados %s para release %s", len(queued), release_id)
         _JOB_LOCK.notify()
-    _ensure_thread()
+        _ensure_thread_locked()
 
 
 def resume_interrupted_jobs() -> None:
@@ -731,27 +891,35 @@ def resume_interrupted_jobs() -> None:
         _ensure_thread()
 
 
-def _ensure_thread() -> None:
+def _ensure_thread_locked() -> None:
+    """El llamador ya tiene _JOB_LOCK."""
     global _THREAD
+    if _THREAD is not None and _THREAD.is_alive():
+        return
+    _THREAD = threading.Thread(target=_run_jobs, name="polish-legacy", daemon=True)
+    _THREAD.start()
+
+
+def _ensure_thread() -> None:
     with _JOB_LOCK:
-        if _THREAD is not None and _THREAD.is_alive():
-            return
-        _THREAD = threading.Thread(target=_run_jobs, name="polish-legacy", daemon=True)
-        _THREAD.start()
+        _ensure_thread_locked()
 
 
 def _take_locked() -> tuple[str, dict[str, Any]] | None:
     data = _load_jobs()
     releases = data.get("releases") or {}
     for key, job in releases.items():
-        if key in _CANCELLED:
-            continue
         for item in job.get("items") or []:
             if not item.get("done") and not item.get("claimed"):
                 item["claimed"] = True
                 job["running"] = True
                 job["started"] = job.get("started") or time.time()
                 _store_jobs(data)
+                logger.info(
+                    "polish hilo tomó caso %s (release %s)",
+                    item.get("label") or item.get("db_id"),
+                    key,
+                )
                 return key, item
     changed = False
     for job in releases.values():
@@ -767,9 +935,7 @@ def _take_locked() -> tuple[str, dict[str, Any]] | None:
 
 def _pending_locked() -> bool:
     data = _load_jobs()
-    for key, job in (data.get("releases") or {}).items():
-        if key in _CANCELLED:
-            continue
+    for job in (data.get("releases") or {}).values():
         if any(not item.get("done") and not item.get("claimed") for item in job.get("items") or []):
             return True
     return False
@@ -788,16 +954,72 @@ def _run_jobs() -> None:
         if claimed is None:
             continue
         release_id, item = claimed
-        if release_id in _CANCELLED:
-            continue
         try:
             _process_item(int(release_id), item)
+        except GroqDailyLimit as exc:
+            _pause_for_daily_limit(release_id, item, exc)
         except Exception:
             logger.exception("polish job release=%s caso=%s", release_id, item.get("db_id"))
-            _mark(release_id, item, fallback=True, tokens=0, rows=[], redaccion="error interno")
+            _mark(release_id, item, fallback=True, tokens=0, rows=[], redaccion="error interno", model="")
+
+
+def _same_generation(release_id: str, epoch: int | None) -> bool:
+    if release_id in _CANCELLED:
+        return False
+    data = _load_jobs()
+    job = (data.get("releases") or {}).get(release_id)
+    return bool(job) and job.get("epoch") == epoch
+
+
+def _active_model(release_id: str) -> str:
+    data = _load_jobs()
+    job = (data.get("releases") or {}).get(release_id) or {}
+    return str(job.get("model") or polish_model())
+
+
+def _set_job_model(release_id: str, model: str) -> None:
+    with _JOB_LOCK:
+        data = _load_jobs()
+        job = (data.get("releases") or {}).get(str(release_id))
+        if not job:
+            return
+        job["model"] = model
+        _store_jobs(data)
+
+
+def _pause_for_daily_limit(release_id: str, item: dict[str, Any], exc: GroqDailyLimit) -> None:
+    wait = max(float(exc.retry_after or 1), 1.0)
+    until = time.time() + wait
+    with _JOB_LOCK:
+        data = _load_jobs()
+        job = (data.get("releases") or {}).get(release_id)
+        if job:
+            for current in job.get("items") or []:
+                if current.get("db_id") == item.get("db_id") and not current.get("done"):
+                    current["claimed"] = False
+            job["paused_until"] = until
+            job["running"] = True
+            job.pop("model", None)
+            _store_jobs(data)
+    logger.warning(
+        "polish pausada release=%s reanuda=%s",
+        release_id,
+        time.strftime("%H:%M", time.localtime(until)),
+    )
+    time.sleep(wait)
+    with _JOB_LOCK:
+        data = _load_jobs()
+        job = (data.get("releases") or {}).get(release_id)
+        if job and job.get("paused_until"):
+            job["paused_until"] = None
+            job["running"] = True
+            _store_jobs(data)
 
 
 def _process_item(release_id: int, item: dict[str, Any]) -> None:
+    key = str(release_id)
+    if not _same_generation(key, item.get("epoch")):
+        return
     stored = _stored_redaccion(int(item["db_id"]))
     if stored:
         _mark(
@@ -827,7 +1049,7 @@ def _process_item(release_id: int, item: dict[str, Any]) -> None:
         steps=steps,
     )
     stats = GenerationStats()
-    _polish_one(
+    model = _polish_one(
         case,
         item.get("payload") or {},
         item.get("bodies") or "",
@@ -836,15 +1058,21 @@ def _process_item(release_id: int, item: dict[str, Any]) -> None:
         key=_groq_key(),
         retries=max(0, int(getattr(settings, "qc_llm_polish_retries", 1) or 1)),
         cache=_load_cache(),
+        model=_active_model(key),
+        case_id=str(item.get("label") or ""),
+        release_id=key,
     )
+    if not _same_generation(key, item.get("epoch")):
+        return
     _apply_saved(int(item["db_id"]), case)
     _mark(
-        str(release_id),
+        key,
         item,
         fallback=not (case.redaccion == "IA"),
         tokens=stats.polish_tokens,
         rows=list(stats.polish_comparison),
         redaccion=case.redaccion or "",
+        model=model,
     )
 
 
@@ -856,11 +1084,14 @@ def _mark(
     tokens: int,
     rows: list[dict[str, str]],
     redaccion: str,
+    model: str = "",
 ) -> None:
     with _JOB_LOCK:
         data = _load_jobs()
         job = (data.get("releases") or {}).get(release_id)
         if not job:
+            return
+        if item.get("epoch") is not None and job.get("epoch") != item.get("epoch"):
             return
         for current in job.get("items") or []:
             if current.get("db_id") == item.get("db_id") and current.get("claimed") and not current.get("done"):
@@ -871,6 +1102,10 @@ def _mark(
                 current["rows"] = rows
                 current["redaccion"] = redaccion
                 job["tokens"] = int(job.get("tokens") or 0) + int(tokens or 0)
+                if model:
+                    models = job.setdefault("models", [])
+                    if model not in models:
+                        models.append(model)
                 break
         items = job.get("items") or []
         if items and all(row.get("done") for row in items):

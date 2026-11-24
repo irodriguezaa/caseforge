@@ -41,6 +41,7 @@ class Settings:
     qc_llm_polish: str = (os.getenv("QC_LLM_POLISH", "off") or "off").strip().lower()
     qc_llm_tpm_limit: int = int(os.getenv("QC_LLM_TPM_LIMIT", "7000") or 7000)
     qc_llm_polish_retries: int = int(os.getenv("QC_LLM_MAX_RETRIES", "1") or 1)
+    qc_llm_fallback_model: str = (os.getenv("QC_LLM_FALLBACK_MODEL", "") or "").strip()
     groq_api_key: str = os.getenv("GROQ_API_KEY", "")
     qc_v2_model_a: str = (
         os.getenv("OPENAI_QC_MODEL_A")

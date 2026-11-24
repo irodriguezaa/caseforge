@@ -161,7 +161,10 @@ export default function ReleaseDetailPage(): React.ReactElement {
       api.getPolishStatus(releaseId).then((status) => {
         if (stop) return;
         setPolish(status);
-        const active = status.label === "pendiente" || status.label.startsWith("en curso");
+        const active =
+          status.label === "pendiente" ||
+          status.label.startsWith("en curso") ||
+          status.label.startsWith("pausada");
         if (active) {
           polishWasActive.current = true;
           timer = window.setTimeout(tick, 3000);

@@ -260,6 +260,10 @@ def test_excel_marks_redaccion_and_comparison() -> None:
     assert book["Avance"]["H1"].value == "Redacción IA"
     assert book["Avance"]["I1"].value == 1
     assert book["Avance"]["I3"].value == 30
+    assert book["Avance"]["H4"].value == "Modelo"
+    assert book["Avance"]["I4"].value in ("", None)
+    assert book["Avance"]["H5"].value == "Tokens promedio"
+    assert book["Avance"]["I5"].value == 30
     assert book["Comparación IA"]["A2"].value == "QC-001"
     assert book["Comparación IA"]["B2"].value == "Título"
     assert "Escenarios de Jira" in book.sheetnames
@@ -356,3 +360,126 @@ def test_schedule_returns_before_the_model_answers(monkeypatch, tmp_path) -> Non
     assert status["label"] == "lista"
     assert status["epics"]["WEBCL-1586"] == "lista"
     polish.clear_polish_job(41)
+
+
+def test_enqueue_clears_the_cancelled_release(monkeypatch, tmp_path) -> None:
+    import threading
+
+    from app.services import legacy_polish as polish
+
+    _enable(monkeypatch, tmp_path)
+    hold = threading.Event()
+
+    def post(*_a, **_k):
+        assert hold.wait(2)
+        return _response(_ok())
+
+    monkeypatch.setattr("app.services.legacy_polish._post", post)
+    monkeypatch.setattr("app.services.legacy_polish._stored_redaccion", lambda *_a, **_k: None)
+    monkeypatch.setattr("app.services.legacy_polish._apply_saved", lambda *_a, **_k: None)
+    polish.clear_polish_job(77)
+    assert "77" in polish._CANCELLED
+    case = _case()
+    case.related_functionality = "WEBCL-1586"
+    row = SimpleNamespace(id=77, test_case_id="QC-077", technical_epic="WEBCL-1586")
+    schedule_persisted_polish(77, [row], collect_polish_work([case], [_unit()]))
+    assert "77" not in polish._CANCELLED
+    assert polish_status(77)["label"].startswith("en curso")
+    hold.set()
+    assert polish._THREAD is not None
+    polish._THREAD.join(3)
+    assert polish_status(77)["label"] == "lista"
+    polish.clear_polish_job(77)
+
+
+def test_daily_limit_pauses_and_does_not_cache_the_rest(monkeypatch, tmp_path) -> None:
+    import threading
+
+    from app.services import legacy_polish as polish
+
+    _enable(monkeypatch, tmp_path)
+    gate = threading.Event()
+    paused = threading.Event()
+    state = {"tpd": True, "sleeps": 0}
+
+    def sleep(*_a, **_k):
+        state["sleeps"] += 1
+        if state["sleeps"] == 1:
+            paused.set()
+            assert gate.wait(3)
+
+    def post(*_a, **_k):
+        if state["tpd"]:
+            return httpx.Response(
+                429,
+                headers={"Retry-After": "30", "x-should-retry": "false"},
+                json={"error": "tokens per day (TPD)"},
+            )
+        return _response(_ok())
+
+    monkeypatch.setattr("app.services.legacy_polish.time.sleep", sleep)
+    monkeypatch.setattr("app.services.legacy_polish._post", post)
+    monkeypatch.setattr("app.services.legacy_polish._stored_redaccion", lambda *_a, **_k: None)
+    monkeypatch.setattr("app.services.legacy_polish._apply_saved", lambda *_a, **_k: None)
+    rows = [
+        SimpleNamespace(id=81, test_case_id="QC-081", technical_epic="WEBCL-1"),
+        SimpleNamespace(id=82, test_case_id="QC-082", technical_epic="WEBCL-1"),
+    ]
+    schedule_persisted_polish(81, rows, collect_polish_work([_case(), _case()], [_unit(), _unit()]))
+    assert paused.wait(3)
+    status = polish_status(81)
+    assert status["label"].startswith("pausada – límite diario de Groq (reanuda ")
+    assert status["done"] == 0
+    cache_path = tmp_path / "cache.json"
+    cached = json.loads(cache_path.read_text(encoding="utf-8")) if cache_path.exists() else {}
+    assert all(item.get("status") != "fallback" for item in cached.values())
+    state["tpd"] = False
+    gate.set()
+    assert polish._THREAD is not None
+    polish._THREAD.join(4)
+    done = polish_status(81)
+    assert done["label"] == "lista"
+    assert done["fallbacks"] == 0
+    assert done["ia"] == 2
+    cached = json.loads(cache_path.read_text(encoding="utf-8"))
+    assert cached
+    assert all(item.get("status") == "ia" for item in cached.values())
+    polish.clear_polish_job(81)
+
+
+def test_fallback_model_takes_over_the_daily_limit(monkeypatch, tmp_path) -> None:
+    _enable(monkeypatch, tmp_path)
+    monkeypatch.setenv("QC_LLM_MODEL", "openai/gpt-oss-120b")
+    monkeypatch.setenv("QC_LLM_FALLBACK_MODEL", "openai/gpt-oss-20b")
+    seen: list[str] = []
+
+    def post(payload, *_a, **_k):
+        seen.append(payload["model"])
+        if payload["model"] == "openai/gpt-oss-120b":
+            return httpx.Response(
+                429,
+                headers={"Retry-After": "10", "x-should-retry": "false"},
+                json={"error": "tokens per day (TPD)"},
+            )
+        return _response(_ok())
+
+    monkeypatch.setattr("app.services.legacy_polish._post", post)
+    case = _case()
+    polish_legacy_cases([case], [_unit()], GenerationStats())
+    assert seen == ["openai/gpt-oss-120b", "openai/gpt-oss-20b"]
+    assert case.redaccion == "IA"
+
+
+def test_server_error_is_not_cached(monkeypatch, tmp_path) -> None:
+    _enable(monkeypatch, tmp_path)
+
+    def post(*_a, **_k):
+        return _response("", status=503)
+
+    monkeypatch.setattr("app.services.legacy_polish._post", post)
+    case = _case()
+    polish_legacy_cases([case], [_unit()], GenerationStats())
+    assert case.redaccion.startswith("Legacy (fallback:")
+    cache_path = tmp_path / "cache.json"
+    cached = json.loads(cache_path.read_text(encoding="utf-8")) if cache_path.exists() else {}
+    assert cached == {}

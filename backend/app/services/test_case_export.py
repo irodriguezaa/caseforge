@@ -721,6 +721,16 @@ def build_test_cases_workbook(
         avance["I2"] = int(polish.get("fallbacks") or 0)
         avance["H3"] = "Tokens"
         avance["I3"] = int(polish.get("tokens") or 0)
+        avance["H4"] = "Modelo"
+        avance["I4"] = str(polish.get("model") or "")
+        ia = int(polish.get("ia") or 0)
+        fallbacks = int(polish.get("fallbacks") or 0)
+        finished = ia + fallbacks
+        average = polish.get("average_tokens")
+        if average is None:
+            average = round(int(polish.get("tokens") or 0) / finished) if finished else 0
+        avance["H5"] = "Tokens promedio"
+        avance["I5"] = average
         rows = [row for row in (polish.get("rows") or []) if isinstance(row, dict)]
         if rows:
             compared = workbook.create_sheet("Comparación IA")
