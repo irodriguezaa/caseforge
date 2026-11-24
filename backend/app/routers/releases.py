@@ -1065,7 +1065,10 @@ def _generate_cases_from_rn(
                 ", ".join(dropped_non_epic),
             )
     scoped_key = (functionality_key or "").strip().upper() or None
-    if chunked and not scoped_key:
+    is_revalidation = (
+        release.release_type == ReleaseType.REVALIDACION and release.parent_release_id is not None
+    )
+    if chunked and not scoped_key and not is_revalidation:
         if regenerate:
             delete_engine_cases(db, release.id)
             from app.services.legacy_polish import clear_polish_job
@@ -1128,6 +1131,18 @@ def _generate_cases_from_rn(
         ):
             return _incomplete_qa_qc_response(release)
         prior_functionality, prior_qa_qc, prior_nco = _rn_cells_from_analysis(origin_analysis)
+        from app.services.rn_revalidation_scope import origin_scope_keys
+
+        already_known = origin_scope_keys(origin_analysis.raw_analysis if origin_analysis is not None else None)
+        if already_known:
+            tickets = {
+                bucket: [
+                    (ticket_id, cell)
+                    for ticket_id, cell in rows
+                    if str(ticket_id).strip().upper() not in already_known
+                ]
+                for bucket, rows in tickets.items()
+            }
         proposal = generate_revalidation_candidates(
             release_id=release.id,
             release_name=release.name,

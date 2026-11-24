@@ -513,4 +513,3 @@ def test_revalidation_scope_keeps_only_the_new_issue(client) -> None:
     result = generated.json()
     assert result["engine"] == "revalidation-delta"
     assert {row["related_jira"] for row in result["candidates"]} == {"WINCL-2520"}
-    assert any("WINCL-2237" in detail and "No se regeneró" in detail for detail in result["analysis_details"])

@@ -95,8 +95,8 @@ def _run(release_id: int, regenerate: bool) -> None:
             release_name=plan.release_name,
             keys=list(plan.functionality_keys or []),
         )
-        if plan.status in {"ALREADY_GENERATED", "INCOMPLETE_ANALYSIS"}:
-            if plan.status == "ALREADY_GENERATED":
+        if plan.status != "CHUNK_PLAN":
+            if plan.status == "ALREADY_GENERATED" or plan.persisted:
                 _persist_matrix_cases(release_id)
             _set_job(
                 release_id,
