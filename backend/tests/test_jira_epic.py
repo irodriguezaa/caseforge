@@ -1,39 +1,61 @@
 """QCO Epic from a release. No live Jira."""
 
-from types import SimpleNamespace
-
 import pytest
 
-from app.services.jira_epic import JiraEpicError, epic_description, epic_summary, program_code, publish_epic
+from app.services.jira_epic import JiraEpicError, _adf, assignee_for, epic_description, epic_summary, program_code, publish_epic
 from app.services.jira_epic import EpicDraft
 
 
 def test_summary_uses_program_version_and_type() -> None:
-    assert program_code("WEB", ["WEBCL-12", "WEBCL-13"]) == "WEBCL"
-    assert program_code("WEB", []) == "WEBCL"
-    assert epic_summary("WEBCL", "16.11.3", "HotFix") == "WEBCL | 16.11.3 | HOTFIX"
+    assert program_code("WEB") == "WEBCL"
+    assert program_code("AAF Evolutivo") == "STVCL"
+    assert program_code("FireTV") == "ADTCL"
+    assert program_code("Roku") == "ROKUPR"
+    assert program_code("STV Tata LG") == "SCTCL"
+    assert program_code("IPTV AOSP") == "AOSPCL"
+    assert program_code("tvOS") == "TVOSPR"
+    assert assignee_for("ROKUPR") == assignee_for("ATSCL")
+    assert epic_summary("TVOSPR", "vTVOS-10.13.1", "Exc") == "TVOSPR | vTVOS-10.13.1 | EXC"
+    text = epic_description(
+        device="tvOS",
+        version="vTVOS-10.13.1",
+        environment="BERC",
+        validation_type="Regresión completa",
+        rn_filename="RN.pdf",
+        functionalities=[("TVOSPR-255", "TVOSPR-255: Integración de landingQA Validation")],
+        qc_bugs=[("TVOSPR-804", "TVOSPR-804: TipografíaDone")],
+    )
+    assert "Liberar tvOS versión vTVOS-10.13.1 para Claro Video" in text
+    assert "Clarovideo tvOS." in text
+    assert "entorno BERC." in text
+    assert "- TVOSPR-255 Integración de landing" in text
+    assert "QA Validation" not in text
+    assert "- TVOSPR-804 Tipografía" in text
+    assert "Done" not in text
+    assert "Listado de QA/QC Bugs" in text
+    assert "Tipo de prueba: Regresión completa" in text
+    assert "RN: RN.pdf\n\nAmbiente: BERC\n\nVersión: vTVOS-10.13.1" in text
+    heading = _adf("Objetivo\n\nLiberar")["content"][0]
+    assert heading["content"][0]["marks"] == [{"type": "strong"}]
+
+
+def test_empty_bug_list_is_omitted() -> None:
     text = epic_description(
         device="WEB",
         version="16.11.3",
         environment="FEHF",
         validation_type="Regresivo",
         rn_filename="RN.pdf",
-        functionalities=[("WEBCL-12", "WEBCL-12: Guía")],
+        functionalities=[("WEBCL-12", "Guía")],
         qc_bugs=[],
     )
-    assert "Liberar WEB versión 16.11.3 para Claro Video" in text
-    assert "Clarovideo WEB." in text
-    assert "entorno FEHF." in text
+    assert "QA/QC Bugs" not in text
     assert "- WEBCL-12 Guía" in text
-    assert "Sin bugs QC en el RN." in text
-    assert "Tipo de prueba: Regresivo" in text
-    assert "Entorno: FEHF" in text
-    assert "RN: RN.pdf" in text
 
 
 def test_unknown_program_is_rejected() -> None:
     with pytest.raises(JiraEpicError):
-        program_code("Kepler", [])
+        program_code("Kepler")
 
 
 def test_publish_creates_one_epic_and_reuses_it(monkeypatch) -> None:
@@ -43,8 +65,9 @@ def test_publish_creates_one_epic_and_reuses_it(monkeypatch) -> None:
         description="Objetivo",
         activity_type="HotFix",
         environment="FEHF",
+        assignee_id="60be5d2ba01e11006ab15146",
     )
-    store: dict[str, str] = {}
+    store: dict[str, dict] = {}
 
     def search(jql: str):
         if draft.summary in jql and store:
@@ -52,7 +75,7 @@ def test_publish_creates_one_epic_and_reuses_it(monkeypatch) -> None:
         return []
 
     def create(fields: dict):
-        store["QCO-1"] = fields["summary"]
+        store["QCO-1"] = fields
         return "QCO-1"
 
     monkeypatch.setattr("app.services.jira_epic._search", search)
@@ -64,6 +87,9 @@ def test_publish_creates_one_epic_and_reuses_it(monkeypatch) -> None:
 
     assert first.already_existed is False
     assert first.key == "QCO-1"
+    assert store["QCO-1"]["priority"] == {"id": "3"}
+    assert store["QCO-1"]["assignee"] == {"accountId": "60be5d2ba01e11006ab15146"}
+    assert store["QCO-1"]["issuetype"] == {"name": "Epic"}
     assert second.already_existed is True
     assert len(store) == 1
 

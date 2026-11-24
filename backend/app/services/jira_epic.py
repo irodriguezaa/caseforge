@@ -18,10 +18,13 @@ from app.models.release_analysis import ReleaseAnalysis
 from app.models.test_case import TestCase
 from app.schemas.release import ActivityType, EnvironmentName
 from app.services.jira_client import JiraApiError, _client
+from app.services.rn_storage import read_release_note_pdf
 
 PROJECT_KEY = "QCO"
 ISSUE_EPIC = "Epic"
-PRIORITY_NAME = "Importante"
+# The scheme lists this priority as "Importante", but creating with the name is rejected.
+# The id is what QCO accepts.
+PRIORITY_ID = "3"
 ACTIVITY_TITLE: dict[str, str] = {
     "HotFix": "HOTFIX",
     "Exc": "EXC",
@@ -30,8 +33,43 @@ ACTIVITY_TITLE: dict[str, str] = {
 }
 _DEVICE_PROGRAM = {
     "WEB": "WEBCL",
+    "ADT": "ADTCL",
+    "FireTV": "ADTCL",
     "WIN/XBOX": "WINCL",
+    "AAF Evolutivo": "STVCL",
+    "AAF Legacy": "AAFCL",
+    "IPTV AOSP": "AOSPCL",
+    "iOS": "IOSPR",
+    "tvOS": "TVOSPR",
+    "ADR": "ADRPR",
+    "Coship9085": "C9085PR",
+    "STB IPTV": "ATSCL",
+    "Roku": "ROKUPR",
+    "STV Tata Samsung": "SCTCL",
+    "STV Tata Hisense": "SCTCL",
+    "STV Tata LG": "SCTCL",
+    "STV Tata ADT": "SCTCL",
 }
+_PROGRAM_ASSIGNEE = {
+    "WEBCL": "60be5d2ba01e11006ab15146",
+    "ADTCL": "60be5d2ba01e11006ab15146",
+    "WINCL": "60be5d2ba01e11006ab15146",
+    "AAFCL": "625eec3bb8be7c006a447d99",
+    "STVCL": "625eec3bb8be7c006a447d99",
+    "AOSPCL": "625eec3bb8be7c006a447d99",
+    "IOSPR": "5f6a0720f0d4010070378042",
+    "TVOSPR": "5f6a0720f0d4010070378042",
+    "ADRPR": "5a9d9b1fa3f5e92a7384b0ad",
+    "C9085PR": "5a9d9b1fa3f5e92a7384b0ad",
+    "ATSCL": "62d97d16a6c0a53fd7eddaf0",
+    "ROKUPR": "62d97d16a6c0a53fd7eddaf0",
+    "SCTCL": "557058:32697a34-9231-4032-9409-b24247903b5c",
+}
+_HEADINGS = {"Objetivo", "Contexto", "Alcance", "Otra información"}
+_STATUS_TAIL = re.compile(
+    r"(?:\s+)?(?:QA Validation|Roll Out|Done|Canceled|Cancelled|Cancelado|Cancelada)\s*$",
+    re.IGNORECASE,
+)
 _KEY_RE = re.compile(r"^([A-Z][A-Z0-9]+)-\d+$")
 
 
@@ -46,6 +84,9 @@ class EpicDraft:
     description: str
     activity_type: str
     environment: str
+    assignee_id: str | None = None
+    pdf_path: str | None = None
+    pdf_name: str | None = None
 
 
 @dataclass(frozen=True)
@@ -57,21 +98,18 @@ class EpicResult:
     environment: str
 
 
-def program_code(platform: str, keys: list[str]) -> str:
-    counts: dict[str, int] = {}
-    for raw in keys:
-        match = _KEY_RE.match(str(raw or "").strip().upper())
-        if match:
-            prefix = match.group(1)
-            counts[prefix] = counts.get(prefix, 0) + 1
-    if counts:
-        return max(counts.items(), key=lambda item: (item[1], item[0]))[0]
-    fallback = _DEVICE_PROGRAM.get((platform or "").strip())
-    if fallback:
-        return fallback
-    raise JiraEpicError(
-        "No hay un programa (WEBCL, WINCL) en las EPC de esta release."
-    )
+def program_code(platform: str) -> str:
+    code = _DEVICE_PROGRAM.get((platform or "").strip())
+    if code:
+        return code
+    raise JiraEpicError(f"El dispositivo {platform or '—'} no tiene programa de QCO.")
+
+
+def assignee_for(program: str) -> str:
+    account = _PROGRAM_ASSIGNEE.get(program)
+    if not account:
+        raise JiraEpicError(f"El programa {program} no tiene persona asignada.")
+    return account
 
 
 def epic_summary(program: str, version: str, activity_type: str) -> str:
@@ -113,15 +151,20 @@ def epic_description(
             "Listado de EPCs (funcionalidades)",
             *_lines(functionalities, "Sin EPC en el RN."),
             "",
-            "Listado de QC Bugs",
-            *_lines(qc_bugs, "Sin bugs QC en el RN."),
+            *(
+                ["", "Listado de QA/QC Bugs", *_lines(qc_bugs, "")]
+                if qc_bugs
+                else []
+            ),
             "",
             f"Tipo de prueba: {scope}",
             "",
             "Otra información",
             "",
-            f"RN: {rn}".rstrip(),
-            f"Entorno: {environment}",
+            f"RN: {rn}",
+            "",
+            f"Ambiente: {environment}",
+            "",
             f"Versión: {version}",
         ]
     )
@@ -157,7 +200,8 @@ def draft_for_release(
     if not keys:
         keys = _case_keys(db, release.id)
     version = re.sub(r"\s+", " ", (release.version or "").strip())
-    summary = epic_summary(program_code(release.platform, keys), version, chosen_type)
+    program = program_code(release.platform)
+    summary = epic_summary(program, version, chosen_type)
     description = epic_description(
         device=release.platform,
         version=version,
@@ -177,6 +221,9 @@ def draft_for_release(
         description=description,
         activity_type=chosen_type,
         environment=chosen_env,
+        assignee_id=assignee_for(program),
+        pdf_path=analysis.pdf_file_path if analysis is not None else None,
+        pdf_name=analysis.pdf_filename if analysis is not None else None,
     )
 
 
@@ -191,6 +238,9 @@ def publish_epic(draft: EpicDraft) -> EpicResult:
             environment=draft.environment,
         )
     key = _create_issue(_fields(draft))
+    content = read_release_note_pdf(draft.pdf_path)
+    if content:
+        _attach(key, draft.pdf_name or "RN.pdf", content)
     return EpicResult(
         already_existed=False,
         key=key,
@@ -247,6 +297,7 @@ def _lines(items: list[tuple[str, str]], empty: str) -> list[str]:
             if upper.startswith(prefix):
                 rest = rest[len(prefix) :].strip(" :-|")
                 break
+        rest = _strip_status(rest)
         text = f"- {key} {rest}".strip() if rest else f"- {key}"
         lines.append(text[:240])
     return lines
@@ -257,14 +308,25 @@ def _fields(draft: EpicDraft) -> dict[str, Any]:
         "project": {"key": PROJECT_KEY},
         "issuetype": {"name": ISSUE_EPIC},
         "summary": draft.summary,
-        "priority": {"name": PRIORITY_NAME},
+        "priority": {"id": PRIORITY_ID},
         "description": _adf(draft.description),
         "labels": ["qcpulse", f"qcpulse-r{draft.release_id}"],
     }
+    if draft.assignee_id:
+        fields["assignee"] = {"accountId": draft.assignee_id}
     account = _account_id()
     if account:
         fields["reporter"] = {"accountId": account}
     return fields
+
+
+def _strip_status(title: str) -> str:
+    text = title
+    while True:
+        cleaned = _STATUS_TAIL.sub("", text).strip(" :-")
+        if cleaned == text:
+            return cleaned
+        text = cleaned
 
 
 def _adf(text: str) -> dict[str, Any]:
@@ -273,7 +335,11 @@ def _adf(text: str) -> dict[str, Any]:
         if not line.strip():
             content.append({"type": "paragraph", "content": []})
             continue
-        content.append({"type": "paragraph", "content": [{"type": "text", "text": line}]})
+        marks = [{"type": "strong"}] if line.strip() in _HEADINGS else None
+        node: dict[str, Any] = {"type": "text", "text": line}
+        if marks:
+            node["marks"] = marks
+        content.append({"type": "paragraph", "content": [node]})
     if not content:
         content = [{"type": "paragraph", "content": [{"type": "text", "text": "QC Pulse"}]}]
     return {"type": "doc", "version": 1, "content": content}
@@ -313,6 +379,18 @@ def _create_issue(fields: dict[str, Any]) -> str:
     if not key:
         raise JiraApiError(response.status_code, "Jira no devolvió la key de la EPC.")
     return key
+
+
+def _attach(key: str, filename: str, content: bytes) -> None:
+    safe_name = filename.replace("/", "-").replace("\\", "-") or "RN.pdf"
+    with _client() as client:
+        response = client.post(
+            f"/rest/api/3/issue/{key}/attachments",
+            headers={"X-Atlassian-Token": "no-check"},
+            files={"file": (safe_name, content, "application/pdf")},
+        )
+    if response.status_code not in (200, 201):
+        raise JiraApiError(response.status_code, response.text[:800])
 
 
 def _account_id() -> str | None:
