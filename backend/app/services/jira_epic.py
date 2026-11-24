@@ -10,6 +10,8 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
+import httpx
+
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -17,7 +19,7 @@ from app.models.release import Release
 from app.models.release_analysis import ReleaseAnalysis
 from app.models.test_case import TestCase
 from app.schemas.release import ActivityType, EnvironmentName
-from app.services.jira_client import JiraApiError, _client
+from app.services.jira_client import JiraApiError, _client, _require_config
 from app.services.rn_storage import read_release_note_pdf
 
 PROJECT_KEY = "QCO"
@@ -230,6 +232,7 @@ def draft_for_release(
 def publish_epic(draft: EpicDraft) -> EpicResult:
     existing = _find_epic(draft.summary)
     if existing:
+        _attach_release_note(existing, draft)
         return EpicResult(
             already_existed=True,
             key=existing,
@@ -238,9 +241,7 @@ def publish_epic(draft: EpicDraft) -> EpicResult:
             environment=draft.environment,
         )
     key = _create_issue(_fields(draft))
-    content = read_release_note_pdf(draft.pdf_path)
-    if content:
-        _attach(key, draft.pdf_name or "RN.pdf", content)
+    _attach_release_note(key, draft)
     return EpicResult(
         already_existed=False,
         key=key,
@@ -381,13 +382,45 @@ def _create_issue(fields: dict[str, Any]) -> str:
     return key
 
 
-def _attach(key: str, filename: str, content: bytes) -> None:
-    safe_name = filename.replace("/", "-").replace("\\", "-") or "RN.pdf"
+def _attachment_name(filename: str | None) -> str:
+    return (filename or "RN.pdf").replace("/", "-").replace("\\", "-") or "RN.pdf"
+
+
+def _attach_release_note(key: str, draft: EpicDraft) -> None:
+    content = read_release_note_pdf(draft.pdf_path)
+    if not content:
+        return
+    name = _attachment_name(draft.pdf_name)
+    if _has_attachment(key, name):
+        return
+    _attach(key, name, content)
+
+
+def _has_attachment(key: str, filename: str) -> bool:
     with _client() as client:
+        response = client.get(f"/rest/api/3/issue/{key}", params={"fields": "attachment"})
+    if response.status_code != 200:
+        return False
+    rows = ((response.json().get("fields") or {}).get("attachment") or [])
+    return any(str((row or {}).get("filename") or "") == filename for row in rows)
+
+
+def _attachment_client() -> httpx.Client:
+    # The shared client forces application/json. Jira rejects that on /attachments.
+    base_url, email, token = _require_config()
+    return httpx.Client(
+        base_url=base_url,
+        auth=(email, token),
+        timeout=120,
+        headers={"Accept": "application/json", "X-Atlassian-Token": "no-check"},
+    )
+
+
+def _attach(key: str, filename: str, content: bytes) -> None:
+    with _attachment_client() as client:
         response = client.post(
             f"/rest/api/3/issue/{key}/attachments",
-            headers={"X-Atlassian-Token": "no-check"},
-            files={"file": (safe_name, content, "application/pdf")},
+            files={"file": (filename, content, "application/pdf")},
         )
     if response.status_code not in (200, 201):
         raise JiraApiError(response.status_code, response.text[:800])

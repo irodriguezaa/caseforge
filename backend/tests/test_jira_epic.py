@@ -1,5 +1,6 @@
 """QCO Epic from a release. No live Jira."""
 
+import httpx
 import pytest
 
 from app.services.jira_epic import JiraEpicError, _adf, assignee_for, epic_description, epic_summary, program_code, publish_epic
@@ -92,6 +93,16 @@ def test_publish_creates_one_epic_and_reuses_it(monkeypatch) -> None:
     assert store["QCO-1"]["issuetype"] == {"name": "Epic"}
     assert second.already_existed is True
     assert len(store) == 1
+
+
+def test_pdf_upload_is_multipart() -> None:
+    client = httpx.Client(headers={"Accept": "application/json", "X-Atlassian-Token": "no-check"})
+    request = client.build_request(
+        "POST",
+        "https://example.test/rest/api/3/issue/QCO-49805/attachments",
+        files={"file": ("RN.pdf", b"%PDF", "application/pdf")},
+    )
+    assert request.headers["content-type"].startswith("multipart/form-data")
 
 
 def test_route_requires_cases(client) -> None:
