@@ -13,6 +13,7 @@ from app.services.jira_epic import (
     _sprint_choice,
     accumulated_description,
     assignee_for,
+    team_for,
     cycle_title,
     epic_description,
     epic_summary,
@@ -396,6 +397,7 @@ def test_qc_sprint_label_uses_the_board_dates() -> None:
         }
     )
     assert sprint_49 is not None and sprint_49.label == "Sprint 49 · 16 nov – 27 nov"
+    assert sprint_49.start_on == "2026-11-16" and sprint_49.end_on == "2026-11-27"
     assert sprint_50 is not None and sprint_50.label == "Sprint 50 · 30 nov – 11 dic"
     assert _sprint_choice({"id": 1, "name": "Sprint 47", "state": "closed"}) is None
 
@@ -411,16 +413,29 @@ def test_publish_moves_epic_task_and_subtasks_to_the_chosen_sprint(monkeypatch) 
         deliverable_id=4,
         program="WINCL",
         scopes=(_scope(2, "vWINCL-11.1.1", (("WINCL-528", ""),), (("WINCL-2520", ""),)),),
+        start_on="2026-11-16",
+        end_on="2026-11-27",
     )
     keys = iter(["QCO-1", "QCO-2", "QCO-3", "QCO-4", "QCO-5"])
     moved: list[tuple[int, list[str]]] = []
-    sprint = SprintChoice(id=27623, name="Sprint 49", state="future", label="Sprint 49 · 16 nov – 27 nov")
+    scheduled: list[tuple[str, dict]] = []
+    sprint = SprintChoice(
+        id=27623,
+        name="Sprint 49",
+        state="future",
+        label="Sprint 49 · 16 nov – 27 nov",
+        start_on="2026-11-16",
+        end_on="2026-11-27",
+    )
 
     monkeypatch.setattr("app.services.jira_epic.list_qc_sprints", lambda: [sprint])
     monkeypatch.setattr("app.services.jira_epic._search", lambda *_args, **_kwargs: [])
     monkeypatch.setattr("app.services.jira_epic._create_issue", lambda _fields: next(keys))
     monkeypatch.setattr("app.services.jira_epic._account_id", lambda: None)
-    monkeypatch.setattr("app.services.jira_epic._put_fields", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        "app.services.jira_epic._put_fields",
+        lambda key, fields: scheduled.append((key, fields)),
+    )
     monkeypatch.setattr("app.services.jira_epic._read_labels", lambda _key: ["qcpulse"])
     monkeypatch.setattr("app.services.jira_epic._attach_release_note", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(
@@ -436,6 +451,20 @@ def test_publish_moves_epic_task_and_subtasks_to_the_chosen_sprint(monkeypatch) 
     assert result.sprint_id == 27623
     assert result.sprint_label == "Sprint 49 · 16 nov – 27 nov"
     assert moved == [(27623, ["QCO-1", "QCO-2", "QCO-3", "QCO-4", "QCO-5"])]
+    dates = {
+        "customfield_18528": "2026-11-16",
+        "duedate": "2026-11-27",
+        "customfield_16200": team_for("WINCL"),
+    }
+    assert ("QCO-1", dates) in scheduled
+    assert ("QCO-2", dates) in scheduled
+
+
+def test_program_team_follows_the_qc_name() -> None:
+    assert team_for("TVOSPR")
+    assert team_for("WEBCL") != team_for("AAFCL")
+    with pytest.raises(JiraEpicError, match="QC_AOSPCL"):
+        team_for("AOSPCL")
 
 
 def test_unknown_sprint_is_rejected_before_creating_issues(monkeypatch) -> None:

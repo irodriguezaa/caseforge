@@ -38,6 +38,22 @@ _SPRINT_PAGE = 50
 # The scheme lists this priority as "Importante", but creating with the name is rejected.
 # The id is what QCO accepts.
 PRIORITY_ID = "3"
+# "Fecha de inicio". The timeline draws the version bar from this field plus duedate.
+START_DATE_FIELD = "customfield_18528"
+# Atlassian Team. The timeline groups the version under QC_{program}.
+TEAM_FIELD = "customfield_16200"
+_PROGRAM_TEAM = {
+    "WEBCL": "3e402041-0ea6-4a16-af8a-c5dc5ca2eecb",
+    "AAFCL": "d3c706a6-c2e1-4069-ab6e-ae6676a7d6bf",
+    "ADTCL": "659b1000-57eb-47e4-831b-fd572d9f8f7d",
+    "WINCL": "56d058f6-062a-400a-b4ea-fca28233386d",
+    "STVCL": "6ce1a917-4bdc-4491-b169-c09e0966b849",
+    "IOSPR": "ef63ffdd-8eca-411d-ab14-8a28be846621",
+    "TVOSPR": "c8fe8ffd-bec0-43e9-981e-3c966cda3aa1",
+    "ADRPR": "3445188a-2fbf-453a-8761-5bb9d1243e35",
+    "C9085PR": "4cff1b54-e668-4629-9a0b-e58a20e57ebb",
+    "ROKUPR": "dd4f0d43-4e3e-4fe8-aed6-39979e989225",
+}
 ACTIVITY_TITLE: dict[str, str] = {
     "HotFix": "HOTFIX",
     "Exc": "EXC",
@@ -114,6 +130,8 @@ class EpicDraft:
     deliverable_id: int | None = None
     program: str = ""
     scopes: tuple[VersionScope, ...] = ()
+    start_on: str = ""
+    end_on: str = ""
 
 
 @dataclass(frozen=True)
@@ -129,6 +147,8 @@ class SprintChoice:
     state: str
     label: str
     start_at: str = ""
+    start_on: str = ""
+    end_on: str = ""
 
 
 @dataclass(frozen=True)
@@ -172,6 +192,13 @@ def assignee_for(program: str) -> str:
     if not account:
         raise JiraEpicError(f"El programa {program} no tiene persona asignada.")
     return account
+
+
+def team_for(program: str) -> str:
+    team_id = _PROGRAM_TEAM.get(program)
+    if not team_id:
+        raise JiraEpicError(f"El programa {program or '—'} no tiene equipo QC_{program} en Jira.")
+    return team_id
 
 
 def epic_summary(program: str, version: str, activity_type: str) -> str:
@@ -289,7 +316,10 @@ def draft_for_release(
         release.activity_type = activity_type
     if environment is not None:
         release.environment = environment
+    if release.start_date is None or release.end_date is None:
+        raise JiraEpicError("Pon el inicio y el fin de la revisión antes de crear los artefactos.")
     program = program_code(release.platform)
+    team_for(program)
     scopes = tuple(
         _scope_for_release(db, row, chosen_type, chosen_env) for row in _deliverable_releases(db, release)
     )
@@ -309,11 +339,17 @@ def draft_for_release(
         deliverable_id=release.deliverable_id,
         program=program,
         scopes=scopes,
+        start_on=release.start_date.isoformat(),
+        end_on=release.end_date.isoformat(),
     )
 
 
 def publish_epic(draft: EpicDraft, sprint_id: int | None = None) -> EpicResult:
     sprint = _require_sprint(sprint_id) if sprint_id is not None else None
+    if sprint is not None and (not draft.start_on or not draft.end_on):
+        raise JiraEpicError("Pon el inicio y el fin de la revisión antes de crear los artefactos.")
+    if sprint is not None and draft.program:
+        team_for(draft.program)
     plan = _publication(draft)
     epic_key, epic_existed = _ensure_epic(draft, plan)
     _attach_release_note(epic_key, draft)
@@ -326,6 +362,7 @@ def publish_epic(draft: EpicDraft, sprint_id: int | None = None) -> EpicResult:
             sprint.id,
             [epic_key, task_key, *[key for key, _existed in subtasks]],
         )
+        _schedule_version(draft, epic_key, task_key)
     return EpicResult(
         already_existed=epic_existed,
         key=epic_key,
@@ -379,6 +416,18 @@ def _move_issues_to_sprint(sprint_id: int, keys: list[str]) -> None:
         _post_sprint_issues(sprint_id, pending[offset : offset + _SPRINT_PAGE])
 
 
+def _schedule_version(draft: EpicDraft, epic_key: str, task_key: str) -> None:
+    """Timeline bar uses the QC Pulse review window. Team is QC_{program}."""
+    if not draft.start_on or not draft.end_on:
+        return
+    fields: dict[str, Any] = {START_DATE_FIELD: draft.start_on, "duedate": draft.end_on}
+    if draft.program:
+        fields[TEAM_FIELD] = team_for(draft.program)
+    for key in dict.fromkeys([epic_key, task_key]):
+        if key:
+            _put_fields(key, fields)
+
+
 def _post_sprint_issues(sprint_id: int, keys: list[str]) -> None:
     with _client() as client:
         response = client.post(
@@ -409,6 +458,8 @@ def _sprint_choice(row: dict[str, Any]) -> SprintChoice | None:
         state=state,
         label=label,
         start_at=str(row.get("startDate") or ""),
+        start_on=_sprint_iso_day(row.get("startDate")),
+        end_on=_sprint_iso_day(row.get("endDate")),
     )
 
 
@@ -420,6 +471,16 @@ def _sprint_day(value: object) -> str:
     except ValueError:
         return ""
     return f"{moment.day} {_MONTHS[moment.month - 1]}"
+
+
+def _sprint_iso_day(value: object) -> str:
+    if not isinstance(value, str) or not value.strip():
+        return ""
+    try:
+        moment = datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(ZoneInfo("America/Mexico_City"))
+    except ValueError:
+        return ""
+    return moment.date().isoformat()
 
 
 def _description_for(scope: VersionScope) -> str:

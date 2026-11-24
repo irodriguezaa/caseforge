@@ -100,7 +100,7 @@ export function JiraEpicButton({
     <div className="card" style={{ marginTop: "1rem" }}>
       <h2>Artefactos de Jira</h2>
       <p className="muted" style={{ fontSize: "12.5px", marginTop: 0 }}>
-        Se crea una EPC por entregable y una tarea por versión. Cada tarea abre una subtarea por funcionalidad, una con los QC Bugs y una de regresión. La EPC, la tarea y las subtareas entran al sprint que elijas.
+        Se crea una EPC por entregable y una tarea por versión. Cada tarea abre una subtarea por funcionalidad, una con los QC Bugs y una de regresión. Entran al sprint que elijas. La EPC y la tarea usan el inicio y el fin de la revisión, y el equipo QC del programa, para verse en el cronograma.
       </p>
       <div className="form-actions" style={{ alignItems: "center" }}>
         <label htmlFor="jira-epic-type" className="muted" style={{ margin: 0 }}>Tipo</label>
