@@ -565,6 +565,22 @@ def test_corrected_incidents_get_a_retest_case():
     assert cases[0].name.startswith("El botón Eliminar")
     assert cases[0].steps[-1].expected_result == "El defecto ya no ocurre."
     assert incident_retest_cases({"qa_qc": [("X-1", "[Ticket Jira]")]}, "x.pdf") == []
+    duplicated = incident_retest_cases(
+        {"qa_qc": [("ADTCL-230", "ADTCL-230: El botón no cierra QA Validation"), ("ADTCL-230", "ADTCL-230: otra")]},
+        "adt.pdf",
+    )
+    assert len(duplicated) == 1
+    assert "QA Validation" not in duplicated[0].name
+    from app.services.legacy_qc import clean_incident_title
+
+    assert clean_incident_title("ADTCL-1305", "ADTCL-1305: No sevisualizan contenidos QA Validation").startswith(
+        "No se visualizan"
+    )
+    kind, _reason = legacy_disposition(
+        "Texto sin cargar",
+        "Given la llave no está cargada\nWhen el usuario abre la pantalla\nThen conserva el comportamiento vigente y no se muestra el nombre de la llave",
+    )
+    assert kind == "verificacion"
 
 
 def test_priority_bands():

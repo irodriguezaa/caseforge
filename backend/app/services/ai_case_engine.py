@@ -1818,7 +1818,16 @@ def generate_release_app_candidates(
     if _is_legacy_qc_engine():
         from app.services.legacy_qc import incident_retest_cases
 
-        candidates.extend(incident_retest_cases(parsed_tickets, rn_filename or ""))
+        seen_retests = {
+            str(item.get("related_jira") or "").strip().upper()
+            for item in existing_cases
+            if str(item.get("component") or "") == "Reprueba de incidencias"
+        }
+        candidates.extend(
+            row
+            for row in incident_retest_cases(parsed_tickets, rn_filename or "")
+            if (row.related_jira or "").strip().upper() not in seen_retests
+        )
     stamp_source_types(candidates)
     candidates = stamp_candidates(candidates, functionality_keys, jira_artifacts)
     polish_work: list = []

@@ -1112,7 +1112,13 @@ def validate_composed_candidates(
         elif not candidate.applicability:
             candidate.applicability = "ejecutable"
         repaired.append(candidate)
-    missing = [unit for unit in inventory if unit.coverage_id in executable_ids and unit.coverage_id not in covered]
+    missing = [
+        unit
+        for unit in inventory
+        if unit.coverage_id in executable_ids
+        and unit.coverage_id not in covered
+        and "criterio-cubierto" not in (unit.applied_rules or [])
+    ]
     missing.extend(unit for unit in rejected if unit.coverage_id not in covered)
     if missing and fill_missing is not None:
         extra = fill_missing(list({unit.coverage_id: unit for unit in missing}.values()))

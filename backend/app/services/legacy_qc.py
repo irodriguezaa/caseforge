@@ -108,6 +108,37 @@ _KEY_TITLE = re.compile(
     r"\b(configuraci[oó]n|metadata)\b",
     re.IGNORECASE,
 )
+# Aunque el Then diga que se conserva el comportamiento o que no se muestra el nombre.
+_KEY_ABSENT = re.compile(
+    r"\bllave\b[^\n]{0,80}\b(?:ausente|vac[ií]a|inexistente|no publicada|no configurada|"
+    r"no cargada|no existe|devuelve vac[ií]o)\b"
+    r"|\b(?:no publicada|no configurada|no cargada|ausente)\b[^\n]{0,50}\bllave\b"
+    r"|\bllave\b[^\n]{0,40}\bno est[aá] (?:publicada|configurada|cargada)\b"
+        r"|no se muestra el nombre de la llave"
+        r"|nunca muestra el nombre de (?:su |la )?llave"
+        r"|\bsin cargar\b[^\n]{0,40}\bllave\b"
+        r"|\bllave\b[^\n]{0,40}\bsin cargar\b",
+    re.IGNORECASE,
+)
+_RESULT_LEAD = re.compile(
+    r"^(?:puede |se muestra\b|se presenta\b|se visualiza\b|no se muestra\b|no se presenta\b)",
+    re.IGNORECASE,
+)
+_GHERKIN_WORD = re.compile(
+    r"\b(?:given|when|then|and|but|dado|cuando|entonces|pero)\b[:\s]*",
+    re.IGNORECASE,
+)
+_FROZEN_ONE_STEP = re.compile(
+    r"^(?:seleccionar campo de entrada|"
+    r"ingresar un n[uú]mero celular y seleccionar el bot[oó]n|"
+    r"ingresar aplicaci[oó]n de claro video|"
+    r"ingresar a la home|"
+    r"identificar el men[uú] de navegaci[oó]n principal|"
+    r"validar el espaciado entre dichos elementos|"
+    r"ingresar home de inicio|"
+    r"seleccionar el bot[oó]n «ver planes»)",
+    re.IGNORECASE,
+)
 _VISIBLE_THEN = re.compile(
     r"se muestra|se visualiza|pantalla|modal|elementos|bot[oó]n|mensaje|"
     r"redirig|dirige|desplegad|replegad|ocult|ya no aparece|ya no es visible",
@@ -277,8 +308,8 @@ def legacy_disposition(title: str, body: str = "") -> tuple[str, str]:
         return "regresion", "no afectación: lo cubre la regresión por componente"
     if _PROCESS.search(blob) and not _VISIBLE_THEN.search(then):
         return "nota", "criterio de proceso: no es un caso de prueba"
-    if _KEY_TITLE.search(title or ""):
-        return "verificacion", "llave, configuración o metadata: no es caso QC"
+    if _KEY_TITLE.search(title or "") or _KEY_ABSENT.search(blob):
+        return "verificacion", "llave ausente, no publicada o no cargada: no es caso QC"
     then_block_match = re.search(
         r"\b(?:then|entonces)\b(?P<rest>.*)\Z", body or "", re.IGNORECASE | re.DOTALL
     )
@@ -718,17 +749,23 @@ def _audio_panel(text: str) -> list[dict[str, object]]:
     if not match:
         return []
     panel = re.sub(r"\s+", " ", match.group(1)).strip()
-    what = match.group(2)
-    return [
+    kinds = list(
+        dict.fromkeys(re.findall(r"cambiar el (audio|subt[ií]tulo)", text or "", re.IGNORECASE))
+    ) or [match.group(2)]
+    rows: list[dict[str, object]] = [
         {
             "action": f"Acceder al {panel}",
             "results": ["Se muestra el panel de audio y subtítulos."],
-        },
-        {
-            "action": f"Cambiar el {what} del contenido en reproducción",
-            "results": [f"El contenido en reproducción usa el {what} elegido."],
-        },
+        }
     ]
+    for what in kinds:
+        rows.append(
+            {
+                "action": f"Cambiar el {what} del contenido en reproducción",
+                "results": [f"El contenido en reproducción usa el {what} elegido."],
+            }
+        )
+    return rows
 
 
 def _user_action(text: str, history: list[str] | None = None) -> str:
@@ -1252,6 +1289,8 @@ def _flow(units: list) -> tuple[list[dict[str, object]], list[str], list[str], b
             if _DEV_OR_CODE.search(text) or re.search(r"c[oó]digo\s*200", text, re.I):
                 history.append(text)
                 continue
+            if kind == "then" and not embedded and _RESULT_LEAD.search(text or ""):
+                action = ""
             if action and (kind != "then" or embedded or given_goes_to_step(text)):
                 if current and current.get("action") and not current.get("results"):
                     close()
@@ -1517,6 +1556,82 @@ def _entry_screen(units: list) -> str:
     return ""
 
 
+def _plain_step(text: str) -> str:
+    out = _GHERKIN_WORD.sub(" ", text or "")
+    return re.sub(r"\s+", " ", out).strip()
+
+
+def _presented_entry(units: list) -> str:
+    blob = "\n".join(f"{unit.body or ''}" for unit in units)
+    match = re.search(
+        r"(?:la\s+|el\s+)?(pantalla\b[^.;]{0,70}?)\s+est[aá]\s+presentad",
+        blob,
+        re.IGNORECASE,
+    )
+    if not match:
+        match = re.search(r"\best[aá] en la (pantalla\b[^.;]{0,70})", blob, re.IGNORECASE)
+    if not match:
+        return ""
+    dest = re.sub(r"\s+", " ", match.group(1)).strip(" .")
+    return f"Ingresar a la {dest}"
+
+
+def _present_screen_first(steps: list, units: list) -> list:
+    """La pantalla intermedia del Given es el primer paso, antes de la acción."""
+    from app.schemas.case_generation import CandidateStep
+
+    entry = _presented_entry(units)
+    if not entry or not steps:
+        return steps
+    if len(steps) == 1 and _FROZEN_ONE_STEP.match(steps[0].action or ""):
+        return steps
+    if fold(steps[0].action).startswith("ingresar a la pantalla"):
+        return steps
+    dest = re.sub(r"^Ingresar a la\s+", "", entry, flags=re.IGNORECASE).strip(" .")
+    intro = CandidateStep(
+        step_number=1,
+        action=entry,
+        expected_result=f"Se muestra la {dest}.",
+        covered_unit_ids=list(steps[0].covered_unit_ids or []),
+    )
+    return [intro, *steps]
+
+
+def _check_after_action(steps: list) -> list:
+    """La comprobación del Then es un paso propio cuando el caso tenía una sola acción."""
+    from app.schemas.case_generation import CandidateStep
+
+    if len(steps) != 1:
+        return steps
+    step = steps[0]
+    if (
+        _FROZEN_ONE_STEP.match(step.action or "")
+        or re.match(r"^comprobar\b", step.action or "", re.I)
+        or re.search(r"\bpin\b", step.action or "", re.I)
+    ):
+        return steps
+    expected = (step.expected_result or "").strip()
+    if not expected or _RESULT_LEAD.search(step.action or ""):
+        return steps
+    action = step.action or ""
+    echo = ""
+    named = re.match(r"^(?:Ingresar|Acceder)\s+a\s+la\s+(.+)$", action, re.IGNORECASE)
+    if named:
+        echo = f"Se muestra la {named.group(1).strip(' .')}."
+        if fold(expected) == fold(echo):
+            return steps
+    step.expected_result = echo or "La acción se completa."
+    return [
+        step,
+        CandidateStep(
+            step_number=2,
+            action="Comprobar el resultado en pantalla",
+            expected_result=expected,
+            covered_unit_ids=list(step.covered_unit_ids or []),
+        ),
+    ]
+
+
 def finish_case(case, units: list) -> None:
     """Reconstruye el caso desde el escenario: no pierde el Then ni inventa pasos."""
     from app.schemas.case_generation import CandidateStep
@@ -1609,10 +1724,12 @@ def finish_case(case, units: list) -> None:
                     covered_unit_ids=[primary.coverage_id],
                 )
             ]
+    steps = _present_screen_first(steps, units)
+    steps = _check_after_action(steps)
     for index, step in enumerate(steps, start=1):
         step.step_number = index
-        step.action = _strip_md(step.action or "")
-        step.expected_result = _strip_md(step.expected_result or "")
+        step.action = _plain_step(_strip_md(step.action or ""))
+        step.expected_result = _plain_step(_strip_md(step.expected_result or ""))
     bodies = [primary.body or ""] if repeated else [unit.body or "" for unit in units]
     thens = visible_then_clauses(*bodies)
     blob = " ".join(f"{step.action} {step.expected_result}" for step in steps)
@@ -1642,6 +1759,8 @@ def finish_case(case, units: list) -> None:
     anon, auth = scenario_stance(primary.scenario or "", primary.body or "")
     for state in states:
         if background_contradicts(state, anon, auth) or _KEY_STATE.search(state) or _ERROR_CODE.search(state):
+            continue
+        if _KEY_ABSENT.search(state):
             continue
         if technical_phrase(state) and not visible_remainder(state):
             continue
@@ -1747,16 +1866,86 @@ def prepend_sister_paths(cases: list, inventory: list) -> None:
                 step.step_number = index
 
 
+_QA_LABEL = re.compile(r"QA\s*Validations?\b|QA\s*Validaci[oó]n\b", re.IGNORECASE)
+_GLUE_PARTICLE = (
+    "para", "como", "del", "las", "los", "una", "con", "por", "que", "sus",
+    "se", "el", "la", "de", "al", "un", "en", "es", "lo", "su", "no", "y", "a",
+)
+_GLUE_KEEP = {
+    "servicio", "segundo", "selector", "semana", "serie", "sesion", "sesión",
+    "siguiente", "siempre", "sentido", "servidor", "contenido", "contenidos",
+    "continuar", "validacion", "validación", "aplicacion", "aplicación",
+    "reproduccion", "reproducción", "navegacion", "navegación", "transaccion",
+    "transacción", "categoria", "categoría", "resultado", "resultados",
+    "bloqueante", "critical", "grabacion", "grabación",
+}
+_GLUE_LEXEME = {
+    "pantalla", "visualizan", "visualiza", "metodo", "método", "pago", "pagina",
+    "página", "google", "contenido", "contenidos", "categoria", "categoría",
+    "tiempo", "inicio", "busqueda", "búsqueda", "búsquedas", "mostrar",
+    "resultados", "plan", "selector", "error", "botones", "carrusel",
+    "recomendados", "transaccion", "transacción", "codigo", "código", "negro",
+    "live", "despues", "después",
+}
+
+
+def _unglue_token(token: str) -> str:
+    body = token.strip(".,;:")
+    if body.lower() in _GLUE_KEEP:
+        return token
+    if body[:1].isupper() and not re.search(r"[a-záéíóúñ][A-ZÁÉÍÓÚÑ]", body):
+        return token
+    body = re.sub(r"([a-záéíóúñ])([A-ZÁÉÍÓÚÑ])", r"\1 \2", body)
+    body = re.sub(r"([A-ZÁÉÍÓÚÑ]{2,})([a-záéíóúñ])", r"\1 \2", body)
+    return " ".join(_unglue_piece(piece) for piece in body.split(" "))
+
+
+def _unglue_piece(token: str) -> str:
+    raw = token.strip(".,;:")
+    low = raw.lower()
+    if len(low) < 5 or low in _GLUE_KEEP or low in _GLUE_LEXEME:
+        return token
+    for particle in sorted(_GLUE_PARTICLE, key=len, reverse=True):
+        if len(particle) < 2 or not low.startswith(particle) or len(low) <= len(particle) + 2:
+            continue
+        rest = low[len(particle):]
+        if rest in _GLUE_LEXEME or rest in _GLUE_PARTICLE or re.search(
+            r"(ar|er|ir|an|en|ado|ada|ción|sion)$", rest
+        ):
+            return raw[: len(particle)] + " " + _unglue_piece(raw[len(particle) :])
+    for particle in sorted(_GLUE_PARTICLE, key=len, reverse=True):
+        if len(particle) < 2 or not low.endswith(particle) or len(low) - len(particle) < 4:
+            continue
+        head = low[: -len(particle)]
+        if head in _GLUE_KEEP or head in _GLUE_LEXEME or len(head) >= 6:
+            return _unglue_piece(raw[: -len(particle)]) + " " + raw[-len(particle) :]
+    return token
+
+
+def clean_incident_title(ticket_id: str, cell: str) -> str:
+    raw = _strip_md(re.sub(r"\s+", " ", cell or "")).strip()
+    raw = re.sub(rf"^\s*{re.escape(ticket_id)}\s*:?\s*", "", raw, flags=re.IGNORECASE).strip(" -:")
+    raw = _QA_LABEL.sub("", raw)
+    raw = re.sub(r"\s+", " ", raw).strip(" -:")
+    if not raw or re.fullmatch(r"\[?\s*ticket jira\s*\]?", raw, re.IGNORECASE):
+        return ""
+    return " ".join(_unglue_token(part) for part in raw.split(" "))
+
+
 def incident_retest_cases(tickets: dict | None, rn_filename: str) -> list:
     """Un caso de reprueba por incidencia corregida (sección 2.2)."""
     from app.schemas.case_generation import CandidateStep, GeneratedCaseCandidate
 
     cases = []
+    seen: set[str] = set()
     for ticket_id, cell in (tickets or {}).get("qa_qc") or []:
-        raw = _strip_md(re.sub(r"\s+", " ", cell or "")).strip()
-        raw = re.sub(rf"^\s*{re.escape(ticket_id)}\s*:?\s*", "", raw, flags=re.IGNORECASE).strip(" -:")
-        if not raw or re.fullmatch(r"\[?\s*ticket jira\s*\]?", raw, re.IGNORECASE):
+        key = (ticket_id or "").strip().upper()
+        if not key or key in seen:
             continue
+        raw = clean_incident_title(ticket_id, cell or "")
+        if not raw:
+            continue
+        seen.add(key)
         summary = raw[:180]
         cases.append(
             GeneratedCaseCandidate(
@@ -1765,7 +1954,7 @@ def incident_retest_cases(tickets: dict | None, rn_filename: str) -> list:
                 steps=[
                     CandidateStep(
                         step_number=1,
-                        action=f"Reproducir el escenario: {raw[:700]}",
+                        action=f"Reproducir el escenario: {_plain_step(raw[:700])}",
                         expected_result="Se alcanza el punto en el que ocurría el defecto.",
                     ),
                     CandidateStep(

@@ -1120,8 +1120,18 @@ def _criterion_visible(unit: CoverageUnit) -> bool:
 
 
 _GENERIC_COVER = {
-    "muestra", "mostrar", "pantalla", "elegido", "usuario", "selecciona", "seleccionar",
-    "abre", "abrir", "player", "mensaje", "mensajes", "forma", "clara",
+    "muestra", "mostrar", "mostrarse", "pantalla", "elegido", "usuario", "selecciona",
+    "seleccionar", "abre", "abrir", "player", "mensaje", "mensajes", "forma", "clara",
+    "definido", "definidos", "conforme", "correspondientes", "correspondiente", "tipo",
+    "flujo", "informacion", "información", "accionables", "botones", "boton", "botón",
+    "exito", "éxito", "error", "errores", "fallos", "persisten", "realizan",
+    "redirecciones", "redireccion", "según", "segun", "ante", "datos", "actualizada",
+    "actualizado", "cada", "comunicacion", "comunicación", "proveniente", "resultados",
+    "resultado", "acceda", "acceder", "contar", "debera", "deberá", "opciones", "opcion",
+    "página", "pagina", "redirigir", "registrarse", "iniciar", "inicio", "sesión",
+    "sesion", "contenido", "contenidos", "plataforma", "aplicacion", "aplicación",
+    "then", "given", "when", "debe", "deben", "siempre", "veces", "claro", "cambio",
+    "muestran", "ingreso", "textos", "alerta", "búsqueda", "busqueda", "feed", "google",
 }
 
 
@@ -1129,8 +1139,10 @@ def _covering_case(unit: CoverageUnit, pool: list[GeneratedCaseCandidate]) -> Ge
     from app.services.gherkin_coverage import _cover_tokens
 
     needle = _cover_tokens(f"{unit.scenario or ''} {unit.body or ''}") - _GENERIC_COVER
-    if len(needle) < 1:
+    if not pool:
         return None
+    if len(needle) < 1:
+        return pool[0]
     scored: list[tuple[float, GeneratedCaseCandidate]] = []
     union: set[str] = set()
     for row in pool:
@@ -1145,7 +1157,7 @@ def _covering_case(unit: CoverageUnit, pool: list[GeneratedCaseCandidate]) -> Ge
     scored.sort(key=lambda item: item[0], reverse=True)
     if scored and scored[0][0] >= 0.6:
         return scored[0][1]
-    if union and len(needle & union) / len(needle) >= 0.5 and scored:
+    if union and len(needle & union) / len(needle) >= 0.6 and scored:
         return scored[0][1]
     return None
 
@@ -1159,7 +1171,16 @@ def _keep_uncovered_epic_criteria(
     stories: list[GeneratedCaseCandidate] = []
     criteria: list[tuple[CoverageUnit, GeneratedCaseCandidate]] = []
     for row in cases:
-        unit = next((by_cover.get(cid) for cid in (row.covers or []) if by_cover.get(cid)), None)
+        ids = list(row.covers or [])
+        ids.extend(cid for step in row.steps for cid in (step.covered_unit_ids or []))
+        unit = next(
+            (
+                by_cover[cid]
+                for cid in ids
+                if cid in by_cover and "criterio-epica" in (by_cover[cid].applied_rules or [])
+            ),
+            None,
+        )
         if unit and "criterio-epica" in (unit.applied_rules or []):
             criteria.append((unit, row))
         else:
@@ -1183,8 +1204,33 @@ def _keep_uncovered_epic_criteria(
                 unit.applied_rules = [*rules, "criterio-cubierto"]
             unit.applicability_reason = cover.name
             continue
-        kept.append(row)
+        kept.extend(_cases_per_distinct_action(row))
     return kept
+
+
+def _cases_per_distinct_action(
+    row: GeneratedCaseCandidate,
+) -> list[GeneratedCaseCandidate]:
+    """Cambiar audio y cambiar subtítulo son dos casos, no un paso cada uno en el mismo."""
+    audio = [step for step in row.steps if re.search(r"cambiar el audio\b", step.action or "", re.I)]
+    subtitle = [
+        step for step in row.steps if re.search(r"cambiar el subt[ií]tulo\b", step.action or "", re.I)
+    ]
+    if not audio or not subtitle:
+        return [row]
+    path = [step for step in row.steps if step not in audio and step not in subtitle]
+    cases: list[GeneratedCaseCandidate] = []
+    for chosen, label in ((audio, "audio"), (subtitle, "subtítulo")):
+        clone = row.model_copy(deep=True)
+        clone.steps = [
+            *(step.model_copy(deep=True) for step in path),
+            *(step.model_copy(deep=True) for step in chosen),
+        ]
+        for index, step in enumerate(clone.steps, start=1):
+            step.step_number = index
+        clone.name = f"Cambiar el {label} del contenido en reproducción"
+        cases.append(clone)
+    return cases
 
 
 def compose_scenario_inventory(

@@ -143,8 +143,19 @@ def persist_candidates(
         db.execute(select(TestCase).where(TestCase.release_id == release_id)).scalars().all()
     )
     used_ids = [row.test_case_id for row in existing]
+    seen_retests = {
+        (row.technical_story or "").strip().upper()
+        for row in existing
+        if (row.component or "") == "Reprueba de incidencias" and (row.technical_story or "").strip()
+    }
     created: list[TestCase] = []
     for candidate in candidates:
+        if (candidate.generation_origin or "") == "reprueba-incidencia":
+            retest_key = (candidate.related_jira or "").strip().upper()
+            if retest_key and retest_key in seen_retests:
+                continue
+            if retest_key:
+                seen_retests.add(retest_key)
         complexity = classify_complexity(candidate)
         label = next_test_case_id(used_ids)
         used_ids.append(label)

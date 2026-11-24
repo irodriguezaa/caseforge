@@ -1032,6 +1032,8 @@ def _generate_cases_from_rn(
                 "test_case_id": row.test_case_id,
                 "test_case_name": row.test_case_name,
                 "description": row.description or "",
+                "related_jira": row.technical_story or "",
+                "component": row.component or "",
             }
             for row in already
         ]
