@@ -1815,6 +1815,10 @@ def generate_release_app_candidates(
     analysis_details.insert(0, f"Ruta IA: {stats.llm_path} proveedor={stats.llm_provider} modelo={stats.llm_model}")
     fill_scenario_ledger(stats, inventory, candidates)
     candidates = [row for row in candidates if row.steps]
+    if _is_legacy_qc_engine():
+        from app.services.legacy_qc import incident_retest_cases
+
+        candidates.extend(incident_retest_cases(parsed_tickets, rn_filename or ""))
     stamp_source_types(candidates)
     candidates = stamp_candidates(candidates, functionality_keys, jira_artifacts)
     polish_work: list = []

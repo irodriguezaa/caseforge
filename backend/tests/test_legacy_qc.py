@@ -6,6 +6,7 @@ from app.services.legacy_qc import (
     clean_title,
     given_goes_to_step,
     gloss_precondition,
+    incident_retest_cases,
     legacy_disposition,
     prepend_sister_paths,
 )
@@ -186,7 +187,7 @@ def test_then_sequence_is_kept_and_there_is_no_filler():
     assert "método de pago" in (case.precondition or "").lower() or "metodo de pago" in (case.precondition or "").lower()
 
 
-def test_epic_criterion_is_registered_and_not_a_case():
+def test_visible_epic_criterion_without_stories_becomes_a_case():
     unit = _unit(
         "e1",
         "HN-1",
@@ -197,11 +198,12 @@ def test_epic_criterion_is_registered_and_not_a_case():
     unit.applied_rules = ["ac-epica"]
     stats = GenerationStats()
     cases = compose_scenario_inventory([unit], [], lambda *_args: None)
-    assert cases == []
+    assert len(cases) == 1
+    assert cases[0].steps
+    assert not any(step.action.lower().startswith("verificar lo indicado") for step in cases[0].steps)
     fill_scenario_ledger(stats, [unit], cases)
     row = stats.scenario_ledger[0]
-    assert row["estado"] == "criterio de épica – revisar"
-    assert "mensajes" in row["motivo"].lower()
+    assert row["estado"] == "caso ejecutable"
 
 
 def test_each_action_is_followed_by_its_result():
@@ -406,6 +408,163 @@ def test_pin_case_prepends_the_sister_flow():
     assert "número" in actions or "numero" in actions
     assert "siguiente" in actions
     assert actions.index("pin") > actions.index("checkout")
+
+
+def test_third_person_given_becomes_ordered_steps():
+    unit = _unit(
+        "c-audio",
+        "WEBCL-933",
+        "Cambio de audio y subtítulo",
+        "\n".join(
+            [
+                "Given se presenta la pantalla de reproducción y el usuario selecciona el audio",
+                "And el usuario selecciona el subtítulo",
+                "Then se muestra el idioma elegido y el subtítulo activo",
+            ]
+        ),
+    )
+    cases = compose_scenario_inventory([unit], [], lambda *_args: None)
+    assert len(cases) == 1
+    actions = [step.action for step in cases[0].steps]
+    blob = " ".join(actions).lower()
+    assert not any(action.lower().startswith("verificar lo indicado") for action in actions)
+    assert "pantalla de reproducción" in blob or "reproduccion" in blob
+    assert "audio" in blob
+    assert "subtítulo" in blob or "subtitulo" in blob
+    pre = (cases[0].precondition or "").lower()
+    assert "selecciona" not in pre
+    assert "se presenta" not in pre
+
+
+def test_past_tense_user_actions_stay_steps_in_order():
+    unit = _unit(
+        "c-back",
+        "STVCL-1",
+        "El retorno desde segundo plano aplica la ventana",
+        "\n".join(
+            [
+                "Given la pantalla se presentó y el usuario seleccionó Aceptar",
+                "And el usuario dejó la aplicación en segundo plano sin cerrarla",
+                "When el usuario regresa a la aplicación habiendo transcurrido diez minutos",
+                "Then la pantalla alterna de migración no se presenta",
+            ]
+        ),
+    )
+    cases = compose_scenario_inventory([unit], [], lambda *_args: None)
+    actions = [step.action.lower() for step in cases[0].steps]
+    assert actions[0].startswith("seleccionar aceptar")
+    assert "dejar" in actions[1]
+    assert actions[2].startswith("regresar")
+    pre = (cases[0].precondition or "").lower()
+    assert "seleccionó" not in pre
+    assert "dejó" not in pre
+
+
+def test_audio_panel_criterion_is_two_actions():
+    unit = _unit(
+        "c-933",
+        "WEBCL-933",
+        "Cambio de audio",
+        "Then Asegurar que cuando el usuario acceda al Panel de Audio y Subtítulos pueda cambiar el audio del contenido que está en reproducción",
+    )
+    cases = compose_scenario_inventory([unit], [], lambda *_args: None)
+    actions = [step.action.lower() for step in cases[0].steps]
+    assert any("panel de audio" in action for action in actions)
+    assert any(action.startswith("cambiar el audio") for action in actions)
+    assert not any(action.startswith("verificar lo indicado") for action in actions)
+
+
+def test_technical_then_is_verification_and_given_tech_leaves_the_precondition():
+    kind, _reason = legacy_disposition(
+        "Resolución del catálogo",
+        "Then la aplicación obtiene el array de apa/metadata",
+    )
+    assert kind == "verificacion"
+    kind, _reason = legacy_disposition(
+        "Cambio documentado",
+        "Then se revisa el cambio y está documentado",
+    )
+    assert kind == "verificacion"
+    unit = _unit(
+        "c-player",
+        "WEBCL-2",
+        "Player con **audio**",
+        "\n".join(
+            [
+                "Given el usuario tiene sesión. La aplicación obtiene el appkey",
+                "When el usuario abre el player",
+                "Then se muestra la pantalla de reproducción",
+            ]
+        ),
+    )
+    cases = compose_scenario_inventory([unit], [], lambda *_args: None)
+    assert cases
+    assert "appkey" not in (cases[0].precondition or "").lower()
+    assert "**" not in cases[0].name
+    assert "`" not in cases[0].name
+
+
+def test_visible_epic_criterion_becomes_a_case_until_a_story_covers_it():
+    story = _unit(
+        "s1",
+        "WEBCL-10",
+        "Cambio de audio",
+        "Given el usuario abre el player\nWhen el usuario selecciona el audio\nThen se muestra el audio elegido",
+    )
+    covered = _unit(
+        "ac1",
+        "WEBCL-10",
+        "El usuario ve el audio elegido en la pantalla",
+        "Then se muestra el audio elegido en la pantalla",
+        epic="WEBCL-100",
+    )
+    covered.artifact_key = "WEBCL-100"
+    story.artifact_key = "WEBCL-100"
+    covered.applied_rules = ["ac-epica", "criterio-precubierto"]
+    fresh = _unit(
+        "ac2",
+        "WEBCL-10",
+        "Cambio de subtítulo",
+        "Then se muestra el subtítulo elegido en la pantalla",
+        epic="WEBCL-100",
+    )
+    fresh.artifact_key = "WEBCL-100"
+    fresh.applied_rules = ["ac-epica"]
+    cases = compose_scenario_inventory([story, covered, fresh], [], lambda *_args: None)
+    names = [case.name.lower() for case in cases]
+    assert any("audio" in name for name in names)
+    assert any("subtítulo" in name or "subtitulo" in name for name in names)
+    stats = GenerationStats()
+    fill_scenario_ledger(stats, [story, covered, fresh], cases)
+    covered_row = next(row for row in stats.scenario_ledger if row["scenario"].startswith("El usuario ve el audio"))
+    assert covered_row["estado"].startswith("criterio de épica – cubierto por ")
+
+
+def test_evolutionary_epic_with_only_visible_criteria_generates_cases():
+    criterion = _unit(
+        "ac-only",
+        "WEBCL-20",
+        "Cambio de subtítulo en el player",
+        "Then se muestra el subtítulo elegido",
+        epic="WEBCL-200",
+    )
+    criterion.artifact_key = "WEBCL-200"
+    criterion.applied_rules = ["ac-epica"]
+    cases = compose_scenario_inventory([criterion], [], lambda *_args: None)
+    assert len(cases) == 1
+    assert cases[0].steps
+
+
+def test_corrected_incidents_get_a_retest_case():
+    cases = incident_retest_cases(
+        {"qa_qc": [("ADTCL-230", "ADTCL-230: El botón Eliminar no cierra el modal")]},
+        "adt.pdf",
+    )
+    assert len(cases) == 1
+    assert cases[0].component == "Reprueba de incidencias"
+    assert cases[0].name.startswith("El botón Eliminar")
+    assert cases[0].steps[-1].expected_result == "El defecto ya no ocurre."
+    assert incident_retest_cases({"qa_qc": [("X-1", "[Ticket Jira]")]}, "x.pdf") == []
 
 
 def test_priority_bands():

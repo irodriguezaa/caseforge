@@ -1409,6 +1409,8 @@ def _units_from_story_blocks(
         extra_rules = ["then-tecnico-traducido"] if block.get("_translated_then") else []
         if source_origin == "ac":
             extra_rules.append("ac-epica")
+            if block.get("_precovered"):
+                extra_rules.append("criterio-precubierto")
         na_kwargs: dict[str, str] = {}
         blob = f"{title}\n{body}"
         technical_then = _http_or_api_only(blob) or (
@@ -1807,13 +1809,10 @@ def build_coverage_inventory(
                 kept_ac: list[dict[str, Any]] = []
                 for block in unique:
                     title = str(block.get("title") or "")
-                    if behavior_already_covered(title, gherkin_corpus):
-                        stats.inventory_exclusions.append(
-                            f"{story.get('key') or epic_key}: AC de épica cubierto por escenario de historia"
-                        )
-                        continue
                     block = dict(block)
                     block["source_origin"] = "ac"
+                    if behavior_already_covered(title, gherkin_corpus):
+                        block["_precovered"] = True
                     kept_ac.append(block)
                 unique = kept_ac
             if not unique:

@@ -701,12 +701,23 @@ def build_test_cases_workbook(
 
     sheet = workbook.create_sheet("Escenarios de Jira")
     _style_header(sheet, ["Historia", "Escenario", "Estado", "ID del caso", "Motivo"], [16, 48, 24, 28, 40])
+    by_name = {
+        str(getattr(case, "test_case_name", "") or ""): str(getattr(case, "test_case_id", "") or "")
+        for case in ordered
+    }
     for row_index, row in enumerate(ledger_rows, start=2):
+        estado = str(row.get("estado") or "")
+        case_id = str(row.get("case_id") or "")
+        resolved = by_name.get(case_id) or case_id
+        if estado.startswith("criterio de épica – cubierto por ") and resolved and resolved != case_id:
+            estado = f"criterio de épica – cubierto por {resolved}"
+        elif resolved and case_id and resolved != case_id and estado.startswith("criterio de épica"):
+            estado = f"criterio de épica – cubierto por {resolved}"
         values = [
             row.get("story") or "",
             row.get("scenario") or "",
-            row.get("estado") or "",
-            row.get("case_id") or "",
+            estado,
+            resolved,
             row.get("motivo") or "",
         ]
         for col, value in enumerate(values, start=1):

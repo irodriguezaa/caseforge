@@ -30,6 +30,7 @@ PLATFORM_MATRIX: dict[str, tuple[str, str]] = {
     "Kepler": ("OTT", "FTV"),
     "Roku": ("OTT", "ROKU"),
     "AAF Evolutivo": ("OTT", "AAF"),
+    "STV": ("OTT", "AAF"),
     "AAF Legacy": ("OTT", "AAF"),
     "WIN/XBOX": ("OTT", "WIN"),
     "Coship9085": ("OTT", "Coship9085"),
@@ -167,6 +168,15 @@ def select_matrix_cases(
         key = case.module.module_key if case.module else ""
         by_module.setdefault(key, []).append(case)
 
+    # Solo módulos con casos en la columna de este dispositivo. Descargas/Offline
+    # o el iFrame de Telmex no entran en Smart TV si esa columna no los tiene.
+    device_keys = {key for key, rows in by_module.items() if rows}
+    suggestions = [item for item in suggestions if item["module_key"] in device_keys]
+    suggested = [key for key in suggested if key in device_keys]
+    effective = [key for key in effective if key in device_keys]
+    related = [key for key in _related_keys(effective, catalog) if key in device_keys]
+    expanded = list(dict.fromkeys([*effective, *related]))
+
     if scope in {"", "N/A"} or scope not in {
         "Pruebas Acotadas",
         "Smoke Test",
@@ -235,6 +245,7 @@ def select_matrix_cases(
             "device_case_count": len(rendered_by_module.get(module.module_key, [])),
         }
         for module in sorted(matrix.modules, key=lambda item: item.module_key)
+        if rendered_by_module.get(module.module_key)
     ]
     summary = _impact_summary(scope, len(rendered), effective, related, module_rows)
     return {

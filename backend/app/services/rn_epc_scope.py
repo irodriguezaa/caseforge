@@ -163,6 +163,8 @@ def stamp_candidates(
 ) -> list[GeneratedCaseCandidate]:
     mapping = story_to_rn_map(artifacts, rn_keys)
     for candidate in candidates:
+        if (candidate.generation_origin or "") == "reprueba-incidencia":
+            continue
         stamp_candidate_identity(candidate, rn_keys, mapping)
     return candidates
 

@@ -1105,6 +1105,88 @@ def compose_scenario_units(units: list[CoverageUnit]) -> FlowDraft:
     )
 
 
+def _criterion_visible(unit: CoverageUnit) -> bool:
+    text = f"{unit.scenario or ''}\n{unit.body or ''}"
+    if legacy_disposition(unit.scenario or "", unit.body or "")[0] != "caso":
+        return False
+    return bool(
+        then_has_visible_outcome(unit.body or "")
+        or re.search(
+            r"se muestra|se presenta|pantalla|bot[oó]n|audio|subt[ií]tulo|mensaje|modal",
+            text,
+            re.I,
+        )
+    )
+
+
+_GENERIC_COVER = {
+    "muestra", "mostrar", "pantalla", "elegido", "usuario", "selecciona", "seleccionar",
+    "abre", "abrir", "player", "mensaje", "mensajes", "forma", "clara",
+}
+
+
+def _covering_case(unit: CoverageUnit, pool: list[GeneratedCaseCandidate]) -> GeneratedCaseCandidate | None:
+    from app.services.gherkin_coverage import _cover_tokens
+
+    needle = _cover_tokens(f"{unit.scenario or ''} {unit.body or ''}") - _GENERIC_COVER
+    if len(needle) < 1:
+        return None
+    scored: list[tuple[float, GeneratedCaseCandidate]] = []
+    union: set[str] = set()
+    for row in pool:
+        blob = " ".join(
+            [row.name or "", *(f"{step.action} {step.expected_result}" for step in row.steps)]
+        )
+        hay = _cover_tokens(blob) - _GENERIC_COVER
+        union |= hay
+        if not hay:
+            continue
+        scored.append((len(needle & hay) / len(needle), row))
+    scored.sort(key=lambda item: item[0], reverse=True)
+    if scored and scored[0][0] >= 0.6:
+        return scored[0][1]
+    if union and len(needle & union) / len(needle) >= 0.5 and scored:
+        return scored[0][1]
+    return None
+
+
+def _keep_uncovered_epic_criteria(
+    groups: dict[str, list[CoverageUnit]],
+    cases: list[GeneratedCaseCandidate],
+) -> list[GeneratedCaseCandidate]:
+    """Un criterio visible no cubierto genera caso. Si ya lo cubre otro caso, no se duplica."""
+    by_cover = {unit.coverage_id: unit for units in groups.values() for unit in units}
+    stories: list[GeneratedCaseCandidate] = []
+    criteria: list[tuple[CoverageUnit, GeneratedCaseCandidate]] = []
+    for row in cases:
+        unit = next((by_cover.get(cid) for cid in (row.covers or []) if by_cover.get(cid)), None)
+        if unit and "criterio-epica" in (unit.applied_rules or []):
+            criteria.append((unit, row))
+        else:
+            stories.append(row)
+    kept = list(stories)
+    for unit, row in criteria:
+        if not _criterion_visible(unit):
+            continue
+        epic = (unit.artifact_key or "").strip()
+        pool = [
+            other
+            for other in kept
+            if (other.related_functionality or "").split(" | ")[0].strip() == epic
+        ]
+        cover = _covering_case(unit, pool)
+        if cover is None and "criterio-precubierto" in (unit.applied_rules or []) and pool:
+            cover = pool[0]
+        if cover is not None:
+            rules = list(unit.applied_rules or [])
+            if "criterio-cubierto" not in rules:
+                unit.applied_rules = [*rules, "criterio-cubierto"]
+            unit.applicability_reason = cover.name
+            continue
+        kept.append(row)
+    return kept
+
+
 def compose_scenario_inventory(
     inventory: list[CoverageUnit],
     existing: list[dict[str, str]],
@@ -1155,14 +1237,6 @@ def compose_scenario_inventory(
                 rules = list(unit.applied_rules or [])
                 if "criterio-epica" not in rules:
                     unit.applied_rules = [*rules, "criterio-epica"]
-                text = re.sub(
-                    r"^(Then|Entonces)\s+",
-                    "",
-                    (unit.body or unit.scenario or ""),
-                    flags=re.I,
-                ).strip()
-                unit.applicability_reason = text or unit.scenario
-            continue
         draft = compose_scenario_units(groups[key])
         candidate = draft_to_candidate(draft, existing, duplicate_of)
         candidate.generation_origin = "scenario-case"
@@ -1209,6 +1283,7 @@ def compose_scenario_inventory(
         if not candidate.steps and (candidate.applicability or "") != "na_ambiente":
             continue
         out.append(candidate)
+    out = _keep_uncovered_epic_criteria(groups, out)
     exe = {
         ((row.related_jira or "").split(" | ")[0], re.sub(r"\W+", " ", (row.name or "").lower()).strip())
         for row in out
@@ -1425,7 +1500,8 @@ _DERIVABLE_ACTION = re.compile(
     r"ingresar|ingresa|registrarse|se registra|autenticarse|se autentica|"
     r"da clic|hace clic|presiona|presionar|elegir|elige|pulsar|pulsa|"
     r"confirmar|confirma|cancelar|cancela|acceder|accede|accionar|acciona|accione|"
-    r"identificar|identifica|por primera vez)\b|"
+    r"identificar|identifica|por primera vez|"
+    r"abre|desplaza|sintoniza|navega|regresa|reproduce|se presenta)\b|"
     r"bot[oó]n\s+[\"“«]|bot[oó]n accionable",
     re.IGNORECASE,
 )
@@ -1486,12 +1562,19 @@ def fill_scenario_ledger(
                 (match.applicability_reason if match else None) or unit.applicability_reason or "na_ambiente",
                 match.name if match else "",
             )
-        elif "criterio-epica" in (unit.applied_rules or []):
-            estado, motivo, case_id = (
-                "criterio de épica – revisar",
-                unit.applicability_reason or unit.scenario or "",
-                "",
-            )
+        elif "criterio-epica" in (unit.applied_rules or []) and not (match and match.steps):
+            if "criterio-cubierto" in (unit.applied_rules or []):
+                estado, motivo, case_id = (
+                    f"criterio de épica – cubierto por {unit.applicability_reason or 'un caso de la épica'}",
+                    unit.applicability_reason or "",
+                    unit.applicability_reason or "",
+                )
+            else:
+                estado, motivo, case_id = (
+                    "criterio de épica – revisar",
+                    unit.applicability_reason or unit.scenario or "",
+                    "",
+                )
         elif "nota-proceso" in (unit.applied_rules or []):
             estado, motivo, case_id = (
                 "nota",

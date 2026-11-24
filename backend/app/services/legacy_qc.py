@@ -22,6 +22,72 @@ _USER_VERBS = re.compile(
     r"identificar|identifico|identifica)\b",
     re.IGNORECASE,
 )
+_LEAD_ACTION = re.compile(
+    r"^(?:abre|abrir|desplaza|desplazar|sintoniza|sintonizar|"
+    r"navega|navegar|regresa|regresar|reproduce|reproducir)\b",
+    re.IGNORECASE,
+)
+# Tercera persona, en cualquier conjugación, cuando el usuario es el sujeto.
+# "se abre" no es una acción. "está" y "tiene" siguen siendo estado.
+_ACTOR = r"(?:(?:el|la)\s+)?(?:usuari[oa]|suscriptor)"
+_ACTION_VERB = (
+    r"abre|abri[oó]|abrir|abra|"
+    r"desplaza|desplazar|desplaz[oó]|"
+    r"sintoniza|sintonizar|sintoniz[oó]|"
+    r"selecciona|seleccionar|seleccion[oó]|seleccionaron|"
+    r"ingresa|ingresar|ingres[oó]|ingresaron|"
+    r"navega|navegar|naveg[oó]|"
+    r"presiona|presionar|presion[oó]|"
+    r"regresa|regresar|regres[oó]|"
+    r"reproduce|reproducir|reproduj[oó]|"
+    r"recorre|recorrer|recorri[oó]|"
+    r"deja|dejar|dej[oó]|dejaron|"
+    r"completa|completar|complet[oó]|completaron|"
+    r"confirma|confirmar|confirm[oó]|"
+    r"cancela|cancelar|cancel[oó]|"
+    r"pulsa|pulsar|"
+    r"elige|elegir|eligi[oó]|"
+    r"accede|acceder|acced[aieoó]|"
+    r"busca|buscar|"
+    r"vuelve a abrir"
+)
+_USER_SUBJECT_VERB = re.compile(
+    rf"\b{_ACTOR}\s+(?:no\s+)?(?:{_ACTION_VERB})\b",
+    re.IGNORECASE,
+)
+# Conjugaciones que el motor viejo no movía a pasos. Llevan su propio resultado
+# para no fundirse con la acción siguiente ni perderse.
+_SETUP_CLAUSE = re.compile(
+    rf"\b{_ACTOR}\s+(?:no\s+)?(?:"
+    r"abri[oó]|desplaz[oó]|sintoniz[oó]|seleccion[oó]|ingres[oó]|naveg[oó]|"
+    r"presion[oó]|regres[oó]|reproduj[oó]|recorri[oó]|dej[oó]|complet[oó]|"
+    r"confirm[oó]|cancel[oó]|eligi[oó]|acced[aieoó]|"
+    r"recorre|recorrer|deja|dejar|completa|completar|vuelve a abrir"
+    r")\b",
+    re.IGNORECASE,
+)
+_CONJUGATION = (
+    (re.compile(r"\bseleccion[oó]\b", re.I), "selecciona"),
+    (re.compile(r"\bingres[oó]\b", re.I), "ingresa"),
+    (re.compile(r"\babri[oó]\b", re.I), "abre"),
+    (re.compile(r"\bdej[oó]\b", re.I), "deja"),
+    (re.compile(r"\bcomplet[oó]\b", re.I), "completa"),
+    (re.compile(r"\bpresion[oó]\b", re.I), "presiona"),
+    (re.compile(r"\bregres[oó]\b", re.I), "regresa"),
+    (re.compile(r"\bnaveg[oó]\b", re.I), "navega"),
+    (re.compile(r"\bsintoniz[oó]\b", re.I), "sintoniza"),
+    (re.compile(r"\brecorri[oó]\b", re.I), "recorre"),
+    (re.compile(r"\bconfirm[oó]\b", re.I), "confirma"),
+    (re.compile(r"\bcancel[oó]\b", re.I), "cancela"),
+    (re.compile(r"\beligi[oó]\b", re.I), "elige"),
+    (re.compile(r"\bacced[aieoó]\b", re.I), "accede"),
+    (re.compile(r"\breproduj[oó]\b", re.I), "reproduce"),
+    (re.compile(r"\bvuelve a abrir\b", re.I), "abre"),
+)
+_SCREEN_ARRIVAL = re.compile(
+    r"\bse presenta(?:n)?\s+(?:la\s+|el\s+|los\s+|las\s+)?(pantalla\b[^.;]*)",
+    re.IGNORECASE,
+)
 _STATE = re.compile(
     r"\b(tiene sesi[oó]n|sin sesi[oó]n|est[aá] (logueado|registrado|suscrito)|"
     r"cuenta con|no cuenta con|tipo de usuario|suscripci[oó]n|m[eé]todo de pago|"
@@ -49,6 +115,26 @@ _VISIBLE_THEN = re.compile(
 )
 _THEN_TECH = re.compile(
     r"\b(API|servicio|par[aá]metro|user_hash|endpoint|se obtiene)\b",
+    re.IGNORECASE,
+)
+# El Then depende de esto: el escenario pasa a verificación técnica.
+# Si la frase solo está en el Given, se elimina de la precondición y el caso sigue.
+_TECH_ACTOR = re.compile(
+    r"\b(?:la aplicaci[oó]n|el sistema|el servicio|[A-Z]{2,10}CL)\s+"
+    r"(?:obtiene|consulta|resuelve|inicializa)\b"
+    r"|query\s*parameters?"
+    r"|\barray\b"
+    r"|\bprotocolos?\b"
+    r"|/user/"
+    r"|apa/assets"
+    r"|apa/metadata"
+    r"|\binsumo\b"
+    r"|propiedad\s+enable"
+    r"|\bappkey\b"
+    r"|no se implementa"
+    r"|no se reimplementa"
+    r"|se revisa el cambio"
+    r"|est[aá] documentad",
     re.IGNORECASE,
 )
 _NO_AFECTACION = re.compile(
@@ -166,8 +252,17 @@ def gloss_precondition(text: str) -> tuple[str | None, list[str]]:
 
 
 def given_goes_to_step(text: str) -> bool:
-    """Verbo de acción del usuario en el Given: pasa a Test Steps, no a precondición."""
-    if not text or not _USER_VERBS.search(text):
+    """Verbo de acción del usuario en el Given: pasa a Test Steps, no a precondición.
+
+    Incluye la tercera persona ("el usuario abre") y "se presenta la pantalla".
+    """
+    if not text:
+        return False
+    if _SCREEN_ARRIVAL.search(text):
+        return True
+    if _USER_SUBJECT_VERB.search(text) or _LEAD_ACTION.search(text):
+        return True
+    if not _USER_VERBS.search(text):
         return False
     if _STATE.search(text) and not _USER_VERBS.search(text):
         return False
@@ -184,8 +279,18 @@ def legacy_disposition(title: str, body: str = "") -> tuple[str, str]:
         return "nota", "criterio de proceso: no es un caso de prueba"
     if _KEY_TITLE.search(title or ""):
         return "verificacion", "llave, configuración o metadata: no es caso QC"
-    if _THEN_TECH.search(then) and not _VISIBLE_THEN.search(then):
+    then_block_match = re.search(
+        r"\b(?:then|entonces)\b(?P<rest>.*)\Z", body or "", re.IGNORECASE | re.DOTALL
+    )
+    then_block = then_block_match.group("rest") if then_block_match else then
+    if (_THEN_TECH.search(then_block) or _TECH_ACTOR.search(then_block)) and not _VISIBLE_THEN.search(then_block):
         return "verificacion", "el Then menciona API, servicio, parámetro o endpoint"
+    if (
+        _TECH_ACTOR.search(blob)
+        and re.search(r"\bla aplicaci[oó]n\b", then_block, re.IGNORECASE)
+        and not _VISIBLE_THEN.search(then_block)
+    ):
+        return "verificacion", "el Then depende de un comportamiento técnico de la aplicación"
     return "caso", ""
 
 
@@ -218,7 +323,7 @@ def _clip_words(text: str, limit: int) -> str:
 def clean_title(title: str, user: str = "", action: str = "", result: str = "") -> str:
     """El título es el nombre del escenario. No se arma con los pasos."""
     del user, action, result
-    raw = (title or "").strip()
+    raw = _strip_md(title or "")
     text = _BROKEN_QUOTE.sub("", raw)
     text = re.sub(r"[\"“”']", "", text)
     text = re.sub(r"\s+", " ", text).strip(" -:")
@@ -293,7 +398,20 @@ def fold(text: str) -> str:
 
 
 def technical_phrase(text: str) -> bool:
-    return bool(_PHRASE_TECH.search(text or ""))
+    return bool(_PHRASE_TECH.search(text or "") or _TECH_ACTOR.search(text or ""))
+
+
+def _strip_md(text: str) -> str:
+    """Quita negritas y código. No borra máscaras de dígitos como ****3456."""
+    out = re.sub(r"`([^`]*)`", r"\1", text or "")
+    out = re.sub(r"\*\*([^*]+)\*\*", r"\1", out)
+    return re.sub(r"\s+", " ", out).strip()
+
+
+def _without_tech_clauses(text: str) -> str:
+    parts = re.split(r"\s*;\s*|(?<=\.)\s+", text or "")
+    kept = [part.strip(" .") for part in parts if part.strip(" .") and not technical_phrase(part)]
+    return ". ".join(kept)
 
 
 def third_person(text: str) -> str:
@@ -490,9 +608,25 @@ def _walk(body: str) -> list[tuple[str, str]]:
         else:
             continue
         line = line.strip()
-        if line:
-            rows.append((kind, line))
+        if not line:
+            continue
+        pieces = _split_action_clauses(line) if kind != "then" else [line]
+        for piece in pieces:
+            if piece:
+                rows.append((kind, piece))
     return rows
+
+
+def _split_action_clauses(text: str) -> list[str]:
+    """Parte 'el usuario abre X y el usuario selecciona Y' en acciones ordenadas."""
+    parts = re.split(
+        r"\s+y\s+(?=(?:(?:el|la)\s+)?(?:usuari[oa]|suscriptor)\b|se presenta\b|"
+        r"(?:seleccion|ingres|abr|dej|complet|presion|regres|naveg|sintoniz|"
+        r"recorr|confirm|reprodu|vuelve)\w*)",
+        text or "",
+        flags=re.IGNORECASE,
+    )
+    return [part.strip(" .") for part in parts if part.strip(" .")]
 
 
 _KEY_STATE = re.compile(
@@ -559,10 +693,63 @@ def _named_button(text: str, history: list[str]) -> str:
     return ""
 
 
+def _setup_result(text: str) -> str:
+    line = re.sub(
+        r"^(?:and|y|given|dado que|dado|when|cuando)\s+",
+        "",
+        text or "",
+        flags=re.IGNORECASE,
+    ).strip(" .")
+    if not line:
+        return "Queda hecha la acción."
+    line = line[0].upper() + line[1:]
+    if not line.endswith("."):
+        line += "."
+    return f"Queda hecha la acción: {line}"
+
+
+def _audio_panel(text: str) -> list[dict[str, object]]:
+    """El criterio de audio y subtítulo son dos acciones, no una comprobación."""
+    match = re.search(
+        r"acced\w*\s+al\s+(panel de audio y subt[ií]tulos).{0,160}?cambiar el (audio|subt[ií]tulo)",
+        text or "",
+        re.IGNORECASE,
+    )
+    if not match:
+        return []
+    panel = re.sub(r"\s+", " ", match.group(1)).strip()
+    what = match.group(2)
+    return [
+        {
+            "action": f"Acceder al {panel}",
+            "results": ["Se muestra el panel de audio y subtítulos."],
+        },
+        {
+            "action": f"Cambiar el {what} del contenido en reproducción",
+            "results": [f"El contenido en reproducción usa el {what} elegido."],
+        },
+    ]
+
+
 def _user_action(text: str, history: list[str] | None = None) -> str:
     raw = re.sub(r"\s+", " ", (text or "").strip())
     if not raw or (technical_phrase(raw) and not visible_remainder(raw)):
         return ""
+    actionable = given_goes_to_step(raw)
+    arrival = _SCREEN_ARRIVAL.search(raw)
+    if arrival:
+        dest = re.sub(r"\s+", " ", arrival.group(1)).strip(" .")
+        return f"Ingresar a la {dest}"
+    for pattern, replacement in _CONJUGATION:
+        raw = pattern.sub(replacement, raw)
+    raw = re.sub(
+        rf"^(?:.*?)\b({_ACTOR}\s+(?:no\s+)?(?:{_ACTION_VERB})\b)",
+        r"\1",
+        raw,
+        count=1,
+        flags=re.IGNORECASE,
+    )
+    raw = re.sub(rf"^{_ACTOR}\s+", "", raw, flags=re.IGNORECASE)
     raw = re.sub(r"^(que\s+)?identifico\b", "identificar", raw, flags=re.IGNORECASE)
     raw = re.sub(r"^(que\s+)?consulto\b", "consultar", raw, flags=re.IGNORECASE)
     raw = re.sub(r"^(que\s+)?valido\b", "validar", raw, flags=re.IGNORECASE)
@@ -577,7 +764,9 @@ def _user_action(text: str, history: list[str] | None = None) -> str:
         return "Corregir el número ingresado"
     if re.search(r"\bal ser accionado\b", raw, re.I):
         return ""
-    if not given_goes_to_step(raw) and not re.search(r"\b(identificar|consultar|validar)\b", raw, re.I):
+    if not actionable and not given_goes_to_step(raw) and not re.search(
+        r"\b(identificar|consultar|validar)\b", raw, re.I
+    ):
         return ""
     if re.search(r"\bse autentica\b", raw, re.I):
         rest = re.sub(r"^.*\bse autentica\b", "", raw, flags=re.IGNORECASE).strip()
@@ -1012,6 +1201,11 @@ def _flow(units: list) -> tuple[list[dict[str, object]], list[str], list[str], b
 
     def close() -> None:
         nonlocal current
+        if current and current.get("action") and not current.get("results"):
+            source = str(current.get("_source") or "")
+            action = str(current.get("action") or "")
+            if source and _SETUP_CLAUSE.search(source) and not is_entry_flow(action):
+                current["results"] = [_setup_result(source)]
         if current and (current.get("action") or current.get("results")):
             segments.append(current)
         current = None
@@ -1040,6 +1234,12 @@ def _flow(units: list) -> tuple[list[dict[str, object]], list[str], list[str], b
                 warnings.append(text[:180])
                 history.append(text)
                 continue
+            panel = _audio_panel(text)
+            if panel:
+                close()
+                segments.extend(panel)
+                history.append(text)
+                continue
             embedded, embedded_result = ("", "")
             if kind == "then":
                 embedded, embedded_result = _embedded_press(text)
@@ -1057,7 +1257,12 @@ def _flow(units: list) -> tuple[list[dict[str, object]], list[str], list[str], b
                     close()
                 elif current and (current.get("action") or current.get("results")):
                     close()
-                current = {"action": action, "results": []}
+                current = {"action": action, "results": [], "_source": text}
+                arrival = _SCREEN_ARRIVAL.search(text)
+                if arrival and kind != "then":
+                    shown = re.sub(r"^Ingresar a la\s+", "Se muestra la ", action, flags=re.IGNORECASE).strip(" .")
+                    if shown:
+                        current["results"].append(shown if shown.endswith(".") else shown + ".")
                 if kind == "then" and not embedded_result:
                     current["results"].append(text)
                 elif embedded_result:
@@ -1093,7 +1298,7 @@ def _flow(units: list) -> tuple[list[dict[str, object]], list[str], list[str], b
 
 def _leading_action(units: list) -> str:
     blob = "\n".join(f"{unit.scenario or ''}\n{unit.body or ''}" for unit in units)
-    if re.search(r"validaci[oó]n|n[uú]mero celular|m[eé]todo de pago|\bpin\b", blob, re.I) and re.search(
+    if re.search(r"\bpin\b|n[uú]mero celular|m[eé]todo de pago", blob, re.I) and re.search(
         r"modal|exitos|error|agreg", blob, re.I
     ):
         return "Ingresar el PIN"
@@ -1285,6 +1490,33 @@ def _ensure_pin(steps: list) -> list:
     return out
 
 
+def _action_from_clause(text: str) -> str:
+    raw = re.sub(r"^(?:se muestra|se visualiza)\s+", "", text or "", flags=re.IGNORECASE).strip(" .")
+    if not raw:
+        return ""
+    return f"Comprobar {raw[:160]}"
+
+
+def _entry_screen(units: list) -> str:
+    """Primera pantalla nombrada en el Given, cuando no quedó otra acción."""
+    blob = "\n".join(
+        f"{unit.feature_background or ''}\n{unit.body or ''}" for unit in units
+    )
+    match = _SCREEN_ARRIVAL.search(blob)
+    if match:
+        dest = re.sub(r"\s+", " ", match.group(1)).strip(" .")
+        return f"Ingresar a la {dest}"
+    named = re.search(
+        r"\bpantalla\s+(?:de\s+|del\s+|principal\b|de\s+inicio\b)[^.;]{0,60}",
+        blob,
+        re.IGNORECASE,
+    )
+    if named and re.search(r"\b(given|dado)\b", blob, re.I):
+        dest = re.sub(r"\s+", " ", named.group(0)).strip(" .")
+        return f"Ingresar a la {dest}"
+    return ""
+
+
 def finish_case(case, units: list) -> None:
     """Reconstruye el caso desde el escenario: no pierde el Then ni inventa pasos."""
     from app.schemas.case_generation import CandidateStep
@@ -1309,7 +1541,7 @@ def finish_case(case, units: list) -> None:
             ):
                 action = "Ingresar a la Home"
             else:
-                action = _leading_action(units) or "Verificar lo indicado en pantalla"
+                action = _leading_action(units) or _entry_screen(units)
         if not action:
             continue
         if is_filler_expected(action, expected):
@@ -1337,9 +1569,11 @@ def finish_case(case, units: list) -> None:
         folded.append(step)
     steps = _merge_filler_steps(_order_cancel_before_removal(_ensure_pin(folded)))
     if len(steps) == 1 and fold(steps[0].action).startswith("verificar"):
-        leading = _leading_action(units)
+        leading = _leading_action(units) or _entry_screen(units)
         if leading:
             steps[0].action = leading
+        else:
+            steps = []
     for index, step in enumerate(steps, start=1):
         step.step_number = index
         step.expected_result = _at_word(step.expected_result or "", 2000)
@@ -1351,9 +1585,21 @@ def finish_case(case, units: list) -> None:
     kept = [step for step in steps if (step.expected_result or "").strip()]
     if kept:
         steps = kept
-    if not steps and any(then_has_visible_outcome(unit.body or "") for unit in units):
+    criterion = any("criterio-epica" in (unit.applied_rules or []) for unit in units)
+    topic = "\n".join(f"{unit.scenario or ''}\n{unit.body or ''}" for unit in units)
+    visible_topic = bool(
+        re.search(r"audio|subt[ií]tulo|pantalla|bot[oó]n|mensaje|modal", topic, re.IGNORECASE)
+    )
+    if not steps and (
+        any(then_has_visible_outcome(unit.body or "") for unit in units)
+        or (criterion and visible_topic)
+    ):
         visible = _join_results(visible_then_clauses(*(unit.body or "" for unit in units)))
-        action = _leading_action(units) or "Verificar lo indicado en pantalla"
+        if not visible and criterion:
+            visible = _strip_md(re.sub(r"^(?:then|entonces)\s+", "", primary.body or "", flags=re.I))
+        action = _leading_action(units) or _entry_screen(units)
+        if not action and criterion:
+            action = _action_from_clause(visible)
         if visible and action:
             steps = [
                 CandidateStep(
@@ -1365,6 +1611,8 @@ def finish_case(case, units: list) -> None:
             ]
     for index, step in enumerate(steps, start=1):
         step.step_number = index
+        step.action = _strip_md(step.action or "")
+        step.expected_result = _strip_md(step.expected_result or "")
     bodies = [primary.body or ""] if repeated else [unit.body or "" for unit in units]
     thens = visible_then_clauses(*bodies)
     blob = " ".join(f"{step.action} {step.expected_result}" for step in steps)
@@ -1400,6 +1648,7 @@ def finish_case(case, units: list) -> None:
         if given_goes_to_step(state):
             continue
         line = _GHERKIN_LEAD.sub("", third_person(visible_remainder(state) or state)).strip()
+        line = _without_tech_clauses(line)
         if not line or _JUNK_PRE.match(line.strip(" .")) or _DEV_OR_CODE.search(line):
             continue
         if re.search(r"comienza a corregir", line, re.I):
@@ -1496,3 +1745,47 @@ def prepend_sister_paths(cases: list, inventory: list) -> None:
             case.steps = prefix + list(case.steps)
             for index, step in enumerate(case.steps, start=1):
                 step.step_number = index
+
+
+def incident_retest_cases(tickets: dict | None, rn_filename: str) -> list:
+    """Un caso de reprueba por incidencia corregida (sección 2.2)."""
+    from app.schemas.case_generation import CandidateStep, GeneratedCaseCandidate
+
+    cases = []
+    for ticket_id, cell in (tickets or {}).get("qa_qc") or []:
+        raw = _strip_md(re.sub(r"\s+", " ", cell or "")).strip()
+        raw = re.sub(rf"^\s*{re.escape(ticket_id)}\s*:?\s*", "", raw, flags=re.IGNORECASE).strip(" -:")
+        if not raw or re.fullmatch(r"\[?\s*ticket jira\s*\]?", raw, re.IGNORECASE):
+            continue
+        summary = raw[:180]
+        cases.append(
+            GeneratedCaseCandidate(
+                name=summary,
+                description=raw[:2000],
+                steps=[
+                    CandidateStep(
+                        step_number=1,
+                        action=f"Reproducir el escenario: {raw[:700]}",
+                        expected_result="Se alcanza el punto en el que ocurría el defecto.",
+                    ),
+                    CandidateStep(
+                        step_number=2,
+                        action="Completar el flujo descrito en la incidencia.",
+                        expected_result="El defecto ya no ocurre.",
+                    ),
+                ],
+                related_jira=ticket_id,
+                related_rn=rn_filename or None,
+                related_functionality="Reprueba de incidencias",
+                component="Reprueba de incidencias",
+                evidence=(cell or "")[:2000],
+                justification=f"Reprueba de la incidencia corregida {ticket_id}.",
+                confidence="medium",
+                review_required=True,
+                priority="CRITICAL",
+                generation_origin="reprueba-incidencia",
+                source_type="qa_qc",
+                applied_rules=["reprueba-incidencia"],
+            )
+        )
+    return cases
