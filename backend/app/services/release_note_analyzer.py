@@ -232,10 +232,14 @@ def _has_extractable_rn_text(text: str) -> bool:
     return len(re.sub(r"\s+", "", _body_pdf_text(text))) >= 40
 
 
-# Anchored to the "1.N" numbered subsection convention (several templates use it, in different
-# orders per template) -- classification is by the heading's own KEYWORD, never its position
-# number.
-_NUMBERED_HEADING_RE = re.compile(r"^\s*1\.\d+\s*\)?\s*(.+)$")
+# "1.N" is the historical DAMCO heading, including untracked ones (Alcance, Histórico)
+# that the table-of-contents detector needs. Drafts also prefix a section with an emoji
+# ("✨ 2.1 Funcionalidades", "🐛 2.2 Incidencias corregidas"). A number other than 1.N
+# is a heading only when its label classifies: "4.1 Plan de Rollback" must not join a
+# TOC run and hide the next real 1.N heading.
+_NUMBERED_HEADING_RE = re.compile(
+    r"^\s*(?:[^\w\s]+\s*)?(?P<section>\d+\.\d+)\s*\)?\s*(?P<label>.+)$"
+)
 
 # Layer 2 fallback, used only when a document has NO numbered "1.N" headings at all.
 _QA_QC_SENTENCE_RE = re.compile(r"(defectos\s+QA\s+y\s+QC|QA\s*/\s*QC|corrige\s+defectos)", re.IGNORECASE)
@@ -301,6 +305,23 @@ def _table_header_override(header_cell: str) -> str | None:
     return None
 
 
+def _match_numbered_heading(line_text: str) -> tuple[str, str | None] | None:
+    """(section, bucket) for a real numbered heading, or None.
+
+    Untracked 1.N headings ("1.3 Alcance no entregado") return (section, None).
+    "4.1 Plan de Rollback" and "2. Alcance" return None. "2.1 Funcionalidades"
+    and "2.2 Incidencias corregidas" return their bucket.
+    """
+    match = _NUMBERED_HEADING_RE.match(line_text)
+    if not match:
+        return None
+    classified = _classify_heading(match.group("label"))
+    section = match.group("section")
+    if not (section.startswith("1.") or classified is not None):
+        return None
+    return section, classified
+
+
 def _classify_heading(label: str) -> str | None:
     # Typographic apostrophes (ʼ ’ `) are Unicode word characters to Python's regex engine,
     # which silently breaks \b word-boundary matching (e.g. "NCOʼs" reads as one word "NCOʼs",
@@ -320,6 +341,10 @@ def _classify_heading(label: str) -> str | None:
         return "tri"
     if "FUNCIONALIDAD" in upper:
         return "functionality"
+    if "INCIDENCIA" in upper and "CORREGID" in upper:
+        # "2.2 Incidencias corregidas" is this template's QA/QC table. "Incidencias
+        # conocidas" and "Incidencias NCO" do not match.
+        return "qa_qc"
     if upper.strip() == "RELEASE":
         # Same template family uses a bare "1.1 Release" heading (not "Funcionalidad
         # Incluida") directly above the functionality table.
@@ -373,9 +398,9 @@ def _iter_damco_ticket_rows(pdf_bytes: bytes) -> list[tuple[str, str, str]]:
                 for top, line_words in lines.items():
                     line_words.sort(key=lambda w: w["x0"])
                     line_text = " ".join(w["text"] for w in line_words)
-                    heading_match = _NUMBERED_HEADING_RE.match(line_text)
+                    heading_match = _match_numbered_heading(line_text)
                     if heading_match:
-                        events.append((top, "heading", _classify_heading(heading_match.group(1))))
+                        events.append((top, "heading", heading_match[1]))
                     elif _QA_QC_SENTENCE_RE.search(line_text):
                         events.append((top, "qa_sentence", None))
 

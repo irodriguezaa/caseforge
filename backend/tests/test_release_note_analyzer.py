@@ -19,6 +19,8 @@ import pytest
 
 from app.services.release_note_analyzer import (
     RuleBasedPdfAnalyzer,
+    _classify_heading,
+    _match_numbered_heading,
     _has_extractable_rn_text,
     _is_page_label,
 )
@@ -407,6 +409,28 @@ def test_page_label_only_pdf_is_not_extractable_rn_text() -> None:
     assert not _is_page_label("RN-CV - WEB -17.0.0")
     assert not _has_extractable_rn_text("Página1\nPágina2\nPágina3")
     assert _has_extractable_rn_text("1.1 Funcionalidad\nWEBCL-1900 Banner de cookies")
+
+
+def test_emoji_section_numbers_split_funcionalidades_and_incidencias() -> None:
+    """REL-SPR49 usa '✨ 2.1 Funcionalidades' y '🐛 2.2 Incidencias corregidas', no '1.N'."""
+    funcional = _match_numbered_heading("✨ 2.1 Funcionalidades / Evolutivos")
+    incidencias = _match_numbered_heading("🐛 2.2 Incidencias corregidas")
+    assert funcional is not None and funcional[1] == "functionality"
+    assert incidencias is not None and incidencias[1] == "qa_qc"
+    assert _match_numbered_heading("1.1 Funcionalidad Incluida") == ("1.1", "functionality")
+    assert _match_numbered_heading("1.3 Alcance no entregado") == ("1.3", None)
+    assert _match_numbered_heading("4.1 Plan de Rollback") is None
+    assert _match_numbered_heading("🎯 2. Alcance de la liberación") is None
+    assert _classify_heading("Incidencias conocidas") is None
+    assert _classify_heading("Incidencias NCO's") == "nco"
+    spr49 = Path(
+        "/Users/rodriguezisr/Downloads/DAMCO-Borrador-📦 Release Note _ ADT _Sprint 46-47-48 _ REL-SPR49-231126-234719.pdf"
+    )
+    if not spr49.exists():
+        return
+    result = RuleBasedPdfAnalyzer().analyze(spr49.name, spr49.read_bytes())
+    assert result.features_count == 13
+    assert result.qa_qc_issues_count == 20
 
 
 def test_nco_is_a_word_not_a_substring_of_encontrados() -> None:
