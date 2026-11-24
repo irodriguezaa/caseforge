@@ -15,6 +15,7 @@ import httpx
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.models.release import Release
 from app.models.release_analysis import ReleaseAnalysis
 from app.models.test_case import TestCase
@@ -68,10 +69,6 @@ _PROGRAM_ASSIGNEE = {
     "SCTCL": "557058:32697a34-9231-4032-9409-b24247903b5c",
 }
 _HEADINGS = {"Objetivo", "Contexto", "Alcance", "Otra información"}
-_STATUS_TAIL = re.compile(
-    r"(?:\s+)?(?:QA Validation|Roll Out|Done|Canceled|Cancelled|Cancelado|Cancelada)\s*$",
-    re.IGNORECASE,
-)
 _KEY_RE = re.compile(r"^([A-Z][A-Z0-9]+)-\d+$")
 
 
@@ -232,6 +229,7 @@ def draft_for_release(
 def publish_epic(draft: EpicDraft) -> EpicResult:
     existing = _find_epic(draft.summary)
     if existing:
+        _update_description(existing, draft.description)
         _attach_release_note(existing, draft)
         return EpicResult(
             already_existed=True,
@@ -290,18 +288,11 @@ def _lines(items: list[tuple[str, str]], empty: str) -> list[str]:
     if not items:
         return [empty]
     lines: list[str] = []
-    for key, title in items:
-        rest = title
-        upper = rest.upper()
-        token = key.upper()
-        for prefix in (f"{token}:", f"{token} -", f"{token}|", token):
-            if upper.startswith(prefix):
-                rest = rest[len(prefix) :].strip(" :-|")
-                break
-        rest = _strip_status(rest)
-        text = f"- {key} {rest}".strip() if rest else f"- {key}"
-        lines.append(text[:240])
-    return lines
+    for key, _title in items:
+        token = str(key or "").strip().upper()
+        if _KEY_RE.match(token):
+            lines.append(f"- {token}")
+    return lines or [empty]
 
 
 def _fields(draft: EpicDraft) -> dict[str, Any]:
@@ -321,29 +312,63 @@ def _fields(draft: EpicDraft) -> dict[str, Any]:
     return fields
 
 
-def _strip_status(title: str) -> str:
-    text = title
-    while True:
-        cleaned = _STATUS_TAIL.sub("", text).strip(" :-")
-        if cleaned == text:
-            return cleaned
-        text = cleaned
+_ISSUE_LINE = re.compile(r"^- ([A-Z][A-Z0-9]+-\d+)$")
+
+
+def _issue_url(key: str) -> str:
+    base = (settings.jira_base_url or "https://dlatvarg.atlassian.net").rstrip("/")
+    return f"{base}/browse/{key}"
 
 
 def _adf(text: str) -> dict[str, Any]:
     content: list[dict[str, Any]] = []
+    issues: list[dict[str, Any]] = []
+
+    def flush_issues() -> None:
+        if not issues:
+            return
+        content.append({"type": "bulletList", "content": list(issues)})
+        issues.clear()
+
     for line in text.splitlines():
+        match = _ISSUE_LINE.match(line.strip())
+        if match:
+            issues.append(
+                {
+                    "type": "listItem",
+                    "content": [
+                        {
+                            "type": "paragraph",
+                            "content": [
+                                {"type": "inlineCard", "attrs": {"url": _issue_url(match.group(1))}}
+                            ],
+                        }
+                    ],
+                }
+            )
+            continue
+        flush_issues()
         if not line.strip():
             content.append({"type": "paragraph", "content": []})
             continue
-        marks = [{"type": "strong"}] if line.strip() in _HEADINGS else None
         node: dict[str, Any] = {"type": "text", "text": line}
-        if marks:
-            node["marks"] = marks
+        if line.strip() in _HEADINGS:
+            node["marks"] = [{"type": "strong"}]
         content.append({"type": "paragraph", "content": [node]})
+    flush_issues()
     if not content:
         content = [{"type": "paragraph", "content": [{"type": "text", "text": "QC Pulse"}]}]
     return {"type": "doc", "version": 1, "content": content}
+
+
+def _update_description(key: str, description: str) -> None:
+    with _client() as client:
+        response = client.put(
+            f"/rest/api/3/issue/{key}",
+            json={"fields": {"description": _adf(description)}},
+        )
+    if response.status_code not in (200, 204):
+        raise JiraApiError(response.status_code, response.text[:800])
 
 
 def _jql_quote(value: str) -> str:

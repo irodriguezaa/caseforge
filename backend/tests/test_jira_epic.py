@@ -29,15 +29,20 @@ def test_summary_uses_program_version_and_type() -> None:
     assert "Liberar tvOS versión vTVOS-10.13.1 para Claro Video" in text
     assert "Clarovideo tvOS." in text
     assert "entorno BERC." in text
-    assert "- TVOSPR-255 Integración de landing" in text
+    assert "- TVOSPR-255" in text
+    assert "Integración" not in text
     assert "QA Validation" not in text
-    assert "- TVOSPR-804 Tipografía" in text
-    assert "Done" not in text
+    assert "- TVOSPR-804" in text
+    assert "Tipografía" not in text
     assert "Listado de QA/QC Bugs" in text
     assert "Tipo de prueba: Regresión completa" in text
     assert "RN: RN.pdf\n\nAmbiente: BERC\n\nVersión: vTVOS-10.13.1" in text
-    heading = _adf("Objetivo\n\nLiberar")["content"][0]
-    assert heading["content"][0]["marks"] == [{"type": "strong"}]
+    doc = _adf("Objetivo\n\n- TVOSPR-255\n- TVOSPR-28")
+    assert doc["content"][0]["content"][0]["marks"] == [{"type": "strong"}]
+    cards = doc["content"][2]["content"]
+    assert cards[0]["content"][0]["content"][0]["type"] == "inlineCard"
+    assert cards[0]["content"][0]["content"][0]["attrs"]["url"].endswith("/browse/TVOSPR-255")
+    assert cards[1]["content"][0]["content"][0]["attrs"]["url"].endswith("/browse/TVOSPR-28")
 
 
 def test_empty_bug_list_is_omitted() -> None:
@@ -51,7 +56,8 @@ def test_empty_bug_list_is_omitted() -> None:
         qc_bugs=[],
     )
     assert "QA/QC Bugs" not in text
-    assert "- WEBCL-12 Guía" in text
+    assert "- WEBCL-12" in text
+    assert "Guía" not in text
 
 
 def test_unknown_program_is_rejected() -> None:
@@ -79,9 +85,11 @@ def test_publish_creates_one_epic_and_reuses_it(monkeypatch) -> None:
         store["QCO-1"] = fields
         return "QCO-1"
 
+    updated: list[str] = []
     monkeypatch.setattr("app.services.jira_epic._search", search)
     monkeypatch.setattr("app.services.jira_epic._create_issue", create)
     monkeypatch.setattr("app.services.jira_epic._account_id", lambda: None)
+    monkeypatch.setattr("app.services.jira_epic._update_description", lambda key, _text: updated.append(key))
 
     first = publish_epic(draft)
     second = publish_epic(draft)
@@ -92,6 +100,7 @@ def test_publish_creates_one_epic_and_reuses_it(monkeypatch) -> None:
     assert store["QCO-1"]["assignee"] == {"accountId": "60be5d2ba01e11006ab15146"}
     assert store["QCO-1"]["issuetype"] == {"name": "Epic"}
     assert second.already_existed is True
+    assert updated == ["QCO-1"]
     assert len(store) == 1
 
 
