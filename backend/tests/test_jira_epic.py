@@ -15,6 +15,7 @@ from app.services.jira_epic import (
     epic_summary,
     program_code,
     publish_epic,
+    task_description,
 )
 
 
@@ -118,6 +119,49 @@ def test_revalidation_renames_the_epic_and_keeps_only_the_new_scope() -> None:
     assert "Tipo de regresión: Regresión completa" in empty_delta
 
 
+def test_later_version_task_lists_only_the_new_scope() -> None:
+    first = _scope(1, "vWINCL-11.1.0", (("WINCL-528", ""), ("WINCL-2237", "")), (("WINCL-2358", ""),))
+    second = _scope(
+        2,
+        "vWINCL-11.1.1",
+        (("WINCL-528", ""), ("WINCL-2237", "")),
+        (("WINCL-2358", ""), ("WINCL-2520", "")),
+    )
+    text = task_description([first, second], second)
+    assert "Liberar tvOS versión vWINCL-11.1.1 para Claro Video" in text
+    assert "Listado de EPCs (funcionalidades)\nNo hay nuevas funcionalidades" in text
+    assert "Listado de QA/QC Bugs\n- WINCL-2520" in text
+    assert "WINCL-528" not in text
+    assert "WINCL-2237" not in text
+    assert "WINCL-2358" not in text
+    assert "Versión: vWINCL-11.1.1" in text
+    assert "Nuevo alcance" not in text
+
+    opening = task_description([first, second], first)
+    assert "- WINCL-528" in opening
+    assert "- WINCL-2237" in opening
+    assert "No hay nuevas funcionalidades" not in opening
+
+    with_feature = task_description(
+        [first, _scope(2, "vWINCL-11.1.1", (("WINCL-528", ""), ("WINCL-2600", "")), ())],
+        _scope(2, "vWINCL-11.1.1", (("WINCL-528", ""), ("WINCL-2600", "")), ()),
+    )
+    assert "- WINCL-2600" in with_feature
+    assert "WINCL-528" not in with_feature
+    assert "No hay nuevas funcionalidades" not in with_feature
+    assert "QA/QC Bugs" not in with_feature
+
+
+def _plain(node: object) -> str:
+    if isinstance(node, dict):
+        parts = [str(node.get("text") or ""), str((node.get("attrs") or {}).get("url") or "")]
+        parts.extend(_plain(child) for child in node.get("content") or [])
+        return " ".join(part for part in parts if part)
+    if isinstance(node, list):
+        return " ".join(_plain(child) for child in node)
+    return ""
+
+
 def test_publish_creates_one_epic_and_one_task(monkeypatch) -> None:
     draft = EpicDraft(
         release_id=4,
@@ -218,6 +262,11 @@ def test_revalidation_adds_the_new_task_under_the_same_epic(monkeypatch) -> None
     assert created[0]["parent"] == {"key": "QCO-49805"}
     assert created[0]["assignee"] == {"accountId": "5f6a0720f0d4010070378042"}
     assert created[0]["summary"] == "TVOSPR | vTVOS-10.13.2 | RELEASE"
+    description = _plain(created[0]["description"])
+    assert "No hay nuevas funcionalidades" not in description
+    assert "TVOSPR-2100" in description
+    assert "TVOSPR-2108" in description
+    assert "TVOSPR-255" not in description
     assert updated[0][0] == "QCO-49805"
     assert updated[0][1]["summary"] == result.summary
     assert "qcpulse-d9" in updated[0][1]["labels"]

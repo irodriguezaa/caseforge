@@ -176,6 +176,7 @@ def epic_description(
     rn_filename: str | None,
     functionalities: list[tuple[str, str]],
     qc_bugs: list[tuple[str, str]],
+    empty_functionalities: str = "Sin EPC en el RN.",
 ) -> str:
     scope = (validation_type or "").strip() or "Sin tipo de prueba"
     rn = (rn_filename or "").strip()
@@ -194,7 +195,7 @@ def epic_description(
             "Alcance",
             "",
             "Listado de EPCs (funcionalidades)",
-            *_lines(functionalities, "Sin EPC en el RN."),
+            *_lines(functionalities, empty_functionalities),
             "",
             *(
                 ["", "Listado de QA/QC Bugs", *_lines(qc_bugs, "")]
@@ -312,6 +313,28 @@ def _description_for(scope: VersionScope) -> str:
         rn_filename=scope.rn_filename,
         functionalities=list(scope.functionalities),
         qc_bugs=list(scope.qc_bugs),
+    )
+
+
+def task_description(scopes: list[VersionScope], current: VersionScope) -> str:
+    """The first version lists its whole RN. A later version lists only new keys."""
+    prior = [scope for scope in scopes if scope.release_id < current.release_id]
+    if not prior:
+        return _description_for(current)
+    seen_func: set[str] = set()
+    seen_bugs: set[str] = set()
+    for scope in prior:
+        seen_func.update(_keyset(scope.functionalities))
+        seen_bugs.update(_keyset(scope.qc_bugs))
+    return epic_description(
+        device=current.device,
+        version=current.version,
+        environment=current.environment,
+        validation_type=current.validation_type,
+        rn_filename=current.rn_filename,
+        functionalities=_unseen(current.functionalities, seen_func),
+        qc_bugs=_unseen(current.qc_bugs, seen_bugs),
+        empty_functionalities="No hay nuevas funcionalidades",
     )
 
 
@@ -438,7 +461,7 @@ def _publication(draft: EpicDraft) -> _Plan:
         epic_summary=epic_summary,
         epic_description=accumulated_description(included),
         task_summary=cycle_title(draft.program, [current.version], draft.activity_type),
-        task_description=_description_for(current),
+        task_description=task_description(included, current),
         attach_pdf_to_task=included[0].release_id != current.release_id,
         identity_labels=_identity_labels(draft.deliverable_id, tuple(scope.release_id for scope in included)),
         task_labels=_identity_labels(draft.deliverable_id, (current.release_id,)),
