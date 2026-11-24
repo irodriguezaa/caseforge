@@ -474,6 +474,18 @@ def test_pdf_upload_is_multipart() -> None:
     assert request.headers["content-type"].startswith("multipart/form-data")
 
 
+def test_jira_sprints_is_not_read_as_a_release_id(client, monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.routers.releases.list_qc_sprints",
+        lambda: [SprintChoice(id=27623, name="Sprint 49", state="future", label="Sprint 49 · 16 nov – 27 nov")],
+    )
+    response = client.get("/api/v1/releases/jira-sprints")
+    assert response.status_code == 200
+    assert response.json() == [
+        {"id": 27623, "name": "Sprint 49", "state": "future", "label": "Sprint 49 · 16 nov – 27 nov"}
+    ]
+
+
 def test_route_requires_cases(client) -> None:
     created = client.post(
         "/api/v1/releases",

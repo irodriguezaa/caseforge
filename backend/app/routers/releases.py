@@ -454,6 +454,21 @@ def create_release(payload: ReleaseCreate, db: Session = Depends(get_db)) -> Rel
     return to_release_read(release)
 
 
+@router.get("/jira-sprints", response_model=list[JiraSprintOption])
+def qc_sprints() -> list[JiraSprintOption]:
+    """Active and future sprints on the QC Sprint board."""
+    try:
+        choices = list_qc_sprints()
+    except JiraNotConfiguredError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except JiraApiError as exc:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail=exc.detail) from exc
+    return [
+        JiraSprintOption(id=choice.id, name=choice.name, state=choice.state, label=choice.label)
+        for choice in choices
+    ]
+
+
 @router.get("/{release_id}", response_model=ReleaseRead)
 def get_release(release_id: int, db: Session = Depends(get_db)) -> ReleaseRead:
     release = get_release_or_404(release_id, db)
@@ -1421,21 +1436,6 @@ def export_release_test_cases(release_id: int, db: Session = Depends(get_db)) ->
             "Content-Length": str(len(payload)),
         },
     )
-
-
-@router.get("/jira-sprints", response_model=list[JiraSprintOption])
-def qc_sprints() -> list[JiraSprintOption]:
-    """Active and future sprints on the QC Sprint board."""
-    try:
-        choices = list_qc_sprints()
-    except JiraNotConfiguredError as exc:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    except JiraApiError as exc:
-        raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail=exc.detail) from exc
-    return [
-        JiraSprintOption(id=choice.id, name=choice.name, state=choice.state, label=choice.label)
-        for choice in choices
-    ]
 
 
 @router.post("/{release_id}/jira-epic", response_model=JiraEpicResult)
