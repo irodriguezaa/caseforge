@@ -486,7 +486,9 @@ button.danger:hover:not(:disabled) { background: #d94f4c; }
   box-shadow: 0 8px 24px rgba(0, 0, 0, .28);
 }
 table.case-grid th.select,
-table.case-grid td.select { width: 36px; text-align: center; }
+table.case-grid td.select,
+table.activity th.select,
+table.activity td.select { width: 36px; text-align: center; }
 
 .card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 1.25rem; margin-bottom: 1.25rem; }
 .test-data-stack { display: flex; flex-direction: column; gap: 0; margin-top: 12px; }

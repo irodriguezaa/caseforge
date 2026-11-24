@@ -18,7 +18,7 @@ import {
   RELEASE_LIST_STATUS_VALUES,
 } from "@/lib/releaseListStatusFilter";
 import { usePersistedStatusFilter } from "@/lib/usePersistedStatusFilter";
-import type { DeliverableReleaseSummary, ReleaseAnalysis, ReleaseType, ReleaseWithCounts } from "@/lib/types";
+import type { DeliverableReleaseSummary, ReleaseAnalysis, ReleaseStatus, ReleaseType, ReleaseWithCounts } from "@/lib/types";
 
 const ACTIVITY_LABEL: Record<string, string> = {
   HotFix: "HotFix",
@@ -26,6 +26,20 @@ const ACTIVITY_LABEL: Record<string, string> = {
   Mantenimiento: "Mtto",
   Release: "Release",
 };
+
+const NEXT_RELEASE_STATUS: Partial<Record<ReleaseStatus, ReleaseStatus[]>> = {
+  DRAFT: ["IN_PROGRESS", "CANCELLED"],
+  IN_PROGRESS: ["DRAFT", "COMPLETED", "CANCELLED"],
+};
+
+const RELEASE_STATUS_LABEL: Record<ReleaseStatus, string> = {
+  DRAFT: "DRAFT",
+  IN_PROGRESS: "IN PROGRESS",
+  COMPLETED: "COMPLETED",
+  CANCELLED: "CANCELLED",
+};
+
+const RELEASE_STATUS_ORDER: ReleaseStatus[] = ["DRAFT", "IN_PROGRESS", "COMPLETED", "CANCELLED"];
 
 const emptyForm = {
   name: "",
@@ -62,7 +76,7 @@ function releaseTypeLabel(releaseType: ReleaseType | null | undefined): string {
 export default function ReleasesPage(): React.ReactElement {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { canLoadRn, canSeeDashboard } = useAuth();
+  const { canLoadRn, canSeeDashboard, canChangeReleaseStatus } = useAuth();
 
   const [releases, setReleases] = useState<ReleaseWithCounts[]>([]);
   const [statusFilter, setStatusFilter] = usePersistedStatusFilter(
@@ -92,6 +106,12 @@ export default function ReleasesPage(): React.ReactElement {
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [statusOpen, setStatusOpen] = useState(false);
+  const [bulkStatus, setBulkStatus] = useState<ReleaseStatus>("CANCELLED");
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkNotice, setBulkNotice] = useState<string | null>(null);
+
   // Release origen: resolve the Entregable entity, then list versions by deliverable_id.
   const [originCandidates, setOriginCandidates] = useState<DeliverableReleaseSummary[]>([]);
   const [loadingOrigins, setLoadingOrigins] = useState(false);
@@ -110,6 +130,24 @@ export default function ReleasesPage(): React.ReactElement {
   const visibleReleases = useMemo(() => {
     return releases.filter((release) => matchesReleaseListStatus(release.status, statusFilter));
   }, [releases, statusFilter]);
+
+  const selectedReleases = useMemo(
+    () => visibleReleases.filter((release) => selectedIds.includes(release.id)),
+    [visibleReleases, selectedIds],
+  );
+
+  const statusChoices = useMemo(() => {
+    const counts = new Map<ReleaseStatus, number>();
+    for (const release of selectedReleases) {
+      for (const next of NEXT_RELEASE_STATUS[release.status] ?? []) {
+        counts.set(next, (counts.get(next) ?? 0) + 1);
+      }
+    }
+    return RELEASE_STATUS_ORDER.filter((status) => counts.has(status)).map((status) => ({
+      status,
+      count: counts.get(status) ?? 0,
+    }));
+  }, [selectedReleases]);
 
   // Calculate business days dynamically
   const businessDays = calculateBusinessDays(form.startDate, form.endDate);
@@ -279,6 +317,77 @@ export default function ReleasesPage(): React.ReactElement {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const allVisibleSelected =
+    visibleReleases.length > 0 && visibleReleases.every((release) => selectedIds.includes(release.id));
+
+  const toggleRelease = (id: number): void => {
+    setSelectedIds((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]));
+  };
+
+  const toggleVisible = (): void => {
+    const ids = visibleReleases.map((release) => release.id);
+    setSelectedIds((current) => {
+      if (ids.every((id) => current.includes(id))) {
+        return current.filter((id) => !ids.includes(id));
+      }
+      return [...new Set([...current, ...ids])];
+    });
+  };
+
+  const openStatusDialog = (): void => {
+    const first = statusChoices[0]?.status ?? "CANCELLED";
+    setBulkStatus(statusChoices.some((choice) => choice.status === bulkStatus) ? bulkStatus : first);
+    setStatusOpen(true);
+  };
+
+  const applyBulkStatus = async (): Promise<void> => {
+    const movable = selectedReleases.filter((release) =>
+      (NEXT_RELEASE_STATUS[release.status] ?? []).includes(bulkStatus),
+    );
+    const blocked = selectedReleases.length - movable.length;
+    if (movable.length === 0 || bulkBusy) return;
+    setBulkBusy(true);
+    setBulkNotice(null);
+    const failedIds = new Set<number>();
+    for (const release of movable) {
+      try {
+        await api.updateRelease(release.id, { status: bulkStatus });
+      } catch {
+        failedIds.add(release.id);
+      }
+    }
+    const movedIds = movable.filter((release) => !failedIds.has(release.id)).map((release) => release.id);
+    if (movedIds.length > 0) {
+      const moved = new Set(movedIds);
+      setReleases((current) =>
+        current.map((release) => (moved.has(release.id) ? { ...release, status: bulkStatus } : release)),
+      );
+      setSelectedIds((current) => current.filter((id) => !moved.has(id)));
+    }
+    const label = RELEASE_STATUS_LABEL[bulkStatus];
+    const parts: string[] = [];
+    if (movedIds.length > 0) {
+      parts.push(
+        movedIds.length === 1 ? `1 release pasó a ${label}.` : `${movedIds.length} releases pasaron a ${label}.`,
+      );
+    }
+    if (blocked > 0) {
+      parts.push(
+        blocked === 1
+          ? "1 no cambió: su estado actual no permite ese paso."
+          : `${blocked} no cambiaron: su estado actual no permite ese paso.`,
+      );
+    }
+    if (failedIds.size > 0) {
+      parts.push(
+        failedIds.size === 1 ? "1 no se pudo actualizar." : `${failedIds.size} no se pudieron actualizar.`,
+      );
+    }
+    setBulkNotice(parts.join(" "));
+    setBulkBusy(false);
+    setStatusOpen(false);
   };
 
   return (
@@ -721,12 +830,23 @@ export default function ReleasesPage(): React.ReactElement {
 
       {loading && <p className="muted">Cargando releases…</p>}
       {loadError && <p className="error-text">{loadError}</p>}
+      {bulkNotice && <p className="muted">{bulkNotice}</p>}
 
       {!loading && !loadError && (
         <div className="panel" style={{ overflowX: "auto" }}>
           <table className="activity">
             <thead>
               <tr>
+                {canChangeReleaseStatus && (
+                  <th className="select">
+                    <input
+                      type="checkbox"
+                      aria-label="Seleccionar las releases visibles"
+                      checked={allVisibleSelected}
+                      onChange={toggleVisible}
+                    />
+                  </th>
+                )}
                 <th>Nombre</th>
                 <th>Versión</th>
                 <th>Dispositivo</th>
@@ -745,6 +865,16 @@ export default function ReleasesPage(): React.ReactElement {
                   className="clickable"
                   onClick={() => router.push(`/releases/${release.id}`)}
                 >
+                  {canChangeReleaseStatus && (
+                    <td className="select" onClick={(event) => event.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        aria-label={`Seleccionar ${release.name}`}
+                        checked={selectedIds.includes(release.id)}
+                        onChange={() => toggleRelease(release.id)}
+                      />
+                    </td>
+                  )}
                   <td style={{ fontWeight: 500 }}>{release.name}</td>
                   <td className="muted">v{release.version}</td>
                   <td className="muted">{release.platform}</td>
@@ -764,7 +894,7 @@ export default function ReleasesPage(): React.ReactElement {
               ))}
               {visibleReleases.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="muted">
+                  <td colSpan={canChangeReleaseStatus ? 10 : 9} className="muted">
                     {releases.length === 0
                       ? "No hay releases todavía."
                       : "No hay releases con este estado."}
@@ -773,6 +903,74 @@ export default function ReleasesPage(): React.ReactElement {
               )}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {canChangeReleaseStatus && selectedReleases.length > 0 && (
+        <div className="bulk-bar" role="region" aria-label="Acciones de las releases seleccionadas">
+          <strong>
+            {selectedReleases.length === 1
+              ? "1 release seleccionada"
+              : `${selectedReleases.length} releases seleccionadas`}
+          </strong>
+          {statusChoices.length === 0 && (
+            <span className="muted" style={{ fontSize: "12px" }}>
+              COMPLETED y CANCELLED no cambian de estado.
+            </span>
+          )}
+          <div className="form-actions" style={{ margin: 0, marginLeft: "auto" }}>
+            <button type="button" disabled={bulkBusy || statusChoices.length === 0} onClick={openStatusDialog}>
+              Cambiar estado
+            </button>
+            <button
+              type="button"
+              className="secondary"
+              disabled={bulkBusy}
+              onClick={() => setSelectedIds([])}
+            >
+              Limpiar selección
+            </button>
+          </div>
+        </div>
+      )}
+
+      {statusOpen && (
+        <div className="modal-backdrop" onClick={() => { if (!bulkBusy) setStatusOpen(false); }} role="presentation">
+          <div
+            className="modal-panel"
+            role="dialog"
+            aria-labelledby="release-bulk-status-title"
+            onClick={(event) => event.stopPropagation()}
+            style={{ width: "min(440px, 100%)" }}
+          >
+            <h2 id="release-bulk-status-title">Cambiar estado</h2>
+            <p className="muted">
+              Se aplica a las releases seleccionadas cuyo estado actual permite el paso. COMPLETED y CANCELLED no vuelven atrás.
+            </p>
+            <div className="form-field">
+              <label htmlFor="release-bulk-status">Estado destino</label>
+              <select
+                id="release-bulk-status"
+                value={bulkStatus}
+                disabled={bulkBusy}
+                onChange={(event) => setBulkStatus(event.target.value as ReleaseStatus)}
+              >
+                {statusChoices.map((choice) => (
+                  <option key={choice.status} value={choice.status}>
+                    {RELEASE_STATUS_LABEL[choice.status]} ({choice.count})
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="form-actions">
+              <button type="button" className="secondary" disabled={bulkBusy} onClick={() => setStatusOpen(false)}>
+                Cancelar
+              </button>
+              <button type="button" disabled={bulkBusy || statusChoices.length === 0} onClick={() => void applyBulkStatus()}>
+                {bulkBusy ? "Guardando…" : "Aplicar"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
