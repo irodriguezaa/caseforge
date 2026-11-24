@@ -29,7 +29,7 @@ from app.routers.common import get_release_or_404
 from app.schemas.case_generation import GenerateCasesResponse
 from app.schemas.coverage_matrix import CoverageMatrixResponse
 from app.schemas.matrix_preview import MatrixPreviewResponse
-from app.schemas.jira_epic import JiraEpicCreate, JiraEpicResult
+from app.schemas.jira_epic import JiraEpicCreate, JiraEpicResult, JiraSprintOption
 from app.schemas.publication import PublicationRecordRead, PublishCasesResponse
 from app.schemas.release import (
     AnalyzeEpcsRequest,
@@ -73,7 +73,7 @@ from app.services.rn_epc_scope import (
     rn_keys_from_normalized,
 )
 from app.services.jira_client import JiraApiError, JiraNotConfiguredError
-from app.services.jira_epic import JiraEpicError, draft_for_release, publish_epic
+from app.services.jira_epic import JiraEpicError, draft_for_release, list_qc_sprints, publish_epic
 from app.services.jira_generation import fetch_issuetypes_for_keys, keep_technical_epic_keys
 from app.services.operativa_engine import ENGINE_VERSION as OPERATIVA_ENGINE, generate_operativa_from_matrix
 from app.services.operativa_engine.coverage_matrix import build_coverage_matrix
@@ -1423,6 +1423,21 @@ def export_release_test_cases(release_id: int, db: Session = Depends(get_db)) ->
     )
 
 
+@router.get("/jira-sprints", response_model=list[JiraSprintOption])
+def qc_sprints() -> list[JiraSprintOption]:
+    """Active and future sprints on the QC Sprint board."""
+    try:
+        choices = list_qc_sprints()
+    except JiraNotConfiguredError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except JiraApiError as exc:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail=exc.detail) from exc
+    return [
+        JiraSprintOption(id=choice.id, name=choice.name, state=choice.state, label=choice.label)
+        for choice in choices
+    ]
+
+
 @router.post("/{release_id}/jira-epic", response_model=JiraEpicResult)
 def create_jira_epic(
     release_id: int,
@@ -1434,7 +1449,7 @@ def create_jira_epic(
     try:
         draft = draft_for_release(db, release, payload.activity_type, payload.environment)
         db.commit()
-        result = publish_epic(draft)
+        result = publish_epic(draft, payload.sprint_id)
     except JiraEpicError as exc:
         db.rollback()
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
@@ -1454,6 +1469,8 @@ def create_jira_epic(
         task_already_existed=result.task_already_existed,
         subtask_count=result.subtask_count,
         subtasks_already_existed=result.subtasks_already_existed,
+        sprint_id=result.sprint_id,
+        sprint_label=result.sprint_label,
     )
 
 

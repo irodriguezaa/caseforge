@@ -359,11 +359,14 @@ export const api = {
   // QCO_ZEPHYR_PUBLISH — kept; UI hidden via SHOW_QCO_ZEPHYR_PUBLISH.
   publishOperativaToQco: (releaseId: number) =>
     request<PublishCasesResponse>(`/api/releases/${releaseId}/publish-qco`, { method: "POST" }),
+  listJiraSprints: () =>
+    request<Array<{ id: number; name: string; state: string; label: string }>>("/api/releases/jira-sprints"),
   createJiraEpic: (
     releaseId: number,
     payload: {
       activity_type: "HotFix" | "Exc" | "Mantenimiento" | "Release";
       environment: "BERC" | "FEHF" | "OPER" | "PROD";
+      sprint_id: number;
     },
   ) =>
     request<{
@@ -377,6 +380,8 @@ export const api = {
       task_already_existed: boolean;
       subtask_count: number;
       subtasks_already_existed: number;
+      sprint_id: number | null;
+      sprint_label: string;
     }>(`/api/releases/${releaseId}/jira-epic`, {
       method: "POST",
       body: JSON.stringify(payload),

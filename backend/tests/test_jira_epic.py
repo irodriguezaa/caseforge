@@ -6,8 +6,11 @@ import pytest
 from app.services.jira_epic import (
     EpicDraft,
     JiraEpicError,
+    SprintChoice,
     VersionScope,
     _adf,
+    _move_issues_to_sprint,
+    _sprint_choice,
     accumulated_description,
     assignee_for,
     cycle_title,
@@ -371,6 +374,94 @@ def test_second_click_updates_subtasks_without_duplicating(monkeypatch) -> None:
     assert result.task_already_existed is True
     assert result.subtask_count == 2
     assert result.subtasks_already_existed == 2
+
+
+def test_qc_sprint_label_uses_the_board_dates() -> None:
+    sprint_49 = _sprint_choice(
+        {
+            "id": 27623,
+            "name": "Sprint 49",
+            "state": "future",
+            "startDate": "2026-11-16T06:00:00.000Z",
+            "endDate": "2026-11-27T06:00:00.000Z",
+        }
+    )
+    sprint_50 = _sprint_choice(
+        {
+            "id": 27624,
+            "name": "Sprint 50",
+            "state": "future",
+            "startDate": "2026-11-30T06:00:00.000Z",
+            "endDate": "2026-12-11T06:00:00.000Z",
+        }
+    )
+    assert sprint_49 is not None and sprint_49.label == "Sprint 49 · 16 nov – 27 nov"
+    assert sprint_50 is not None and sprint_50.label == "Sprint 50 · 30 nov – 11 dic"
+    assert _sprint_choice({"id": 1, "name": "Sprint 47", "state": "closed"}) is None
+
+
+def test_publish_moves_epic_task_and_subtasks_to_the_chosen_sprint(monkeypatch) -> None:
+    draft = EpicDraft(
+        release_id=2,
+        summary="WINCL | vWINCL-11.1.1 | RELEASE",
+        description="tarea",
+        activity_type="Release",
+        environment="PROD",
+        assignee_id="60be5d2ba01e11006ab15146",
+        deliverable_id=4,
+        program="WINCL",
+        scopes=(_scope(2, "vWINCL-11.1.1", (("WINCL-528", ""),), (("WINCL-2520", ""),)),),
+    )
+    keys = iter(["QCO-1", "QCO-2", "QCO-3", "QCO-4", "QCO-5"])
+    moved: list[tuple[int, list[str]]] = []
+    sprint = SprintChoice(id=27623, name="Sprint 49", state="future", label="Sprint 49 · 16 nov – 27 nov")
+
+    monkeypatch.setattr("app.services.jira_epic.list_qc_sprints", lambda: [sprint])
+    monkeypatch.setattr("app.services.jira_epic._search", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr("app.services.jira_epic._create_issue", lambda _fields: next(keys))
+    monkeypatch.setattr("app.services.jira_epic._account_id", lambda: None)
+    monkeypatch.setattr("app.services.jira_epic._put_fields", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("app.services.jira_epic._read_labels", lambda _key: ["qcpulse"])
+    monkeypatch.setattr("app.services.jira_epic._attach_release_note", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        "app.services.jira_epic._post_sprint_issues",
+        lambda sprint_id, issue_keys: moved.append((sprint_id, list(issue_keys))),
+    )
+
+    result = publish_epic(draft, 27623)
+
+    assert result.key == "QCO-1"
+    assert result.task_key == "QCO-2"
+    assert result.subtask_count == 3
+    assert result.sprint_id == 27623
+    assert result.sprint_label == "Sprint 49 · 16 nov – 27 nov"
+    assert moved == [(27623, ["QCO-1", "QCO-2", "QCO-3", "QCO-4", "QCO-5"])]
+
+
+def test_unknown_sprint_is_rejected_before_creating_issues(monkeypatch) -> None:
+    draft = EpicDraft(
+        release_id=4,
+        summary="WEBCL | 16.11.3 | HOTFIX",
+        description="Objetivo",
+        activity_type="HotFix",
+        environment="FEHF",
+    )
+    monkeypatch.setattr(
+        "app.services.jira_epic.list_qc_sprints",
+        lambda: [SprintChoice(id=27623, name="Sprint 49", state="future", label="Sprint 49")],
+    )
+    monkeypatch.setattr("app.services.jira_epic._create_issue", lambda _fields: (_ for _ in ()).throw(AssertionError("no crea")))
+
+    with pytest.raises(JiraEpicError, match="tablero de QC"):
+        publish_epic(draft, 999)
+
+
+def test_sprint_move_keeps_each_issue_once_per_batch(monkeypatch) -> None:
+    calls: list[list[str]] = []
+    monkeypatch.setattr("app.services.jira_epic._post_sprint_issues", lambda _sprint_id, keys: calls.append(list(keys)))
+    _move_issues_to_sprint(27624, ["QCO-1", "QCO-1", *[f"QCO-{index}" for index in range(2, 53)]])
+    assert [len(call) for call in calls] == [50, 2]
+    assert calls[0].count("QCO-1") == 1
 
 
 def test_pdf_upload_is_multipart() -> None:

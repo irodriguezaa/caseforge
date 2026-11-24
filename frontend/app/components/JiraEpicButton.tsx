@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api, ApiRequestError } from "@/lib/api";
 import { ACTIVITY_TYPE_OPTIONS, ENVIRONMENT_OPTIONS } from "@/lib/constants";
 import { jiraIssueUrl } from "@/lib/jira";
@@ -28,6 +28,8 @@ export function JiraEpicButton({
 }): React.ReactElement {
   const [kind, setKind] = useState(activityType ?? "");
   const [env, setEnv] = useState(environment ?? "");
+  const [sprints, setSprints] = useState<Array<{ id: number; label: string }>>([]);
+  const [sprintId, setSprintId] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{
@@ -39,10 +41,29 @@ export function JiraEpicButton({
     taskAlreadyExisted: boolean;
     subtaskCount: number;
     subtasksAlreadyExisted: number;
+    sprintLabel: string;
   } | null>(null);
 
+  useEffect(() => {
+    let cancelled = false;
+    api.listJiraSprints()
+      .then((rows) => {
+        if (!cancelled) {
+          setSprints(rows.map((row) => ({ id: row.id, label: row.label })));
+        }
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          setError(err instanceof ApiRequestError ? err.message : "No se pudieron leer los sprints de QC.");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   async function create(): Promise<void> {
-    if (!kind || !env || busy) {
+    if (!kind || !env || !sprintId || busy) {
       return;
     }
     setBusy(true);
@@ -51,6 +72,7 @@ export function JiraEpicButton({
       const created = await api.createJiraEpic(releaseId, {
         activity_type: kind as ActivityType,
         environment: env as EnvironmentName,
+        sprint_id: Number(sprintId),
       });
       onSaved(kind as ActivityType, env as EnvironmentName);
       setResult({
@@ -62,6 +84,7 @@ export function JiraEpicButton({
         taskAlreadyExisted: created.task_already_existed,
         subtaskCount: created.subtask_count,
         subtasksAlreadyExisted: created.subtasks_already_existed,
+        sprintLabel: created.sprint_label,
       });
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : "No se pudo crear la EPC en Jira.");
@@ -77,7 +100,7 @@ export function JiraEpicButton({
     <div className="card" style={{ marginTop: "1rem" }}>
       <h2>Artefactos de Jira</h2>
       <p className="muted" style={{ fontSize: "12.5px", marginTop: 0 }}>
-        Se crea una EPC por entregable y una tarea por versión. Cada tarea abre una subtarea por funcionalidad, una con los QC Bugs y una de regresión. La tarea y las subtareas quedan asignadas a la misma persona.
+        Se crea una EPC por entregable y una tarea por versión. Cada tarea abre una subtarea por funcionalidad, una con los QC Bugs y una de regresión. La EPC, la tarea y las subtareas entran al sprint que elijas.
       </p>
       <div className="form-actions" style={{ alignItems: "center" }}>
         <label htmlFor="jira-epic-type" className="muted" style={{ margin: 0 }}>Tipo</label>
@@ -94,7 +117,19 @@ export function JiraEpicButton({
             <option key={option} value={option}>{option}</option>
           ))}
         </select>
-        <button type="button" disabled={!kind || !env || busy} onClick={() => void create()}>
+        <label htmlFor="jira-epic-sprint" className="muted" style={{ margin: 0 }}>Sprint</label>
+        <select
+          id="jira-epic-sprint"
+          value={sprintId}
+          disabled={busy || sprints.length === 0}
+          onChange={(event) => setSprintId(event.target.value)}
+        >
+          <option value="" disabled>Sprint</option>
+          {sprints.map((sprint) => (
+            <option key={sprint.id} value={sprint.id}>{sprint.label}</option>
+          ))}
+        </select>
+        <button type="button" disabled={!kind || !env || !sprintId || busy} onClick={() => void create()}>
           {busy ? "Creando artefactos…" : "Generar artefactos de Jira"}
         </button>
       </div>
@@ -123,6 +158,9 @@ export function JiraEpicButton({
             <p style={{ fontSize: "13px", marginBottom: 0 }}>
               {subtaskLine(result.subtaskCount, result.subtasksAlreadyExisted)}
             </p>
+          ) : null}
+          {result.sprintLabel ? (
+            <p style={{ fontSize: "13px", marginBottom: 0 }}>Quedaron en {result.sprintLabel}.</p>
           ) : null}
         </>
       ) : null}

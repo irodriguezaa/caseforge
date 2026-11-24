@@ -11,7 +11,9 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import httpx
 
@@ -30,6 +32,9 @@ PROJECT_KEY = "QCO"
 ISSUE_EPIC = "Epic"
 ISSUE_TASK = "Tarea"
 ISSUE_SUBTASK = "Subtarea"
+# Scrum board "QC Sprint". Its filter is the QCO project.
+QC_SPRINT_BOARD_ID = 6999
+_SPRINT_PAGE = 50
 # The scheme lists this priority as "Importante", but creating with the name is rejected.
 # The id is what QCO accepts.
 PRIORITY_ID = "3"
@@ -118,6 +123,15 @@ class SubtaskDraft:
 
 
 @dataclass(frozen=True)
+class SprintChoice:
+    id: int
+    name: str
+    state: str
+    label: str
+    start_at: str = ""
+
+
+@dataclass(frozen=True)
 class EpicResult:
     already_existed: bool
     key: str
@@ -129,6 +143,8 @@ class EpicResult:
     task_already_existed: bool
     subtask_count: int = 0
     subtasks_already_existed: int = 0
+    sprint_id: int | None = None
+    sprint_label: str = ""
 
 
 @dataclass(frozen=True)
@@ -296,7 +312,8 @@ def draft_for_release(
     )
 
 
-def publish_epic(draft: EpicDraft) -> EpicResult:
+def publish_epic(draft: EpicDraft, sprint_id: int | None = None) -> EpicResult:
+    sprint = _require_sprint(sprint_id) if sprint_id is not None else None
     plan = _publication(draft)
     epic_key, epic_existed = _ensure_epic(draft, plan)
     _attach_release_note(epic_key, draft)
@@ -304,6 +321,11 @@ def publish_epic(draft: EpicDraft) -> EpicResult:
     if plan.attach_pdf_to_task:
         _attach_release_note(task_key, draft)
     subtasks = _ensure_subtasks(draft, plan, task_key)
+    if sprint is not None:
+        _move_issues_to_sprint(
+            sprint.id,
+            [epic_key, task_key, *[key for key, _existed in subtasks]],
+        )
     return EpicResult(
         already_existed=epic_existed,
         key=epic_key,
@@ -315,7 +337,89 @@ def publish_epic(draft: EpicDraft) -> EpicResult:
         task_already_existed=task_existed,
         subtask_count=len(subtasks),
         subtasks_already_existed=sum(1 for _key, existed in subtasks if existed),
+        sprint_id=sprint.id if sprint is not None else None,
+        sprint_label=sprint.label if sprint is not None else "",
     )
+
+
+def list_qc_sprints() -> list[SprintChoice]:
+    """Active and future sprints on the QC Sprint board, earliest first."""
+    rows: list[dict[str, Any]] = []
+    start = 0
+    while True:
+        with _client() as client:
+            response = client.get(
+                f"/rest/agile/1.0/board/{QC_SPRINT_BOARD_ID}/sprint",
+                params={"state": "active,future", "startAt": start, "maxResults": _SPRINT_PAGE},
+            )
+        if response.status_code != 200:
+            raise JiraApiError(response.status_code, response.text[:500])
+        body = response.json()
+        values = body.get("values") or []
+        if isinstance(values, list):
+            rows.extend(row for row in values if isinstance(row, dict))
+        if body.get("isLast", True) or not values:
+            break
+        start += len(values)
+    choices = [choice for row in rows if (choice := _sprint_choice(row)) is not None]
+    choices.sort(key=lambda choice: (choice.start_at, choice.id))
+    return choices
+
+
+def _require_sprint(sprint_id: int) -> SprintChoice:
+    match = next((choice for choice in list_qc_sprints() if choice.id == sprint_id), None)
+    if match is None:
+        raise JiraEpicError("Ese sprint no está en el tablero de QC.")
+    return match
+
+
+def _move_issues_to_sprint(sprint_id: int, keys: list[str]) -> None:
+    pending = [key for key in dict.fromkeys(keys) if key]
+    for offset in range(0, len(pending), _SPRINT_PAGE):
+        _post_sprint_issues(sprint_id, pending[offset : offset + _SPRINT_PAGE])
+
+
+def _post_sprint_issues(sprint_id: int, keys: list[str]) -> None:
+    with _client() as client:
+        response = client.post(
+            f"/rest/agile/1.0/sprint/{sprint_id}/issue",
+            json={"issues": keys},
+        )
+    if response.status_code not in (200, 204):
+        raise JiraApiError(response.status_code, response.text[:800])
+
+
+_MONTHS = ("ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic")
+
+
+def _sprint_choice(row: dict[str, Any]) -> SprintChoice | None:
+    state = str(row.get("state") or "")
+    if state not in {"active", "future"}:
+        return None
+    sprint_id = row.get("id")
+    name = str(row.get("name") or "").strip()
+    if not isinstance(sprint_id, int) or not name:
+        return None
+    start = _sprint_day(row.get("startDate"))
+    end = _sprint_day(row.get("endDate"))
+    label = f"{name} · {start} – {end}" if start and end else name
+    return SprintChoice(
+        id=sprint_id,
+        name=name,
+        state=state,
+        label=label,
+        start_at=str(row.get("startDate") or ""),
+    )
+
+
+def _sprint_day(value: object) -> str:
+    if not isinstance(value, str) or not value.strip():
+        return ""
+    try:
+        moment = datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(ZoneInfo("America/Mexico_City"))
+    except ValueError:
+        return ""
+    return f"{moment.day} {_MONTHS[moment.month - 1]}"
 
 
 def _description_for(scope: VersionScope) -> str:
