@@ -460,6 +460,8 @@ def update_release(
         "validation_type",
         "jira_issue_filter",
         "description",
+        "activity_type",
+        "environment",
     }
     is_apps = release.be_release_id is None and release.operativa_release_id is None
     if is_apps and apps_planning_fields & updates.keys():
@@ -471,7 +473,7 @@ def update_release(
         if release.status != ReleaseStatus.IN_PROGRESS:
             raise HTTPException(
                 status.HTTP_409_CONFLICT,
-                detail="Ventana, recursos, tipo de validación, filtro y descripción solo se editan en IN_PROGRESS.",
+                detail="Ventana, recursos, tipo, ambiente, alcance, filtro y descripción solo se editan en IN_PROGRESS.",
             )
         if "qc_resources" in updates and updates["qc_resources"] is not None and int(updates["qc_resources"]) < 1:
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Recursos QC debe ser al menos 1.")

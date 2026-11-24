@@ -734,7 +734,7 @@ export default function ReleasesPage(): React.ReactElement {
                 <th>Entregable</th>
                 <th>Tipo</th>
                 <th>Ambiente</th>
-                <th className="num"># Funcionalidades</th>
+                <th className="num"># Func.</th>
                 <th className="num">Test Cases</th>
                 <th className="num">Estimación</th>
               </tr>

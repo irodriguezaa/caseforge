@@ -180,6 +180,18 @@ def test_validation_scope_round_trips_and_keeps_historical_values(client) -> Non
     assert client.get(f"/api/v1/releases/{release_id}").json()["validation_type"] == "Exploratorio"
 
 
+def test_in_progress_apps_can_change_activity_type_and_environment(client) -> None:
+    release_id = _create_release(client).json()["id"]
+    client.patch(f"/api/v1/releases/{release_id}", json={"status": "IN_PROGRESS"})
+    response = client.patch(
+        f"/api/v1/releases/{release_id}",
+        json={"activity_type": "HotFix", "environment": "OPER"},
+    )
+    assert response.status_code == 200
+    assert response.json()["activity_type"] == "HotFix"
+    assert response.json()["environment"] == "OPER"
+
+
 def test_draft_apps_cannot_edit_planning_fields(client) -> None:
     release_id = _create_release(client).json()["id"]
     response = client.patch(f"/api/v1/releases/{release_id}", json={"qc_resources": 3})

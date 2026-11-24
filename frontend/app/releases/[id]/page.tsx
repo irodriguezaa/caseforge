@@ -36,7 +36,7 @@ import {
 } from "@/lib/releaseCaseSelection";
 import { MatrixScopeEditor } from "@/app/components/MatrixScopeEditor";
 import { ValidationScopeSelect, ValidationScopeSummary } from "@/app/components/ValidationScopeField";
-import { OPERATIVA_DEVICE_OPTIONS, SHOW_QCO_ZEPHYR_PUBLISH } from "@/lib/constants";
+import { ACTIVITY_TYPE_OPTIONS, ENVIRONMENT_OPTIONS, OPERATIVA_DEVICE_OPTIONS, SHOW_QCO_ZEPHYR_PUBLISH } from "@/lib/constants";
 import { calculateBusinessDays } from "@/lib/dateUtils";
 import { nextTestCaseId } from "@/lib/testCaseId";
 import { QC_ESTIMATION_TOOLTIP, QC_HOURS_PER_DAY, QC_OPERATIVA_ESTIMATION_TOOLTIP, durationDays, estimateOperativaEffort, estimateReleaseEffortFromCases, hoursByTechnicalEpic, progressByTechnicalEpic, rnScopeCoverage, rnScopeEpicKeys, stripDeviceFromCaseName } from "@/lib/qcEffort";
@@ -121,6 +121,8 @@ export default function ReleaseDetailPage(): React.ReactElement {
     validationType: "",
     jiraIssueFilter: "",
     description: "",
+    activityType: "",
+    environment: "",
   });
   const [matrixImpact, setMatrixImpact] = useState<{ caseCount: number; note: string; estimateInSection: boolean } | null>(null);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
@@ -209,6 +211,8 @@ export default function ReleaseDetailPage(): React.ReactElement {
       validationType: release.validation_type ?? "",
       jiraIssueFilter: release.jira_issue_filter ?? "",
       description: release.description ?? "",
+      activityType: release.activity_type ?? "",
+      environment: release.environment ?? "",
     });
     setEditingPlanning(true);
     setActionError(null);
@@ -229,6 +233,13 @@ export default function ReleaseDetailPage(): React.ReactElement {
         validation_type: planningForm.validationType.trim() || null,
         jira_issue_filter: planningForm.jiraIssueFilter.trim() || null,
         description: planningForm.description.trim() || null,
+        activity_type: (planningForm.activityType || null) as
+          | "HotFix"
+          | "Exc"
+          | "Mantenimiento"
+          | "Release"
+          | null,
+        environment: (planningForm.environment || null) as "BERC" | "FEHF" | "OPER" | "PROD" | null,
       });
       setRelease(updated);
       setEditingPlanning(false);
@@ -701,11 +712,43 @@ export default function ReleaseDetailPage(): React.ReactElement {
                     <>
                       <div>
                         <span className="muted" style={{ display: "block", fontSize: "11px", textTransform: "uppercase" }}>Tipo</span>
-                        <span style={{ fontWeight: 600 }}>{release.activity_type ?? "—"}</span>
+                        {editingPlanning && canEditAppsPlanning ? (
+                          <select
+                            aria-label="Tipo"
+                            value={planningForm.activityType}
+                            onChange={(e) => setPlanningForm({ ...planningForm, activityType: e.target.value })}
+                            style={{ marginTop: "4px", width: "100%" }}
+                          >
+                            <option value="">Selecciona un tipo</option>
+                            {ACTIVITY_TYPE_OPTIONS.map((option) => (
+                              <option key={option} value={option}>
+                                {option}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <span style={{ fontWeight: 600 }}>{release.activity_type ?? "—"}</span>
+                        )}
                       </div>
                       <div>
                         <span className="muted" style={{ display: "block", fontSize: "11px", textTransform: "uppercase" }}>Ambiente</span>
-                        <span style={{ fontWeight: 600 }}>{release.environment ?? "—"}</span>
+                        {editingPlanning && canEditAppsPlanning ? (
+                          <select
+                            aria-label="Ambiente"
+                            value={planningForm.environment}
+                            onChange={(e) => setPlanningForm({ ...planningForm, environment: e.target.value })}
+                            style={{ marginTop: "4px", width: "100%" }}
+                          >
+                            <option value="">Selecciona un ambiente</option>
+                            {ENVIRONMENT_OPTIONS.map((option) => (
+                              <option key={option} value={option}>
+                                {option}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <span style={{ fontWeight: 600 }}>{release.environment ?? "—"}</span>
+                        )}
                       </div>
                     </>
                   ) : null}
@@ -987,13 +1030,46 @@ export default function ReleaseDetailPage(): React.ReactElement {
         />
       ) : null}
       {isApp ? <CaseProgressSummary title="Total de la Release" rows={testCases} /> : null}
+      {isApp ? (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+            gap: "10px",
+            marginBottom: "14px",
+          }}
+        >
+          {[
+            { label: "Esfuerzo estimado QC", value: `${estimationHours.toFixed(1)} h`, tip: QC_ESTIMATION_TOOLTIP },
+            { label: "Días-persona", value: personDays.toFixed(1) },
+            { label: "Duración estimada", value: `${estimatedDurationDays.toFixed(1)} días` },
+            { label: "Recursos QC", value: String(qcResources) },
+          ].map((stat) => (
+            <div
+              key={stat.label}
+              style={{
+                background: "var(--surface-2)",
+                border: "1px solid var(--border)",
+                borderRadius: "8px",
+                padding: "10px 14px",
+              }}
+            >
+              <div style={{ fontSize: "10.5px", textTransform: "uppercase", letterSpacing: ".04em", color: "var(--text-dim)" }}>
+                {stat.label}
+                {stat.tip ? <InfoTooltip text={stat.tip} /> : null}
+              </div>
+              <div style={{ fontSize: "20px", fontWeight: 700, marginTop: "2px" }}>{stat.value}</div>
+            </div>
+          ))}
+        </div>
+      ) : null}
       {matrixTabLabel ? (
         <div className="tabnav" role="tablist">
           <button type="button" role="tab" className={caseTab === "rn" ? "active" : ""} onClick={() => setCaseTab("rn")}>
             Alcance (RN/EPC)
           </button>
           <button type="button" role="tab" className={caseTab === "matrix" ? "active" : ""} onClick={() => setCaseTab("matrix")}>
-            {matrixTabLabel}
+            Tipo de Regresión
           </button>
         </div>
       ) : null}
@@ -1115,6 +1191,7 @@ export default function ReleaseDetailPage(): React.ReactElement {
               </button>
             </div>
           )}
+        {!isApp ? (
         <div
           style={{
             display: "grid",
@@ -1130,14 +1207,7 @@ export default function ReleaseDetailPage(): React.ReactElement {
                   { label: "Esfuerzo estimado QC", value: `${estimationHours.toFixed(1)} h`, tip: QC_OPERATIVA_ESTIMATION_TOOLTIP },
                   { label: "Duración estimada", value: `${estimationDays.toFixed(1)} días` },
                 ]
-              : isApp
-                ? [
-                    { label: "Esfuerzo estimado QC", value: `${estimationHours.toFixed(1)} h`, tip: QC_ESTIMATION_TOOLTIP },
-                    { label: "Días-persona", value: personDays.toFixed(1) },
-                    { label: "Duración estimada", value: `${estimatedDurationDays.toFixed(1)} días` },
-                    { label: "Recursos QC", value: String(qcResources) },
-                  ]
-                : [
+              : [
                     { label: "Esfuerzo estimado QC", value: `${estimationHours.toFixed(1)} h`, tip: BE_QC_ESTIMATION_TOOLTIP },
                     { label: "≈ Días QC", value: estimationDays.toFixed(1) },
                   ]),
@@ -1162,6 +1232,7 @@ export default function ReleaseDetailPage(): React.ReactElement {
             </div>
           ))}
         </div>
+        ) : null}
         {isApp && caseTab === "rn" && <EpicHoursPanel items={epicHours} fileName={release.name} />}
         {isApp && caseTab === "rn" && <EpicProgressPanel rows={epicProgress} polish={polish?.epics} />}
         </>
