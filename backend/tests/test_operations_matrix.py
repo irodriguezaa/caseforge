@@ -1,7 +1,7 @@
 from io import BytesIO
+from zipfile import ZipFile
 
 from openpyxl import load_workbook
-from openpyxl.cell.rich_text import CellRichText
 
 from app.services.operations_matrix import (
     LLAVES_NOTE,
@@ -11,8 +11,6 @@ from app.services.operations_matrix import (
 
 
 def _text(value: object) -> str:
-    if isinstance(value, CellRichText):
-        return "".join(getattr(block, "text", str(block)) for block in value)
     return "" if value is None else str(value)
 
 
@@ -144,3 +142,11 @@ def test_workbook_keeps_epc_and_tri_and_formats_mvp() -> None:
     assert "El logo se carga." in criteria
     assert "\n\n" in criteria
     assert detail["C4"].value in (None, "")
+    archive = ZipFile(BytesIO(payload))
+    for name in archive.namelist():
+        if not name.startswith("xl/worksheets/sheet"):
+            continue
+        sheet = archive.read(name)
+        assert b"<rPr" not in sheet
+        assert b't="inlineStr"></c>' not in sheet
+        assert b't="n"></c>' not in sheet

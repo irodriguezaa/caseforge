@@ -12,12 +12,11 @@ import logging
 import re
 import unicodedata
 from typing import Any
+from zipfile import ZIP_DEFLATED, ZipFile
 
 import httpx
 from openpyxl import Workbook
 from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
-from openpyxl.cell.rich_text import CellRichText, TextBlock
-from openpyxl.cell.text import InlineFont
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 
 from app.services.jira_client import JiraApiError, JiraNotConfiguredError, _client
@@ -33,8 +32,6 @@ LLAVES_NOTE = (
 )
 _LLAVES_PHRASES = ("registro de llaves", "alta de llaves")
 _KEEP = {"paragraph", "orderedList", "bulletList", "blockquote"}
-_PLAIN = InlineFont(rFont="Calibri", sz=11)
-_BOLD = InlineFont(rFont="Calibri", sz=11, b=True)
 
 _NAVY = PatternFill("solid", fgColor="002060")
 _TITLE = PatternFill("solid", fgColor="1F4E78")
@@ -129,30 +126,21 @@ def _plain(node: Any) -> str:
     return "".join(_plain(child) for child in node.get("content") or [])
 
 
-def _runs(node: Any) -> list[tuple[str, bool]]:
-    runs: list[tuple[str, bool]] = []
+def _runs(node: Any) -> list[str]:
+    parts: list[str] = []
     for child in node.get("content") or []:
         kind = child.get("type")
         if kind == "text":
-            marks = {mark.get("type") for mark in child.get("marks") or []}
-            runs.append((_clean(str(child.get("text") or "")), "strong" in marks))
+            parts.append(_clean(str(child.get("text") or "")))
         elif kind == "hardBreak":
-            runs.append(("\n", False))
+            parts.append("\n")
         elif kind == "inlineCard":
             url = str((child.get("attrs") or {}).get("url") or "")
             if url:
-                runs.append((url, False))
+                parts.append(url)
         elif isinstance(child, dict):
-            runs.extend(_runs(child))
-    merged: list[tuple[str, bool]] = []
-    for text, bold in runs:
-        if not text:
-            continue
-        if merged and merged[-1][1] == bold:
-            merged[-1] = (merged[-1][0] + text, bold)
-        else:
-            merged.append((text, bold))
-    return merged
+            parts.extend(_runs(child))
+    return parts
 
 
 def _content(value: Any) -> list[dict[str, Any]]:
@@ -195,88 +183,54 @@ def criteria_nodes(value: Any) -> list[dict[str, Any]]:
     return kept
 
 
-def _blocks(nodes: list[dict[str, Any]], *, loose_bullets: bool) -> list[list[tuple[str, bool]]]:
-    blocks: list[list[tuple[str, bool]]] = []
+def _blocks(nodes: list[dict[str, Any]], *, loose_bullets: bool) -> list[str]:
+    """Plain paragraphs. Excel repairs rich text with line breaks on this sheet."""
+    blocks: list[str] = []
     for node in nodes:
         kind = node.get("type")
         if kind in {"paragraph", "blockquote"}:
-            runs = _runs(node)
-            if "".join(part for part, _bold in runs).strip():
-                blocks.append(runs)
+            text = _clean("".join(_runs(node))).strip()
+            if text:
+                blocks.append(text)
         elif kind == "orderedList":
             number = int((node.get("attrs") or {}).get("order") or 1)
-            together: list[tuple[str, bool]] = []
+            lines: list[str] = []
             for item in node.get("content") or []:
                 if item.get("type") != "listItem":
                     continue
-                runs = _runs(item)
-                if not "".join(part for part, _bold in runs).strip():
+                text = _clean("".join(_runs(item))).strip()
+                if not text:
                     continue
-                if together:
-                    together.append(("\n", False))
-                together.append((f"{number}. ", True))
-                together.extend(runs)
+                lines.append(f"{number}. {text}")
                 number += 1
-            if together:
-                blocks.append(together)
+            if lines:
+                blocks.append("\n".join(lines))
         elif kind == "bulletList":
-            items: list[list[tuple[str, bool]]] = []
+            lines = []
             for item in node.get("content") or []:
                 if item.get("type") != "listItem":
                     continue
-                runs = _runs(item)
-                if "".join(part for part, _bold in runs).strip():
-                    items.append([("• ", True), *runs])
+                text = _clean("".join(_runs(item))).strip()
+                if text:
+                    lines.append(f"• {text}")
+            if not lines:
+                continue
             if loose_bullets:
-                blocks.extend(items)
-            elif items:
-                together = []
-                for item in items:
-                    if together:
-                        together.append(("\n", False))
-                    together.extend(item)
-                blocks.append(together)
+                blocks.extend(lines)
+            else:
+                blocks.append("\n".join(lines))
     return blocks
 
 
-def _rich(blocks: list[list[tuple[str, bool]]]) -> CellRichText | str:
-    if not blocks:
-        return ""
-    pieces: list[tuple[str, bool]] = []
-    for index, block in enumerate(blocks):
-        if index:
-            pieces.append(("\n\n", False))
-        pieces.extend(block)
-    chunks: list[TextBlock] = []
-    current: tuple[str, bool] | None = None
-    for text, bold in pieces:
-        if not text:
-            continue
-        if current and current[1] == bold:
-            current = (current[0] + text, bold)
-        else:
-            if current:
-                chunks.append(TextBlock(_BOLD if current[1] else _PLAIN, current[0]))
-            current = (text, bold)
-    if current:
-        chunks.append(TextBlock(_BOLD if current[1] else _PLAIN, current[0]))
-    return CellRichText(*chunks) if chunks else ""
+def _plain_blocks(blocks: list[str]) -> str:
+    return "\n\n".join(block for block in blocks if block).strip()
 
 
-def _plain_blocks(blocks: list[list[tuple[str, bool]]]) -> str:
-    return "\n\n".join("".join(part for part, _bold in block) for block in blocks).strip()
-
-
-def _line_count(blocks: list[list[tuple[str, bool]]]) -> int:
-    if not blocks:
+def _line_count(text: str) -> int:
+    if not text:
         return 1
-    total = 0
-    for index, block in enumerate(blocks):
-        if index:
-            total += 1
-        text = "".join(part for part, _bold in block)
-        total += max(1, text.count("\n") + 1)
-        total += sum(max(0, len(line) // 100) for line in text.split("\n"))
+    total = max(1, text.count("\n") + 1)
+    total += sum(max(0, len(line) // 100) for line in text.split("\n"))
     return total
 
 
@@ -329,6 +283,30 @@ def fetch_epic_documents(keys: list[str]) -> dict[str, dict[str, Any]]:
     except (JiraApiError, httpx.TimeoutException, httpx.RequestError) as exc:
         logger.warning("No se pudo leer MVP y criterios en Jira: %s", exc)
     return found
+
+
+def _cell_text(value: str) -> str | None:
+    """None keeps a styled blank cell. An empty string becomes an invalid inline string."""
+    text = (value or "").strip()
+    return text or None
+
+
+_EMPTY_TYPED_CELL = re.compile(r'<c\b[^>]*\st="(?:n|inlineStr)"[^>]*(?:/>|></c>)')
+
+
+def _drop_empty_typed_cells(payload: bytes) -> bytes:
+    """Excel repairs empty cells marked as text or numbers and reports string properties."""
+    source = ZipFile(io.BytesIO(payload))
+    output = io.BytesIO()
+    with ZipFile(output, "w", ZIP_DEFLATED) as target:
+        for item in source.infolist():
+            data = source.read(item.filename)
+            if item.filename.startswith("xl/worksheets/sheet") and item.filename.endswith(".xml"):
+                text = data.decode("utf-8")
+                text = _EMPTY_TYPED_CELL.sub(lambda match: re.sub(r'\s+t="(?:n|inlineStr)"', "", match.group(0), count=1), text)
+                data = text.encode("utf-8")
+            target.writestr(item, data)
+    return output.getvalue()
 
 
 def _banner(platform: str, version: str, name: str) -> str:
@@ -403,7 +381,7 @@ def build_operations_matrix_workbook(
         row += 1
         for item in items:
             fill = _WHITE if scenario_index % 2 == 0 else _ZEBRA
-            for column, value in enumerate((item, "", ""), start=2):
+            for column, value in enumerate((item, None, None), start=2):
                 body = regression.cell(row, column, value)
                 body.font = _FONT
                 body.fill = fill
@@ -472,13 +450,14 @@ def build_operations_matrix_workbook(
             lab.fill = fill
             lab.alignment = Alignment(wrap_text=True, vertical="top", indent=1)
             lab.border = _THIN
-            body = detail.cell(line, 2, _rich(blocks))
+            text = _plain_blocks(blocks)
+            body = detail.cell(line, 2, _cell_text(text))
             body.alignment = Alignment(wrap_text=True, vertical="top")
             body.border = _THIN
             side = detail.cell(line, 3, None)
             side.fill = _EVIDENCE
             side.border = _THIN
-            detail.row_dimensions[line].height = min(400, max(56, 15 * _line_count(blocks) + 18))
+            detail.row_dimensions[line].height = min(400, max(56, 15 * _line_count(text) + 18))
         detail.merge_cells(start_row=cursor + 1, start_column=3, end_row=cursor + 2, end_column=3)
         cursor += 4
     _apply_page(detail, f"A1:C{max(cursor - 1, 1)}", fit_height=0)
@@ -520,7 +499,7 @@ def build_operations_matrix_workbook(
         kind.alignment = _MID
         kind.border = _THIN
         kind.fill = fill
-        comment = index.cell(line, 4, row["note"])
+        comment = index.cell(line, 4, _cell_text(row["note"]))
         comment.font = _FONT
         comment.alignment = Alignment(wrap_text=True, vertical="center")
         comment.border = _THIN
@@ -541,4 +520,4 @@ def build_operations_matrix_workbook(
 
     buffer = io.BytesIO()
     workbook.save(buffer)
-    return buffer.getvalue()
+    return _drop_empty_typed_cells(buffer.getvalue())
