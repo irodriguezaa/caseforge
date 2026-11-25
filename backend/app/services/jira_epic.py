@@ -138,6 +138,8 @@ class EpicDraft:
 class SubtaskDraft:
     summary: str
     description: str
+    # Earlier titles for the same subtask. A republish renames those instead of opening another.
+    match_summaries: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -512,21 +514,59 @@ def task_description(scopes: list[VersionScope], current: VersionScope) -> str:
     )
 
 
+_SUMMARY_LIMIT = 255
+
+
+def _epc_name(key: str, title: str) -> str:
+    """The issue name, without repeating the key the summary already shows."""
+    text = re.sub(r"\s+", " ", (title or "").strip())
+    if not text:
+        return ""
+    stripped = re.sub(
+        rf"^{re.escape(key)}\s*[:|\-–—]?\s*",
+        "",
+        text,
+        count=1,
+        flags=re.IGNORECASE,
+    ).strip(" |")
+    if not stripped or stripped.upper() == key:
+        return ""
+    return stripped
+
+
+def _functionality_summary(program: str, version: str, key: str, title: str) -> str:
+    base = f"{program} | {version} | {key}"
+    name = _epc_name(key, title)
+    if not name:
+        return base
+    summary = f"{base} {name}"
+    if len(summary) <= _SUMMARY_LIMIT:
+        return summary
+    room = _SUMMARY_LIMIT - len(base) - 1
+    if room <= 0:
+        return base[:_SUMMARY_LIMIT]
+    trimmed = name[:room].rstrip()
+    return f"{base} {trimmed}" if trimmed else base
+
+
 def subtasks_for(program: str, scopes: list[VersionScope], current: VersionScope) -> tuple[SubtaskDraft, ...]:
     """One subtask per functionality, one for the QC bugs, and one for the regression type."""
     functionalities, bugs = _scoped_items(scopes, current)
     version = current.version
     rows: list[SubtaskDraft] = []
     seen: set[str] = set()
-    for key, _title in functionalities:
+    for key, title in functionalities:
         token = str(key).strip().upper()
         if token in seen or not _KEY_RE.match(token):
             continue
         seen.add(token)
+        base = f"{program} | {version} | {token}"
+        summary = _functionality_summary(program, version, token, title)
         rows.append(
             SubtaskDraft(
-                summary=f"{program} | {version} | {token}",
-                description=f"Validación funcional de {token} con la versión {version}",
+                summary=summary,
+                description=_issue_url(token),
+                match_summaries=(base,) if summary != base else (),
             )
         )
     if bugs:
@@ -771,6 +811,7 @@ def _issue_fields(
 
 
 _ISSUE_LINE = re.compile(r"^- ([A-Z][A-Z0-9]+-\d+)$")
+_URL_LINE = re.compile(r"^https?://\S+$")
 
 
 def _issue_url(key: str) -> str:
@@ -806,11 +847,25 @@ def _adf(text: str) -> dict[str, Any]:
             )
             continue
         flush_issues()
-        if not line.strip():
+        stripped = line.strip()
+        if not stripped:
             content.append({"type": "paragraph", "content": []})
             continue
+        if _URL_LINE.match(stripped):
+            content.append(
+                {
+                    "type": "paragraph",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": stripped,
+                            "marks": [{"type": "link", "attrs": {"href": stripped}}],
+                        }
+                    ],
+                }
+            )
+            continue
         node: dict[str, Any] = {"type": "text", "text": line}
-        stripped = line.strip()
         if stripped in _HEADINGS or stripped.startswith("Nuevo alcance en la versión"):
             node["marks"] = [{"type": "strong"}]
         content.append({"type": "paragraph", "content": [node]})
@@ -882,9 +937,10 @@ def _ensure_task(draft: EpicDraft, plan: _Plan, epic_key: str) -> tuple[str, boo
 def _ensure_subtasks(draft: EpicDraft, plan: _Plan, task_key: str) -> list[tuple[str, bool]]:
     ensured: list[tuple[str, bool]] = []
     for subtask in plan.subtasks:
-        existing = _find_subtask(task_key, subtask.summary)
+        existing = _find_subtask_for(task_key, subtask)
         if existing:
             fields: dict[str, Any] = {
+                "summary": subtask.summary,
                 "description": _adf(subtask.description),
                 "parent": {"key": task_key},
             }
@@ -905,6 +961,18 @@ def _ensure_subtasks(draft: EpicDraft, plan: _Plan, task_key: str) -> list[tuple
         )
         ensured.append((key, False))
     return ensured
+
+
+def _find_subtask_for(parent_key: str, subtask: SubtaskDraft) -> str | None:
+    seen: list[str] = []
+    for summary in (subtask.summary, *subtask.match_summaries):
+        if summary in seen:
+            continue
+        seen.append(summary)
+        found = _find_subtask(parent_key, summary)
+        if found:
+            return found
+    return None
 
 
 def _find_subtask(parent_key: str, summary: str) -> str | None:

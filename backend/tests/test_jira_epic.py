@@ -172,9 +172,45 @@ def test_subtasks_follow_the_same_scope_as_the_task() -> None:
         "WINCL | vWINCL-11.1.0 | Revisión QC Bugs",
         "WINCL | vWINCL-11.1.0 | REGRESIÓN",
     ]
-    assert opening[0].description == "Validación funcional de WINCL-528 con la versión vWINCL-11.1.0"
+    assert opening[0].description == "https://dlatvarg.atlassian.net/browse/WINCL-528"
+    assert opening[0].match_summaries == ()
     assert "WINCL-2358" in opening[2].description
     assert opening[3].description == "Regresión completa"
+
+    named = subtasks_for(
+        "WINCL",
+        [
+            _scope(
+                1,
+                "vWINCL-11.1.0",
+                (
+                    (
+                        "WINCL-2228",
+                        "WINCL-2228: WINCL: Fase 1 - Landing Page en Operaciones (pantallas grandes, derivativo Xbox)",
+                    ),
+                ),
+            )
+        ],
+        _scope(
+            1,
+            "vWINCL-11.1.0",
+            (
+                (
+                    "WINCL-2228",
+                    "WINCL-2228: WINCL: Fase 1 - Landing Page en Operaciones (pantallas grandes, derivativo Xbox)",
+                ),
+            ),
+        ),
+    )
+    assert named[0].summary == (
+        "WINCL | vWINCL-11.1.0 | WINCL-2228 WINCL: Fase 1 - Landing Page en Operaciones "
+        "(pantallas grandes, derivativo Xbox)"
+    )
+    assert named[0].description == "https://dlatvarg.atlassian.net/browse/WINCL-2228"
+    assert named[0].match_summaries == ("WINCL | vWINCL-11.1.0 | WINCL-2228",)
+    link = _adf(named[0].description)["content"][0]["content"][0]
+    assert link["text"] == named[0].description
+    assert link["marks"] == [{"type": "link", "attrs": {"href": named[0].description}}]
 
     later = subtasks_for("WINCL", [first, second], second)
     assert [row.summary for row in later] == [
@@ -319,8 +355,11 @@ def test_revalidation_adds_the_new_task_under_the_same_epic(monkeypatch) -> None
     assert all(row["parent"] == {"key": "QCO-9"} for row in created[1:])
     assert all(row["assignee"] == {"accountId": "5f6a0720f0d4010070378042"} for row in created[1:])
     assert created[1]["description"]["content"][0]["content"][0]["text"] == (
-        "Validación funcional de TVOSPR-2100 con la versión vTVOS-10.13.2"
+        "https://dlatvarg.atlassian.net/browse/TVOSPR-2100"
     )
+    assert created[1]["description"]["content"][0]["content"][0]["marks"] == [
+        {"type": "link", "attrs": {"href": "https://dlatvarg.atlassian.net/browse/TVOSPR-2100"}}
+    ]
     assert "TVOSPR-2108" in _plain(created[2]["description"])
     assert "TVOSPR-255" not in _plain(created[2]["description"])
     assert _plain(created[3]["description"]) == "Regresión completa"
@@ -328,6 +367,50 @@ def test_revalidation_adds_the_new_task_under_the_same_epic(monkeypatch) -> None
     assert updated[0][1]["summary"] == result.summary
     assert "qcpulse-d9" in updated[0][1]["labels"]
     assert attached == ["QCO-49805", "QCO-9"]
+
+
+def test_republish_renames_the_epc_subtask_instead_of_duplicating(monkeypatch) -> None:
+    title = "WINCL: Fase 1 - Landing Page en Operaciones (pantallas grandes, derivativo Xbox)"
+    draft = EpicDraft(
+        release_id=1,
+        summary="WINCL | vWINCL-11.1.0 | RELEASE",
+        description="tarea",
+        activity_type="Release",
+        environment="PROD",
+        assignee_id="60be5d2ba01e11006ab15146",
+        program="WINCL",
+        scopes=(_scope(1, "vWINCL-11.1.0", (("WINCL-2228", title),)),),
+    )
+    updated: list[tuple[str, dict]] = []
+
+    def search(jql: str, limit: int = 5, fields: list[str] | None = None):
+        del limit, fields
+        if "Epic" in jql:
+            return [{"key": "QCO-1", "fields": {"labels": ["qcpulse-r1"]}}]
+        if "Tarea" in jql:
+            return [{"key": "QCO-2"}]
+        if "Subtarea" in jql and "WINCL-2228" in jql and title not in jql:
+            return [{"key": "QCO-30"}]
+        if "Subtarea" in jql and "REGRESIÓN" in jql:
+            return [{"key": "QCO-31"}]
+        return []
+
+    monkeypatch.setattr("app.services.jira_epic._search", search)
+    monkeypatch.setattr("app.services.jira_epic._create_issue", lambda _fields: (_ for _ in ()).throw(AssertionError("no duplica")))
+    monkeypatch.setattr("app.services.jira_epic._account_id", lambda: None)
+    monkeypatch.setattr("app.services.jira_epic._put_fields", lambda key, fields: updated.append((key, fields)))
+    monkeypatch.setattr("app.services.jira_epic._read_labels", lambda _key: ["qcpulse"])
+    monkeypatch.setattr("app.services.jira_epic._attach_release_note", lambda _key, _draft: None)
+
+    result = publish_epic(draft)
+
+    assert result.subtask_count == 2
+    assert result.subtasks_already_existed == 2
+    renamed = next(fields for key, fields in updated if key == "QCO-30")
+    assert renamed["summary"] == f"WINCL | vWINCL-11.1.0 | WINCL-2228 {title}"
+    assert renamed["description"]["content"][0]["content"][0]["text"] == (
+        "https://dlatvarg.atlassian.net/browse/WINCL-2228"
+    )
 
 
 def test_second_click_updates_subtasks_without_duplicating(monkeypatch) -> None:
