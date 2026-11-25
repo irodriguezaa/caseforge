@@ -278,6 +278,27 @@ def _detect_description(text: str) -> str | None:
 _UNTRACKED_TABLE = "untracked"
 
 
+def _row_marks_productive_issue(row: list) -> bool:
+    """The incidence-type cell, not the ticket text.
+
+    Hotfix and maintenance notes list productive issues under "Incidencias
+    corregidas", so the sticky section is QA/QC. A short type cell that says
+    Productivo is the row's own signal. A TRI id written inside the ticket
+    text does not count, and a table headed exactly TRI stays on the header rule.
+    """
+    for cell in row:
+        if not isinstance(cell, str) or not cell:
+            continue
+        plain = re.sub(r"\s+", " ", cell).strip()
+        if not plain or len(plain) > 40:
+            continue
+        if _CELL_TICKET_RE.match(plain.replace("\n", "")):
+            continue
+        if "PRODUCTIV" in plain.upper():
+            return True
+    return False
+
+
 def _table_header_override(header_cell: str) -> str | None:
     """A table's OWN header cell, when it's one of these exact/specific phrases, is a stronger
     and more direct signal than the numbered-heading position tracking -- used for documents
@@ -449,9 +470,10 @@ def _iter_damco_ticket_rows(pdf_bytes: bytes) -> list[tuple[str, str, str]]:
                     header_cell = (rows[0][0] or "").strip()
                     override = _table_header_override(header_cell)
 
-                    found: list[tuple[str, str, bool]] = []
+                    found: list[tuple[str, str, bool, bool]] = []
                     seen_in_table: set[str] = set()
                     for row in rows:
+                        productive = _row_marks_productive_issue(row)
                         for cell in row:
                             if not cell:
                                 continue
@@ -461,7 +483,12 @@ def _iter_damco_ticket_rows(pdf_bytes: bytes) -> list[tuple[str, str, str]]:
                                 ticket_id = f"{match.group(1)}-{match.group(2)}"
                                 if ticket_id not in seen_in_table:
                                     found.append(
-                                        (ticket_id, cleaned, bool(_NCO_MARKER_RE.search(cleaned)))
+                                        (
+                                            ticket_id,
+                                            cleaned,
+                                            bool(_NCO_MARKER_RE.search(cleaned)),
+                                            productive,
+                                        )
                                     )
                                     seen_in_table.add(ticket_id)
                                 break
@@ -488,15 +515,18 @@ def _iter_damco_ticket_rows(pdf_bytes: bytes) -> list[tuple[str, str, str]]:
                             current_section = "functionality"
 
                     if bucket == "qa_qc":
-                        for ticket_id, cell_text, nco_marked in found:
+                        for ticket_id, cell_text, nco_marked, productive in found:
+                            if productive:
+                                hits.append((ticket_id, cell_text, "tri"))
+                                continue
                             # "Negocio XX |" inside a QA/QC cell is an NCO only when the RN
                             # has no NCO section of its own (iOS/Roku mixed tables). WEB 17
                             # has 1.2 NCOs plus a QA table that reuses the same marker.
                             as_nco = nco_marked and not nco_section_seen
                             hits.append((ticket_id, cell_text, "nco" if as_nco else "qa_qc"))
                     elif bucket in _RN_BUCKETS:
-                        for ticket_id, cell_text, _nco_marked in found:
-                            hits.append((ticket_id, cell_text, bucket))
+                        for ticket_id, cell_text, _nco_marked, productive in found:
+                            hits.append((ticket_id, cell_text, "tri" if productive else bucket))
     except Exception:
         return hits
 

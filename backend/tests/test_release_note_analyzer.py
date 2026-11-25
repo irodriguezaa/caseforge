@@ -302,6 +302,7 @@ def test_malformed_pdf_bytes_do_not_crash_analysis() -> None:
 from app.services.release_note_analyzer import (
     _CELL_TICKET_RE,
     _classify_heading,
+    _row_marks_productive_issue,
     _table_header_override,
 )
 from app.services.rn_revalidation_scope import loose_qa_key
@@ -314,6 +315,14 @@ def test_loose_qa_line_is_a_ticket_row_not_a_mention() -> None:
     assert loose_qa_key("El ticket WINCL-2520 se menciona en el párrafo.") is None
     assert loose_qa_key("QA bugs / QC bugs") is None
     assert loose_qa_key("QA SIC-77545: ventana UAT") is None
+
+
+def test_productive_row_label_is_not_a_mention_inside_the_ticket() -> None:
+    assert _row_marks_productive_issue(["🚨 Productivo\n/ TRI", "AAFCL-2111: diagnóstico TRI-157029"])
+    assert _row_marks_productive_issue(["🚨 Productivo", "AAFCL-2066: crash al continuar"])
+    assert not _row_marks_productive_issue(
+        ["🧪 QA", "AAFCL-2111: el texto menciona un TRI-157029 dentro del ticket"]
+    )
 
 
 def test_table_header_nco_is_recognized_as_an_override_signal() -> None:
