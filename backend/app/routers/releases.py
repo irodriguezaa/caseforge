@@ -47,6 +47,7 @@ from app.services.ai_case_engine import generate_release_app_candidates
 from app.services.generation_jobs import get_job, job_to_response, start_generation
 
 logger = logging.getLogger(__name__)
+from app.services.operations_matrix import build_operations_matrix_workbook
 from app.services.rn_scope_export import build_rn_scope_workbook_from_analysis
 from app.services.revalidation_engine import (
     candidates_from_incremental_plan,
@@ -1413,6 +1414,38 @@ def export_release_rn_scope(release_id: int, db: Session = Depends(get_db)) -> R
     label = release.name or analysis.pdf_filename or "Release"
     raw_name = f"Alcance_RN_{label}.xlsx".replace(" ", "_")
     return _rn_scope_xlsx(raw_analysis, raw_name)
+
+
+@router.get("/{release_id}/operations-matrix")
+def export_operations_matrix(release_id: int, db: Session = Depends(get_db)) -> Response:
+    """Excel de Matriz Operaciones: regresión, RN (EPC y TRI) y detalle por EPC."""
+    release = get_release_or_404(release_id, db)
+    analysis = _latest_analysis(db, release.id)
+    if analysis is None:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND,
+            detail="No hay un RN asociado a esta Release. Analiza y crea la Release desde el PDF primero.",
+        )
+    raw_analysis = _require_normalized_analysis(analysis.raw_analysis)
+    label = " ".join(
+        part.strip()
+        for part in (release.platform, release.version, release.name)
+        if part and part.strip()
+    ) or "Release"
+    raw_name = f"Matriz_Operaciones_{label}.xlsx".replace(" ", "_")
+    try:
+        payload = build_operations_matrix_workbook(
+            platform=release.platform,
+            version=release.version,
+            name=release.name,
+            raw_analysis=raw_analysis,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"No se pudo generar la Matriz Operaciones: {exc}",
+        ) from exc
+    return _xlsx_attachment(payload, raw_name, "Matriz_Operaciones.xlsx")
 
 
 @router.get("/{release_id}/test-cases/export")

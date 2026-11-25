@@ -452,6 +452,40 @@ export const api = {
     link.remove();
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   },
+  exportOperationsMatrix: async (releaseId: number, releaseName: string): Promise<void> => {
+    let response: Response;
+    try {
+      response = await fetch(apiUrl(`/api/releases/${releaseId}/operations-matrix`), {
+        cache: "no-store",
+        credentials: "include",
+      });
+    } catch {
+      throw new ApiRequestError(503, "No se pudo contactar al servidor para generar la Matriz Operaciones.");
+    }
+    const contentType = response.headers.get("content-type") ?? "";
+    if (!response.ok) {
+      const body = (await response.json().catch(() => ({}))) as { detail?: unknown; message?: string };
+      const detail = typeof body.detail === "string" ? body.detail : body.message;
+      throw new ApiRequestError(response.status, detail || "No se pudo generar la Matriz Operaciones.");
+    }
+    if (contentType.includes("application/json")) {
+      const body = (await response.json().catch(() => ({}))) as { detail?: string; message?: string };
+      throw new ApiRequestError(502, body.detail ?? body.message ?? "El servidor no devolvió un Excel.");
+    }
+    const blob = await response.blob();
+    if (blob.size < 64) {
+      throw new ApiRequestError(502, "La Matriz Operaciones llegó vacía.");
+    }
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const safe = releaseName.replace(/[<>:"/\\|?*]+/g, "_").replace(/\s+/g, "_").slice(0, 80) || "Release";
+    link.href = url;
+    link.download = `Matriz_Operaciones_${safe}.xlsx`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  },
   exportReleaseTestCases: async (releaseId: number, releaseName: string): Promise<void> => {
     let response: Response;
     try {

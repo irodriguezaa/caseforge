@@ -1,6 +1,6 @@
 "use client";
 
-import { Download, Pencil, Plus, Sparkles, Trash2, Upload } from "lucide-react";
+import { Download, FileSpreadsheet, Pencil, Plus, Sparkles, Trash2, Upload } from "lucide-react";
 import { ColumnFilter } from "@/app/components/ColumnFilter";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
@@ -108,6 +108,7 @@ export default function ReleaseDetailPage(): React.ReactElement {
   const [publishing, setPublishing] = useState(false);
   const [publishResult, setPublishResult] = useState<PublishCasesResponse | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [exportingMatrix, setExportingMatrix] = useState(false);
   const [editingCase, setEditingCase] = useState<TestCase | null>(null);
   const [statusBusy, setStatusBusy] = useState(false);
   const [caseTab, setCaseTab] = useState<"rn" | "matrix">("rn");
@@ -314,6 +315,18 @@ export default function ReleaseDetailPage(): React.ReactElement {
       setActionError(err instanceof ApiRequestError ? err.message : "No se pudo publicar a QCO.");
     } finally {
       setPublishing(false);
+    }
+  };
+
+  const handleOperationsMatrix = async (): Promise<void> => {
+    setActionError(null);
+    setExportingMatrix(true);
+    try {
+      await api.exportOperationsMatrix(releaseId, release?.name || "Release");
+    } catch (err) {
+      setActionError(err instanceof ApiRequestError ? err.message : "No se pudo generar la Matriz Operaciones.");
+    } finally {
+      setExportingMatrix(false);
     }
   };
 
@@ -1118,6 +1131,18 @@ export default function ReleaseDetailPage(): React.ReactElement {
             >
               {publishing ? "Publicando en QCO…" : "Publicar en QCO"}
             </button>
+          )}
+          {canLoadRn && !isBe && !isOperativa && (
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => void handleOperationsMatrix()}
+            disabled={exportingMatrix || !analysis}
+            title={analysis ? "Excel de no afectación, RN y detalle por EPC" : "Primero analiza el Release Note"}
+          >
+            <FileSpreadsheet size={14} aria-hidden="true" style={{ verticalAlign: "-2px", marginRight: "6px" }} />
+            {exportingMatrix ? "Generando matriz…" : "Generar Matriz Operaciones"}
+          </button>
           )}
           <button type="button" className="secondary" onClick={() => void handleExportExcel()} disabled={exporting || testCases.length === 0}>
             <Download size={14} aria-hidden="true" style={{ verticalAlign: "-2px", marginRight: "6px" }} />
