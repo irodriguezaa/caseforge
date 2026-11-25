@@ -90,7 +90,7 @@ def damco_scope_from_legacy_hits(
     seen: dict[str, set[str]] = {name: set() for name in (*NORMALIZED_BUCKETS, "functionality")}
     for ticket_id, cell_text, bucket in hits:
         key = ticket_id.strip().upper()
-        if not key:
+        if not key or is_sic_key(key):
             continue
         item = RnItem(id=key, title=cell_text)
         if bucket == "functionality":

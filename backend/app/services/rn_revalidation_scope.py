@@ -14,6 +14,8 @@ from typing import Any
 
 from pypdf import PdfReader
 
+from app.services.rn_normalized import is_sic_key
+
 _BUCKETS = (
     "technical_epics",
     "nco",
@@ -98,7 +100,7 @@ def narrow_revalidation_analysis(
 
 
 _LOOSE_QA_LINE_RE = re.compile(
-    r"^(?:QA|QC)\s+((?!BRF)[A-Z][A-Z0-9]{1,7}-\d{2,6})\b",
+    r"^(?:QA|QC)\s+((?!BRF)(?!SIC-)[A-Z][A-Z0-9]{1,7}-\d{2,6})\b",
     re.IGNORECASE,
 )
 
@@ -151,7 +153,7 @@ def append_pdf_delta_keys(
     qa = list(normalized.get("qa_qc") or [])
     added = 0
     for key in sorted(fresh):
-        if key in present:
+        if key in present or is_sic_key(key):
             continue
         qa.append({"id": key, "title": _snippet(new_text, key)})
         present.add(key)

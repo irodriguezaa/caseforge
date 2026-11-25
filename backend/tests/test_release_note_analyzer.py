@@ -313,6 +313,7 @@ def test_loose_qa_line_is_a_ticket_row_not_a_mention() -> None:
     assert found[0] == "WINCL-2520"
     assert loose_qa_key("El ticket WINCL-2520 se menciona en el párrafo.") is None
     assert loose_qa_key("QA bugs / QC bugs") is None
+    assert loose_qa_key("QA SIC-77545: ventana UAT") is None
 
 
 def test_table_header_nco_is_recognized_as_an_override_signal() -> None:
@@ -405,6 +406,8 @@ def test_embedded_ticket_reference_inside_a_functionality_cell_is_not_double_cou
     of which section the cell belongs to."""
     assert _CELL_TICKET_RE.match("WEBCL-3721: TE-2026-WEBCL-activacion-hbomax") is not None
     assert _CELL_TICKET_RE.match("WEBCL-3721: TE-2026-WEBCL-activacion-hbomax").group(0) == "WEBCL-3721"
+    assert _CELL_TICKET_RE.match("SIC-77545: CV-UAT-FEHF-AAF-CROSS || 26.1.4") is None
+    assert _CELL_TICKET_RE.match("AAFCL-2111: CV | ALL | Diagnóstico") is not None
     # The embedded reference, tested on its own (not at cell start), still matches the ticket
     # shape -- proving the anchor, not the shape, is what excludes it here.
     assert _CELL_TICKET_RE.match("TE-2026-WEBCL-activacion-hbomax") is not None

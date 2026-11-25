@@ -17,7 +17,7 @@ from app.services.rn_normalized import NORMALIZED_BUCKETS, NormalizedRnScope, Rn
 
 _TATA_KEY_RE = re.compile(r"\b([A-Z]{3,10})-\s*(\d{2,6})\b")
 _TBRF_PROJECTS = {"TBRF", "TBRFRE", "BRFRE", "BRF"}
-_FALSE_PROJECTS = {"THE", "AND", "FOR", "FIX", "APK", "PDF", "HTTP", "HTTPS", "UAT"}
+_FALSE_PROJECTS = {"THE", "AND", "FOR", "FIX", "APK", "PDF", "HTTP", "HTTPS", "UAT", "SIC"}
 _EPIC_HEADER = re.compile(r"EPIC\s*IDS?|TECHNICAL\s+EPIC", re.IGNORECASE)
 _BRF_HEADER = re.compile(r"TBRF|TECHNICAL\s+BRF|\bBRF\b", re.IGNORECASE)
 _INCIDENT_HEADER = re.compile(r"INCIDENT(?:E|\s*ID)?", re.IGNORECASE)

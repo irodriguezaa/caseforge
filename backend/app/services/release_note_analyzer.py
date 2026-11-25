@@ -245,8 +245,8 @@ _NUMBERED_HEADING_RE = re.compile(
 _QA_QC_SENTENCE_RE = re.compile(r"(defectos\s+QA\s+y\s+QC|QA\s*/\s*QC|corrige\s+defectos)", re.IGNORECASE)
 
 # Only the ticket that HEADS a table cell counts -- a cell's own descriptive text can mention
-# another ticket inline.
-_CELL_TICKET_RE = re.compile(r"^\s*(?!BRF)([A-Z][A-Z0-9]{1,7})-(\d{2,6})")
+# another ticket inline. SIC- is a UAT window code, never scope.
+_CELL_TICKET_RE = re.compile(r"^\s*(?!BRF)(?!SIC-)([A-Z][A-Z0-9]{1,7})-(\d{2,6})")
 
 # The Table of Contents repeats the "Descripción del cambio" header before the real section, so
 # the LAST occurrence in the document is used. The stop boundary is the next numbered heading of
