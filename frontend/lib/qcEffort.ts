@@ -120,6 +120,45 @@ export type RnScopeCoverage = {
   story_to_epic?: Record<string, string>;
 };
 
+export function epicTitleName(key: string, title: string): string {
+  const text = title.replace(/\s+/g, " ").trim();
+  if (!text) {
+    return "";
+  }
+  const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const stripped = text
+    .replace(new RegExp(`^${escaped}\\s*[:|\\-–—]?\\s*`, "i"), "")
+    .replace(/^\|+|\|+$/g, "")
+    .trim();
+  if (!stripped || stripped.toUpperCase() === key.toUpperCase()) {
+    return "";
+  }
+  return stripped;
+}
+
+export function rnEpicTitles(analysis?: { raw_analysis?: Record<string, unknown> | null } | null): Record<string, string> {
+  const raw = analysis?.raw_analysis;
+  const normalized = raw && typeof raw === "object"
+    ? (raw as { normalized?: { technical_epics?: Array<{ id?: string; title?: string }> } }).normalized
+    : undefined;
+  const epics = normalized?.technical_epics;
+  const titles: Record<string, string> = {};
+  if (!Array.isArray(epics)) {
+    return titles;
+  }
+  for (const item of epics) {
+    const id = String(item?.id || "").trim().toUpperCase();
+    if (!id || id.startsWith("SIC-") || titles[id]) {
+      continue;
+    }
+    const name = epicTitleName(id, String(item?.title || ""));
+    if (name) {
+      titles[id] = name;
+    }
+  }
+  return titles;
+}
+
 export function rnScopeEpicKeys(analysis?: { raw_analysis?: Record<string, unknown> | null } | null): string[] {
   const raw = analysis?.raw_analysis;
   const normalized = raw && typeof raw === "object" ? (raw as { normalized?: { technical_epics?: Array<{ id?: string }> } }).normalized : undefined;
@@ -202,6 +241,7 @@ export function coverageStatus(agTotal: number, agCovered: number, tcCount: numb
 
 export type EpicProgressRow = {
   key: string;
+  name?: string;
   total: number;
   executed: number;
   percent: number;

@@ -414,6 +414,17 @@ button.epic-hours-toggle:hover:not(:disabled) { background: var(--surface-2); }
 .epic-hours-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
 .epic-hours-toolbar button { display: inline-flex; align-items: center; gap: 6px; }
 .epic-progress-table { margin-top: 0; }
+.epic-key { display: flex; flex-direction: column; gap: 2px; max-width: 220px; }
+.epic-key-name {
+  color: var(--text-dim);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
 .epic-progress-table td.num, .epic-progress-table th.num { font-variant-numeric: tabular-nums; }
 .epic-progress-table tr.epic-progress-total td { border-top: 1px solid var(--border-strong); background: var(--surface-2); }
 .epic-progress-pct { display: grid; grid-template-columns: 1fr 52px; align-items: center; gap: 8px; min-width: 140px; }

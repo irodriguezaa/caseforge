@@ -29,15 +29,21 @@ function AdvanceBar({ percent }: { percent: number }): React.ReactElement {
   );
 }
 
-function EpicKey({ rowKey }: { rowKey: string }): React.ReactElement {
+function EpicKey({ rowKey, name }: { rowKey: string; name?: string }): React.ReactElement {
   const href = jiraIssueUrl(rowKey);
-  if (!href) {
-    return <>{rowKey}</>;
-  }
-  return (
+  const label = name?.trim() || "";
+  const key = href ? (
     <a href={href} target="_blank" rel="noopener noreferrer" title={`Abrir ${rowKey} en Jira`}>
       {rowKey}
     </a>
+  ) : (
+    rowKey
+  );
+  return (
+    <span className="epic-key">
+      {key}
+      {label ? <span className="epic-key-name" title={label}>{label}</span> : null}
+    </span>
   );
 }
 
@@ -104,7 +110,7 @@ export function EpicProgressPanel({
               <tbody>
                 {ranked.map((row) => (
                   <tr key={row.key}>
-                    <td><EpicKey rowKey={row.key} /></td>
+                    <td><EpicKey rowKey={row.key} name={row.name} /></td>
                     <td className="num">{row.total}</td>
                     <td className="num">{row.hours.toFixed(1)} h</td>
                     <td><HoursBar value={row.hours} max={maxHours} /></td>

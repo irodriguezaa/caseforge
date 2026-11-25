@@ -120,7 +120,8 @@ export async function buildEpicProgressWorkbook(rows: EpicProgressRow[], release
     pageSetup: { orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
   });
   sheet.columns = [
-    { width: 24 },
+    { width: 18 },
+    { width: 42 },
     { width: 12 },
     { width: 14 },
     { width: 14 },
@@ -128,20 +129,20 @@ export async function buildEpicProgressWorkbook(rows: EpicProgressRow[], release
     { width: 16 },
   ];
 
-  sheet.mergeCells("A1:F1");
+  sheet.mergeCells("A1:G1");
   const title = sheet.getCell("A1");
   title.value = TITLE;
   title.font = { name: "Calibri", size: 18, bold: true, color: { argb: HEADER_FILL } };
   title.alignment = { vertical: "middle", horizontal: "left" };
   sheet.getRow(1).height = 28;
 
-  sheet.mergeCells("A2:F2");
+  sheet.mergeCells("A2:G2");
   const subtitle = sheet.getCell("A2");
   subtitle.value = releaseName;
   subtitle.font = { name: "Calibri", size: 12, color: { argb: "5B6770" } };
   subtitle.alignment = { vertical: "middle", horizontal: "left" };
 
-  const headers = ["EPC", "Casos", "Horas", "Ejecutados", "Avance %", "Estado"];
+  const headers = ["EPC", "Nombre", "Casos", "Horas", "Ejecutados", "Avance %", "Estado"];
   const headerRow = sheet.getRow(4);
   headerRow.height = 22;
   headers.forEach((header, index) => {
@@ -153,9 +154,10 @@ export async function buildEpicProgressWorkbook(rows: EpicProgressRow[], release
   const firstData = 5;
   ranked.forEach((row, index) => {
     const excelRow = sheet.getRow(firstData + index);
-    excelRow.height = 20;
+    excelRow.height = row.name && row.name.length > 48 ? 32 : 20;
     const values: Array<string | number> = [
       row.key,
+      row.name || "",
       row.total,
       row.hours,
       row.executed,
@@ -165,11 +167,14 @@ export async function buildEpicProgressWorkbook(rows: EpicProgressRow[], release
     values.forEach((value, column) => {
       const cell = excelRow.getCell(column + 1);
       cell.value = value;
-      paintCell(cell, { align: column === 0 || column === 5 ? "left" : "right" });
-      if (column === 2) {
+      paintCell(cell, { align: column === 0 || column === 1 || column === 6 ? "left" : "right" });
+      if (column === 1) {
+        cell.alignment = { vertical: "middle", horizontal: "left", wrapText: true };
+      }
+      if (column === 3) {
         cell.numFmt = '0.0" h"';
       }
-      if (column === 4) {
+      if (column === 5) {
         cell.numFmt = '0.0"%"';
       }
     });
@@ -184,6 +189,7 @@ export async function buildEpicProgressWorkbook(rows: EpicProgressRow[], release
   totalRow.height = 22;
   const totalValues: Array<string | number> = [
     "Total",
+    "",
     totals.total,
     roundHours(totals.hours),
     totals.executed,
@@ -193,11 +199,11 @@ export async function buildEpicProgressWorkbook(rows: EpicProgressRow[], release
   totalValues.forEach((value, column) => {
     const cell = totalRow.getCell(column + 1);
     cell.value = value;
-    paintCell(cell, { bold: true, fill: TOTAL_FILL, align: column === 0 ? "left" : "right" });
-    if (column === 2) {
+    paintCell(cell, { bold: true, fill: TOTAL_FILL, align: column === 0 || column === 1 ? "left" : "right" });
+    if (column === 3) {
       cell.numFmt = '0.0" h"';
     }
-    if (column === 4) {
+    if (column === 5) {
       cell.numFmt = '0.0"%"';
     }
   });
@@ -205,10 +211,10 @@ export async function buildEpicProgressWorkbook(rows: EpicProgressRow[], release
   const lastData = firstData + ranked.length - 1;
   const maxHours = ranked.reduce((max, row) => Math.max(max, row.hours), 0);
   if (ranked.length > 0 && maxHours > 0) {
-    sheet.addConditionalFormatting(dataBar(`C${firstData}:C${lastData}`, HOURS_BAR, maxHours));
+    sheet.addConditionalFormatting(dataBar(`D${firstData}:D${lastData}`, HOURS_BAR, maxHours));
   }
   if (ranked.length > 0) {
-    sheet.addConditionalFormatting(dataBar(`E${firstData}:E${lastData}`, ADVANCE_BAR, 100));
+    sheet.addConditionalFormatting(dataBar(`F${firstData}:F${lastData}`, ADVANCE_BAR, 100));
   }
 
   const hoursChart = chartPng(
@@ -230,16 +236,16 @@ export async function buildEpicProgressWorkbook(rows: EpicProgressRow[], release
   const chartHeight = 52 + Math.max(1, ranked.length) * 28 + 12;
   if (hoursChart) {
     const imageId = workbook.addImage({ base64: hoursChart, extension: "png" });
-    sheet.addImage(imageId, { tl: { col: 7, row: 3 }, ext: { width: 640, height: chartHeight } });
+    sheet.addImage(imageId, { tl: { col: 8, row: 3 }, ext: { width: 640, height: chartHeight } });
   }
   if (advanceChart) {
     const imageId = workbook.addImage({ base64: advanceChart, extension: "png" });
     const rowOffset = Math.ceil(chartHeight / 18) + 1;
-    sheet.addImage(imageId, { tl: { col: 7, row: 3 + rowOffset }, ext: { width: 640, height: chartHeight } });
+    sheet.addImage(imageId, { tl: { col: 8, row: 3 + rowOffset }, ext: { width: 640, height: chartHeight } });
   }
 
   if (ranked.length > 0) {
-    sheet.autoFilter = { from: { row: 4, column: 1 }, to: { row: lastData, column: 6 } };
+    sheet.autoFilter = { from: { row: 4, column: 1 }, to: { row: lastData, column: 7 } };
   }
   return workbook;
 }

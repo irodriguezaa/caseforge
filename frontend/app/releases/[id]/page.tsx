@@ -38,7 +38,7 @@ import { ValidationScopeSelect, ValidationScopeSummary } from "@/app/components/
 import { ACTIVITY_TYPE_OPTIONS, ENVIRONMENT_OPTIONS, OPERATIVA_DEVICE_OPTIONS, SHOW_QCO_ZEPHYR_PUBLISH } from "@/lib/constants";
 import { calculateBusinessDays } from "@/lib/dateUtils";
 import { nextTestCaseId } from "@/lib/testCaseId";
-import { QC_ESTIMATION_TOOLTIP, QC_HOURS_PER_DAY, QC_OPERATIVA_ESTIMATION_TOOLTIP, durationDays, estimateOperativaEffort, estimateReleaseEffortFromCases, progressByTechnicalEpic, rnScopeCoverage, rnScopeEpicKeys, stripDeviceFromCaseName } from "@/lib/qcEffort";
+import { QC_ESTIMATION_TOOLTIP, QC_HOURS_PER_DAY, QC_OPERATIVA_ESTIMATION_TOOLTIP, durationDays, estimateOperativaEffort, estimateReleaseEffortFromCases, progressByTechnicalEpic, rnEpicTitles, rnScopeCoverage, rnScopeEpicKeys, stripDeviceFromCaseName } from "@/lib/qcEffort";
 import { beQcScopeHours, validationScopeHours } from "@/lib/validationScope";
 import type { CoverageMatrixResponse, EpcRead, GenerateCasesResponse, PublishCasesResponse, Release, ReleaseAnalysis, ReleaseStatus, TestCase } from "@/lib/types";
 import { JiraFilterLink } from "@/app/components/JiraFilterLink";
@@ -537,9 +537,13 @@ export default function ReleaseDetailPage(): React.ReactElement {
   }, [headerSelect.indeterminate, headerSelect.checked]);
   const rnEpicKeys = useMemo(() => rnScopeEpicKeys(analysis), [analysis]);
   const rnCoverage = useMemo(() => rnScopeCoverage(analysis), [analysis]);
+  const epicNames = useMemo(() => rnEpicTitles(analysis), [analysis]);
   const epicProgress = useMemo(
-    () => progressByTechnicalEpic(visibleCases, rnEpicKeys, rnCoverage),
-    [visibleCases, rnEpicKeys, rnCoverage],
+    () => progressByTechnicalEpic(visibleCases, rnEpicKeys, rnCoverage).map((row) => ({
+      ...row,
+      name: epicNames[row.key] || "",
+    })),
+    [visibleCases, rnEpicKeys, rnCoverage, epicNames],
   );
 
   if (loadError) {
