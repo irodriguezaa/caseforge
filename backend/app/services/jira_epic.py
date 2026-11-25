@@ -666,10 +666,10 @@ def _scope_for_release(
     analysis = _latest_analysis(db, release.id)
     functionalities = _bucket(analysis, "technical_epics")
     bugs = _bucket(analysis, "qc_bugs") or _bucket(analysis, "qa_qc")
-    keys = [key for key, _title in functionalities]
-    if not keys:
-        keys = _case_keys(db, release.id)
-        functionalities = [(key, "") for key in keys]
+    bug_keys = {key for key, _title in bugs}
+    functionalities = [(key, title) for key, title in functionalities if key not in bug_keys]
+    if not functionalities:
+        functionalities = [(key, "") for key in _case_keys(db, release.id) if key not in bug_keys]
     return VersionScope(
         release_id=release.id,
         version=version,

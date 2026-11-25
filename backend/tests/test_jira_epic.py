@@ -1,8 +1,11 @@
 """QCO Epic from a release. No live Jira."""
 
+from types import SimpleNamespace
+
 import httpx
 import pytest
 
+from app.models.release import Release
 from app.services.jira_epic import (
     EpicDraft,
     JiraEpicError,
@@ -10,6 +13,7 @@ from app.services.jira_epic import (
     VersionScope,
     _adf,
     _move_issues_to_sprint,
+    _scope_for_release,
     _sprint_choice,
     accumulated_description,
     assignee_for,
@@ -155,6 +159,37 @@ def test_later_version_task_lists_only_the_new_scope() -> None:
     assert "WINCL-528" not in with_feature
     assert "No hay nuevas funcionalidades" not in with_feature
     assert "QA/QC Bugs" not in with_feature
+
+
+def test_qc_bugs_do_not_open_their_own_subtask(monkeypatch) -> None:
+    bugs = ("STVCL-1322", "STVCL-2695", "STVCL-2752", "STVCL-2728", "STVCL-2729")
+    analysis = SimpleNamespace(
+        raw_analysis={"normalized": {"technical_epics": [], "qc_bugs": [{"id": key} for key in bugs]}},
+        pdf_filename="RN.pdf",
+    )
+    monkeypatch.setattr("app.services.jira_epic._latest_analysis", lambda _db, _release_id: analysis)
+    monkeypatch.setattr("app.services.jira_epic._case_keys", lambda _db, _release_id: ["STVCL-100", *bugs])
+    release = Release(
+        id=29,
+        name="STV",
+        version="vAAFSTV-29.0.1",
+        platform="AAF Evolutivo",
+        activity_type="Release",
+        environment="BERC",
+        validation_type="Regresión completa",
+    )
+
+    scope = _scope_for_release(None, release, "Release", "BERC")
+
+    assert scope.functionalities == (("STVCL-100", ""),)
+    assert [key for key, _title in scope.qc_bugs] == list(bugs)
+    only_bugs = scope.__class__(**{**scope.__dict__, "functionalities": ()})
+    drafts = subtasks_for("STVCL", [only_bugs], only_bugs)
+    assert [row.summary for row in drafts] == [
+        "STVCL | vAAFSTV-29.0.1 | Revisión QC Bugs",
+        "STVCL | vAAFSTV-29.0.1 | REGRESIÓN",
+    ]
+    assert all(key in drafts[0].description for key in bugs)
 
 
 def test_subtasks_follow_the_same_scope_as_the_task() -> None:
