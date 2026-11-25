@@ -211,6 +211,17 @@ export type EpicProgressRow = {
   orphan?: boolean;
 };
 
+export function epicProgressEstado(row: Pick<EpicProgressRow, "orphan" | "estado">): string {
+  if (row.orphan) {
+    return "huérfano";
+  }
+  return row.estado || "—";
+}
+
+export function rankEpicProgress(rows: EpicProgressRow[]): EpicProgressRow[] {
+  return [...rows].sort((a, b) => b.hours - a.hours || a.key.localeCompare(b.key, "es"));
+}
+
 function caseHours(row: {
   priority?: string | null;
   complexity?: string | null;
@@ -320,17 +331,6 @@ export function progressByTechnicalEpic(
       hours: Math.round(stats.hours * 10) / 10,
     }))
     .sort((a, b) => b.hours - a.hours || a.key.localeCompare(b.key, "es"));
-}
-
-export function hoursByTechnicalEpic(
-  cases: EffortCase[],
-  scopeKeys: string[] = [],
-  coverage: RnScopeCoverage | null = null,
-): { label: string; value: number }[] {
-  return progressByTechnicalEpic(cases, scopeKeys, coverage)
-    .filter((row) => !row.orphan)
-    .map((row) => ({ label: row.key, value: row.hours }))
-    .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label, "es"));
 }
 
 export function estimateReleaseEffortLegacyCount(testCaseCount: number): { hours: number; days: number } {

@@ -1,23 +1,68 @@
 "use client";
 
-import { ChevronDown } from "lucide-react";
-import { useState } from "react";
+import { ChevronDown, Download } from "lucide-react";
+import { useMemo, useState } from "react";
+import { downloadEpicHoursExcel } from "@/lib/exportEpicHours";
 import { jiraIssueUrl } from "@/lib/jira";
-import type { EpicProgressRow } from "@/lib/qcEffort";
+import { epicProgressEstado, rankEpicProgress, type EpicProgressRow } from "@/lib/qcEffort";
+
+function HoursBar({ value, max }: { value: number; max: number }): React.ReactElement {
+  const width = max <= 0 ? 0 : Math.min(100, Math.max(0, (value / max) * 100));
+  return (
+    <div className="epic-progress-pct hours-only">
+      <div className="bar-track">
+        {width > 0 ? <div className="bar-fill epic-hours-fill" style={{ width: `${width}%` }} /> : null}
+      </div>
+    </div>
+  );
+}
+
+function AdvanceBar({ percent }: { percent: number }): React.ReactElement {
+  const width = Math.min(100, Math.max(0, percent));
+  return (
+    <div className="epic-progress-pct">
+      <div className="bar-track">
+        {width > 0 ? <div className="bar-fill epic-advance-fill" style={{ width: `${width}%` }} /> : null}
+      </div>
+      <span className="num">{percent.toFixed(1)}%</span>
+    </div>
+  );
+}
+
+function EpicKey({ rowKey }: { rowKey: string }): React.ReactElement {
+  const href = jiraIssueUrl(rowKey);
+  if (!href) {
+    return <>{rowKey}</>;
+  }
+  return (
+    <a href={href} target="_blank" rel="noopener noreferrer" title={`Abrir ${rowKey} en Jira`}>
+      {rowKey}
+    </a>
+  );
+}
 
 export function EpicProgressPanel({
   rows,
-  polish,
+  fileName,
 }: {
   rows: EpicProgressRow[];
-  polish?: Record<string, string>;
+  fileName: string;
 }): React.ReactElement {
   const [open, setOpen] = useState(false);
-  const totals = rows.reduce(
+  const [exporting, setExporting] = useState(false);
+  const ranked = useMemo(() => rankEpicProgress(rows), [rows]);
+  const maxHours = ranked.reduce((max, row) => Math.max(max, row.hours), 0);
+  const totals = ranked.reduce(
     (acc, row) => ({ total: acc.total + row.total, executed: acc.executed + row.executed, hours: acc.hours + row.hours }),
     { total: 0, executed: 0, hours: 0 },
   );
   const totalPercent = totals.total === 0 ? 0 : Math.round((totals.executed * 1000) / totals.total) / 10;
+  const totalHours = Math.round(totals.hours * 10) / 10;
+
+  const exportExcel = (): void => {
+    setExporting(true);
+    void downloadEpicHoursExcel(ranked, fileName).finally(() => setExporting(false));
+  };
 
   return (
     <div className="panel" style={{ margin: "4px 0 14px" }}>
@@ -27,15 +72,21 @@ export function EpicProgressPanel({
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
       >
-        <h2>Avance por Technical Epic</h2>
+        <h2>Horas / Avance por Technical Epic</h2>
         <ChevronDown size={16} className={open ? "epic-hours-chevron open" : "epic-hours-chevron"} />
       </button>
       {open ? (
         <div className="panel-body">
-          <p className="muted" style={{ marginTop: 0, marginBottom: "10px" }}>
-            Ejecutado = todo lo que no es UNEXECUTED. Las horas son la estimación QC, no el avance.
-          </p>
-          {rows.length === 0 ? (
+          <div className="epic-hours-toolbar">
+            <p className="muted" style={{ margin: 0 }}>
+              De más horas a menos. La barra de horas se llena contra la EPC más grande. La de avance es ejecutados entre casos.
+            </p>
+            <button type="button" className="secondary" disabled={exporting || ranked.length === 0} onClick={exportExcel}>
+              <Download size={14} />
+              {exporting ? "Exportando…" : "Exportar"}
+            </button>
+          </div>
+          {ranked.length === 0 ? (
             <p className="muted">Sin casos todavía.</p>
           ) : (
             <table className="activity epic-progress-table">
@@ -43,64 +94,33 @@ export function EpicProgressPanel({
                 <tr>
                   <th>EPC</th>
                   <th className="num">Casos</th>
-                  <th className="num">Ejecutados</th>
-                  <th className="num">%</th>
                   <th className="num">Horas</th>
+                  <th aria-label="Barra de horas" />
+                  <th className="num">Ejecutados</th>
+                  <th>Avance</th>
                   <th>Estado</th>
-                  {polish ? <th>Redacción IA</th> : null}
                 </tr>
               </thead>
               <tbody>
-                {rows.map((row) => {
-                  const href = jiraIssueUrl(row.key);
-                  return (
-                    <tr key={row.key}>
-                      <td>
-                        {href ? (
-                          <a href={href} target="_blank" rel="noopener noreferrer" title={`Abrir ${row.key} en Jira`}>
-                            {row.key}
-                          </a>
-                        ) : (
-                          row.key
-                        )}
-                      </td>
-                      <td className="num">{row.total}</td>
-                      <td className="num">{row.executed}</td>
-                      <td>
-                        <div className="epic-progress-pct">
-                          <div className="bar-track">
-                            <div
-                              className="bar-fill epic-progress-fill"
-                              style={{ width: `${Math.min(100, Math.max(0, row.percent))}%` }}
-                            />
-                          </div>
-                          <span className="num">{row.percent.toFixed(1)}%</span>
-                        </div>
-                      </td>
-                      <td className="num">{row.hours.toFixed(1)}</td>
-                      <td>{row.orphan ? "huérfano" : row.estado || "—"}</td>
-                      {polish ? <td>{polish[row.key] || "—"}</td> : null}
-                    </tr>
-                  );
-                })}
-                <tr>
+                {ranked.map((row) => (
+                  <tr key={row.key}>
+                    <td><EpicKey rowKey={row.key} /></td>
+                    <td className="num">{row.total}</td>
+                    <td className="num">{row.hours.toFixed(1)} h</td>
+                    <td><HoursBar value={row.hours} max={maxHours} /></td>
+                    <td className="num">{row.executed}</td>
+                    <td><AdvanceBar percent={row.percent} /></td>
+                    <td>{epicProgressEstado(row)}</td>
+                  </tr>
+                ))}
+                <tr className="epic-progress-total">
                   <td><strong>Total</strong></td>
                   <td className="num"><strong>{totals.total}</strong></td>
-                  <td className="num"><strong>{totals.executed}</strong></td>
-                  <td>
-                    <div className="epic-progress-pct">
-                      <div className="bar-track">
-                        <div
-                          className="bar-fill epic-progress-fill"
-                          style={{ width: `${Math.min(100, Math.max(0, totalPercent))}%` }}
-                        />
-                      </div>
-                      <span className="num"><strong>{totalPercent.toFixed(1)}%</strong></span>
-                    </div>
-                  </td>
-                  <td className="num"><strong>{Math.round(totals.hours * 10) / 10}</strong></td>
+                  <td className="num"><strong>{totalHours.toFixed(1)} h</strong></td>
                   <td />
-                  {polish ? <td /> : null}
+                  <td className="num"><strong>{totals.executed}</strong></td>
+                  <td><AdvanceBar percent={totalPercent} /></td>
+                  <td />
                 </tr>
               </tbody>
             </table>

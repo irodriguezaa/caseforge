@@ -7,7 +7,6 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { EditTestCaseModal } from "@/app/components/EditTestCaseModal";
 import { TestCaseBulkBar } from "@/app/components/TestCaseBulkBar";
-import { EpicHoursPanel } from "@/app/components/EpicHoursPanel";
 import { JiraEpicButton } from "@/app/components/JiraEpicButton";
 import { EpicProgressPanel } from "@/app/components/EpicProgressPanel";
 import { ImportTestCasesPanel } from "@/app/components/ImportTestCasesPanel";
@@ -39,7 +38,7 @@ import { ValidationScopeSelect, ValidationScopeSummary } from "@/app/components/
 import { ACTIVITY_TYPE_OPTIONS, ENVIRONMENT_OPTIONS, OPERATIVA_DEVICE_OPTIONS, SHOW_QCO_ZEPHYR_PUBLISH } from "@/lib/constants";
 import { calculateBusinessDays } from "@/lib/dateUtils";
 import { nextTestCaseId } from "@/lib/testCaseId";
-import { QC_ESTIMATION_TOOLTIP, QC_HOURS_PER_DAY, QC_OPERATIVA_ESTIMATION_TOOLTIP, durationDays, estimateOperativaEffort, estimateReleaseEffortFromCases, hoursByTechnicalEpic, progressByTechnicalEpic, rnScopeCoverage, rnScopeEpicKeys, stripDeviceFromCaseName } from "@/lib/qcEffort";
+import { QC_ESTIMATION_TOOLTIP, QC_HOURS_PER_DAY, QC_OPERATIVA_ESTIMATION_TOOLTIP, durationDays, estimateOperativaEffort, estimateReleaseEffortFromCases, progressByTechnicalEpic, rnScopeCoverage, rnScopeEpicKeys, stripDeviceFromCaseName } from "@/lib/qcEffort";
 import { beQcScopeHours, validationScopeHours } from "@/lib/validationScope";
 import type { CoverageMatrixResponse, EpcRead, GenerateCasesResponse, PublishCasesResponse, Release, ReleaseAnalysis, ReleaseStatus, TestCase } from "@/lib/types";
 import { JiraFilterLink } from "@/app/components/JiraFilterLink";
@@ -538,10 +537,6 @@ export default function ReleaseDetailPage(): React.ReactElement {
   }, [headerSelect.indeterminate, headerSelect.checked]);
   const rnEpicKeys = useMemo(() => rnScopeEpicKeys(analysis), [analysis]);
   const rnCoverage = useMemo(() => rnScopeCoverage(analysis), [analysis]);
-  const epicHours = useMemo(
-    () => hoursByTechnicalEpic(visibleCases, rnEpicKeys, rnCoverage),
-    [visibleCases, rnEpicKeys, rnCoverage],
-  );
   const epicProgress = useMemo(
     () => progressByTechnicalEpic(visibleCases, rnEpicKeys, rnCoverage),
     [visibleCases, rnEpicKeys, rnCoverage],
@@ -1238,8 +1233,7 @@ export default function ReleaseDetailPage(): React.ReactElement {
           ))}
         </div>
         ) : null}
-        {isApp && caseTab === "rn" && <EpicHoursPanel items={epicHours} fileName={release.name} />}
-        {isApp && caseTab === "rn" && <EpicProgressPanel rows={epicProgress} polish={polish?.epics} />}
+        {isApp && caseTab === "rn" && <EpicProgressPanel rows={epicProgress} fileName={release.name} />}
         </>
       )}
 
