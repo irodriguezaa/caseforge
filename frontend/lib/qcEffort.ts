@@ -130,7 +130,7 @@ export function rnScopeEpicKeys(analysis?: { raw_analysis?: Record<string, unkno
   const keys: string[] = [];
   for (const item of epics) {
     const id = String(item?.id || "").trim().toUpperCase();
-    if (id && !keys.includes(id)) {
+    if (id && !id.startsWith("SIC-") && !keys.includes(id)) {
       keys.push(id);
     }
   }

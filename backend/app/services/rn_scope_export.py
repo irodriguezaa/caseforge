@@ -16,7 +16,7 @@ from openpyxl.utils import get_column_letter
 
 from app.services.jira_generation import fetch_scope_fields_for_keys
 from app.services.release_note_analyzer import iter_rn_ticket_rows
-from app.services.rn_normalized import NORMALIZED_BUCKETS
+from app.services.rn_normalized import NORMALIZED_BUCKETS, is_sic_key
 from app.services.rn_source_type import source_type_for_rn_bucket
 from app.services.rn_vendor import detect_rn_vendor
 from app.services.tata_release_note_parser import parse_tata_release_note
@@ -176,7 +176,7 @@ def _rows_from_hits(
     seen: set[str] = set()
     for ticket_id, cell_text, bucket in hits:
         key = ticket_id.strip().upper()
-        if not key:
+        if not key or (bucket in {"functionality", "technical_epics"} and is_sic_key(key)):
             continue
         jira = fields.get(key) or {}
         source = source_type_for_rn_bucket(bucket, jira.get("issuetype") if unique_keys else None)

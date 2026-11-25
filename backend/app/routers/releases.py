@@ -379,21 +379,14 @@ def list_releases(
             .first()
         )
         release_read = to_release_read(release).model_dump()
+        displayed = _analysis_for_display(release, latest_analysis, db) if latest_analysis is not None else None
         results.append(
             ReleaseWithCounts(
                 **release_read,
                 test_case_count=count,
-                functionality_count=(
-                    _analysis_for_display(release, latest_analysis, db).features_count
-                    if latest_analysis is not None
-                    else None
-                ),
+                functionality_count=displayed.features_count if displayed is not None else None,
                 estimation_hours=round(float(estimation_hours or 0), 2),
-                latest_analysis=(
-                    ReleaseAnalysisRead.model_validate(latest_analysis)
-                    if latest_analysis
-                    else None
-                ),
+                latest_analysis=displayed,
             )
         )
     return results
@@ -604,11 +597,40 @@ def delete_release(
     hard_delete_release_and_notes(db, get_release_or_404(release_id, db))
 
 
+def _hide_sic_epics(payload: dict) -> dict:
+    """SIC is a UAT window. The stored note stays intact; the screen does not list it as an EPC."""
+    from app.services.rn_normalized import is_sic_key
+
+    raw = payload.get("raw_analysis")
+    if not isinstance(raw, dict):
+        return payload
+    normalized = raw.get("normalized")
+    if not isinstance(normalized, dict):
+        return payload
+    rows = normalized.get("technical_epics")
+    if not isinstance(rows, list):
+        return payload
+    kept = []
+    hidden = 0
+    for row in rows:
+        key = str((row or {}).get("id") or (row or {}).get("key") or "") if isinstance(row, dict) else ""
+        if is_sic_key(key):
+            hidden += 1
+            continue
+        kept.append(row)
+    if not hidden:
+        return payload
+    normalized = {**normalized, "technical_epics": kept}
+    payload = {**payload, "raw_analysis": {**raw, "normalized": normalized}}
+    payload["features_count"] = max(0, int(payload.get("features_count") or 0) - hidden)
+    return payload
+
+
 def _analysis_for_display(release: Release, analysis: ReleaseAnalysis, db: Session) -> ReleaseAnalysisRead:
     """Revalidation screen shows only the new issues. The stored note is left intact."""
     view = ReleaseAnalysisRead.model_validate(analysis)
     if release.release_type != ReleaseType.REVALIDACION or release.parent_release_id is None:
-        return view
+        return ReleaseAnalysisRead.model_validate(_hide_sic_epics(view.model_dump()))
     from app.services.rn_revalidation_scope import narrow_revalidation_analysis
 
     origin = _latest_analysis(db, release.parent_release_id)
@@ -618,7 +640,7 @@ def _analysis_for_display(release: Release, analysis: ReleaseAnalysis, db: Sessi
         payload,
         origin.raw_analysis if origin is not None else None,
     )
-    return ReleaseAnalysisRead.model_validate(narrowed)
+    return ReleaseAnalysisRead.model_validate(_hide_sic_epics(narrowed))
 
 
 @router.get("/{release_id}/analysis", response_model=ReleaseAnalysisRead)

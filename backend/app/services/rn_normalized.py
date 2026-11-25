@@ -24,6 +24,13 @@ NORMALIZED_BUCKETS = (
 LEGACY_BUCKETS = ("functionality", "nco", "tri", "qa_qc")
 
 
+def is_sic_key(key: str) -> bool:
+    """SIC is a UAT window, not a Technical Epic."""
+    token = str(key or "").strip().upper()
+    prefix, _, number = token.partition("-")
+    return prefix == "SIC" and number.isdigit()
+
+
 @dataclass
 class RnItem:
     id: str

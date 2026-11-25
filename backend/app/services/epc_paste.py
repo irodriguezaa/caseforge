@@ -13,6 +13,7 @@ from app.schemas.release import ReleaseAnalysisBase
 from app.services.jira_client import JiraNotConfiguredError, _require_config
 from app.services.jira_generation import fetch_artifacts_for_keys
 from app.services.rn_epc_scope import rn_keys_from_normalized
+from app.services.rn_normalized import is_sic_key
 
 PASTED_SOURCE = "pasted_epcs"
 PASTED_FILENAME = "pasted-epcs.txt"
@@ -133,7 +134,7 @@ def tickets_from_normalized_technical_epics(raw_analysis: Any) -> dict[str, list
             continue
         for item in items:
             key, text = _stored_item_text(item)
-            if not key or key in seen[bucket]:
+            if not key or key in seen[bucket] or (source == "technical_epics" and is_sic_key(key)):
                 continue
             seen[bucket].add(key)
             buckets[bucket].append((key, text))
@@ -228,6 +229,9 @@ def build_pasted_analysis(
         grouped.append({"device": device, "keys": device_keys})
 
     for item in parsed.items:
+        if is_sic_key(item.key):
+            observations.append(f"{item.key}: ventana UAT (SIC); no se incluye como EPC.")
+            continue
         artifact = artifacts_by_key.get(item.key)
         found = isinstance(artifact, dict)
         issuetype = str((artifact or {}).get("issuetype") or "").strip() if found else ""

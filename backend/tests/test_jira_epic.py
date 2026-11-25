@@ -208,6 +208,16 @@ def test_subtasks_follow_the_same_scope_as_the_task() -> None:
     )
     assert named[0].description == "https://dlatvarg.atlassian.net/browse/WINCL-2228"
     assert named[0].match_summaries == ("WINCL | vWINCL-11.1.0 | WINCL-2228",)
+    with_sic = subtasks_for(
+        "AAFCL",
+        [_scope(1, "vAAFLe-28.1.0", (("AAFCL-172", "calificación"), ("SIC-77366", "ventana UAT")))],
+        _scope(1, "vAAFLe-28.1.0", (("AAFCL-172", "calificación"), ("SIC-77366", "ventana UAT"))),
+    )
+    assert [row.summary for row in with_sic if "SIC" in row.summary] == []
+    assert "SIC-77366" not in task_description(
+        [_scope(1, "vAAFLe-28.1.0", (("AAFCL-172", ""), ("SIC-77366", "")))],
+        _scope(1, "vAAFLe-28.1.0", (("AAFCL-172", ""), ("SIC-77366", ""))),
+    )
     link = _adf(named[0].description)["content"][0]["content"][0]
     assert link["text"] == named[0].description
     assert link["marks"] == [{"type": "link", "attrs": {"href": named[0].description}}]

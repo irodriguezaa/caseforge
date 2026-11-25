@@ -26,6 +26,7 @@ from app.models.release_analysis import ReleaseAnalysis
 from app.models.test_case import TestCase
 from app.schemas.release import ActivityType, EnvironmentName
 from app.services.jira_client import JiraApiError, _client, _require_config
+from app.services.rn_normalized import is_sic_key
 from app.services.rn_storage import read_release_note_pdf
 
 PROJECT_KEY = "QCO"
@@ -236,6 +237,7 @@ def epic_description(
 ) -> str:
     scope = (validation_type or "").strip() or "Sin tipo de prueba"
     rn = (rn_filename or "").strip()
+    functionalities = [row for row in functionalities if not is_sic_key(row[0])]
     return "\n".join(
         [
             "Objetivo",
@@ -557,7 +559,7 @@ def subtasks_for(program: str, scopes: list[VersionScope], current: VersionScope
     seen: set[str] = set()
     for key, title in functionalities:
         token = str(key).strip().upper()
-        if token in seen or not _KEY_RE.match(token):
+        if token in seen or not _KEY_RE.match(token) or is_sic_key(token):
             continue
         seen.add(token)
         base = f"{program} | {version} | {token}"
@@ -589,6 +591,7 @@ def _delta_lines(
     bugs: list[tuple[str, str]],
 ) -> list[str]:
     lines = [f"Nuevo alcance en la versión {scope.version}", ""]
+    functionalities = [row for row in functionalities if not is_sic_key(row[0])]
     if functionalities:
         lines.extend(["Listado de EPCs (funcionalidades)", *_lines(functionalities, ""), ""])
     if bugs:
@@ -745,7 +748,7 @@ def _bucket(analysis: ReleaseAnalysis | None, name: str) -> list[tuple[str, str]
             continue
         key = str(row.get("id") or row.get("key") or "").strip().upper()
         title = str(row.get("title") or "").strip()
-        if not key or key in seen:
+        if not key or key in seen or (name == "technical_epics" and is_sic_key(key)):
             continue
         seen.add(key)
         items.append((key, title))
